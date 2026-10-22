@@ -30,7 +30,11 @@ category = "Runtime"
 description = "Number of worker threads (0 = number of CPU cores)"
 
 # Die Laufzeit liefert den Einstiegspunkt; im App-Struct steht ein Handle.
+# `entry` gilt für asynchrone Backends, `runtime` für Backends, deren UI-Loop
+# den Hauptthread belegt (Tokio läuft dann auf Hintergrund-Threads).
 # The runtime provides the entry point; the app struct holds a handle.
+# `entry` is used by async backends, `runtime` by backends whose UI loop owns
+# the main thread (Tokio then runs on background threads).
 [component.codegen]
 type = "tokio::runtime::Handle"
 init = "tokio::runtime::Handle::current()"
@@ -41,5 +45,14 @@ entry = """
 #[tokio::main(flavor = "multi_thread", worker_threads = {{ props.worker_threads }})]
 {%- else -%}
 #[tokio::main(flavor = "multi_thread")]
+{%- endif -%}
+"""
+runtime = """
+{%- if props.flavor == "CurrentThread" -%}
+tokio::runtime::Builder::new_current_thread().enable_all().build()?
+{%- else -%}
+tokio::runtime::Builder::new_multi_thread()
+    {%- if props.worker_threads > 0 %}.worker_threads({{ props.worker_threads }}){% endif -%}
+    .enable_all().build()?
 {%- endif -%}
 """

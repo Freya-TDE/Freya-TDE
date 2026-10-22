@@ -4,7 +4,8 @@
 
 use std::collections::BTreeMap;
 
-use crate::component_type::ComponentType;
+use crate::backend::BackendDescriptor;
+use crate::component_type::{CodegenSpec, ComponentType};
 use crate::error::ModelError;
 use crate::property::PropertyDef;
 use crate::type_ref::TypeRef;
@@ -14,6 +15,10 @@ pub struct TypeRegistry {
     types: BTreeMap<TypeRef, ComponentType>,
     /// (backend, type) → extra properties this backend adds to the type.
     extensions: BTreeMap<(String, TypeRef), Vec<PropertyDef>>,
+    /// (backend, type) → how this backend generates code for the type
+    /// (e.g. egui's code for `core/Button`).
+    codegen: BTreeMap<(String, TypeRef), CodegenSpec>,
+    backends: BTreeMap<String, BackendDescriptor>,
 }
 
 impl TypeRegistry {
@@ -62,6 +67,47 @@ impl TypeRegistry {
                 .map(|p| p.for_backend(backend.clone())),
         );
         Ok(())
+    }
+
+    /// Sets how `backend` generates code for an existing type (usually a
+    /// core widget). Replaces an earlier spec of the same backend.
+    pub fn extend_codegen(
+        &mut self,
+        backend: impl Into<String>,
+        type_ref: &TypeRef,
+        spec: CodegenSpec,
+    ) -> Result<(), ModelError> {
+        if !self.types.contains_key(type_ref) {
+            return Err(ModelError::UnknownType(type_ref.clone()));
+        }
+        self.codegen
+            .insert((backend.into(), type_ref.clone()), spec);
+        Ok(())
+    }
+
+    /// The code generation of `type_ref` under `backend`: the backend's
+    /// extension, else the type's own.
+    pub fn codegen(&self, type_ref: &TypeRef, backend: &str) -> Option<&CodegenSpec> {
+        self.codegen
+            .get(&(backend.to_owned(), type_ref.clone()))
+            .or_else(|| self.types.get(type_ref)?.codegen.as_ref())
+    }
+
+    /// Registers a UI backend; its name must be unique.
+    pub fn register_backend(&mut self, backend: BackendDescriptor) -> Result<(), ModelError> {
+        if self.backends.contains_key(&backend.name) {
+            return Err(ModelError::DuplicateBackend(backend.name));
+        }
+        self.backends.insert(backend.name.clone(), backend);
+        Ok(())
+    }
+
+    pub fn backend(&self, name: &str) -> Option<&BackendDescriptor> {
+        self.backends.get(name)
+    }
+
+    pub fn backends(&self) -> impl Iterator<Item = &BackendDescriptor> {
+        self.backends.values()
     }
 
     pub fn get(&self, type_ref: &TypeRef) -> Option<&ComponentType> {

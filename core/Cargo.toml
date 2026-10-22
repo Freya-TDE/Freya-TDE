@@ -20,6 +20,4 @@ minijinja.workspace = true
 prettyplease.workspace = true
 syn.workspace = true
 toml_edit.workspace = true
-
-[dev-dependencies]
 serde_json.workspace = true

@@ -22,6 +22,8 @@ Komponenten-Packs, Codegen, Vorschau, Designer). Kennt kein UI-Toolkit.
 | Packs aus `pack.toml` (TOML) / packs from `pack.toml` | `pack::Pack`, `pack::load_all` |
 | Projektdatei (`.ptdr`, RON) / project file | `ProjectFile` |
 | Codegen: Probelauf, dann schreiben / dry run, then write | `codegen::generate`, `codegen::write` |
+| UI-Backend: Event-Loop, Form- und Run-Template / UI backend | `BackendDescriptor`, `EventLoop` |
+| Vorschau: Debug-Build, Fehler → Komponente / preview: debug build, errors → element | `preview::build`, `preview::parse` |
 | Gemeinsamer Widget-Kern / common widget core | `builtin`: Form, Container, Label, Button, Edit, CheckBox |
 
 ```rust
@@ -62,10 +64,18 @@ Erzeugtes Projekt / generated project:
 | Datei / file | Gehört / owner | Inhalt / content |
 |---|---|---|
 | `Cargo.toml` | Nutzer / user | Abhängigkeiten werden ergänzt, nichts entfernt / dependencies merged in |
-| `src/main.rs` | Nutzer / user | einmal angelegt: `main()`, `started(app)` |
-| `src/app.gen.rs` | Generator | `App`, `App::init` in Abhängigkeitsreihenfolge, `run()` |
-| `src/<form>.gen.rs` | Generator | Struct des Formulars, ein Feld je Komponente |
+| `src/main.rs` | Nutzer / user | einmal angelegt: `main()`, `started(&mut app)` |
+| `src/app.gen.rs` | Generator | `App`, `App::init` in Abhängigkeitsreihenfolge, `run()` mit Event-Loop des Backends |
+| `src/<form>.gen.rs` | Generator | Struct des Formulars, ein Feld je Komponente, plus `form`-Template des Backends (z. B. `ui()`) |
 | `src/<form>.rs` | Nutzer / user | einmal angelegt, danach nur fehlende Handler-Stubs angehängt |
+
+`*.gen.rs` schreibt nur Freya-TD (schreibgeschützt, mit Prüfsumme). Vorschau = Debug-Build:
+
+```rust
+let report = preview::build(&dir, Some(&generation))?;   // cargo build, JSON-Meldungen
+for e in report.errors() { println!("{:?} {}", e.element, e.message); }  // Fehler → Komponente
+if let Some(exe) = report.executable { std::process::Command::new(exe).spawn()?; }
+```
 
 Alle Ergebnisse und Diagnosen sind serialisierbar (`serde`), Diagnosen tragen einen
 stabilen `code` – für Werkzeuge und KI-Anbindung.

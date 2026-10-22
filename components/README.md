@@ -34,7 +34,9 @@ sqlx::postgres::PgPoolOptions::new()
     .await?
 """
 share = "clone"           # clone | arc | ref – wie abhängige Komponenten es bekommen
-# entry = "#[tokio::main]"  # nur die Runtime: Attribut für run()
+# entry = "#[tokio::main]"   # nur die Runtime: Attribut für run() bei async-Backends
+# runtime = "tokio::runtime::Builder::new_multi_thread().enable_all().build()?"
+#                             # nur die Runtime: von Hand gebaut, wenn die UI den Hauptthread belegt
 ```
 
 Im Template / in templates: `props.<name>` (Wert als Daten), `rust.<name>` (fertiger

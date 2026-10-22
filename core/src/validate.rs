@@ -38,6 +38,17 @@ impl<'a> ValidationContext<'a> {
             absolute_positioning: true,
         }
     }
+
+    /// The context for forms of `backend`: absolute positioning as its
+    /// descriptor allows (allowed if the backend is unknown).
+    pub fn for_backend(registry: &'a TypeRegistry, backend: &str) -> Self {
+        Self {
+            registry,
+            absolute_positioning: registry
+                .backend(backend)
+                .is_none_or(|b| b.absolute_positioning),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]

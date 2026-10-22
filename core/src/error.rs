@@ -16,6 +16,8 @@ pub enum ModelError {
     InvalidCapability(String),
     #[error("type {0} is registered twice")]
     DuplicateType(TypeRef),
+    #[error("backend {0:?} is registered twice")]
+    DuplicateBackend(String),
     #[error("unknown type {0}")]
     UnknownType(TypeRef),
     #[error("type {type_ref} already has a property {property:?}")]

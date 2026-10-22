@@ -101,9 +101,35 @@ pub struct CodegenSpec {
     #[serde(default)]
     pub share: ShareMode,
     /// Attribute for the generated entry function, e.g.
-    /// `#[tokio::main]`. A type with `entry` is the project's async runtime.
+    /// `#[tokio::main]`, used when the backend's event loop is async. A type
+    /// with `entry` or `runtime` is the project's async runtime.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub entry: Option<String>,
+    /// Expression building the runtime by hand (e.g.
+    /// `tokio::runtime::Builder::new_multi_thread().enable_all().build()?`),
+    /// used when the UI loop owns the main thread. The value must have a
+    /// `block_on` method.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runtime: Option<String>,
+}
+
+impl CodegenSpec {
+    /// A spec with the given field type and init expression.
+    pub fn new(rust_type: impl Into<String>, init: impl Into<String>) -> Self {
+        Self {
+            rust_type: rust_type.into(),
+            init: init.into(),
+            is_async: false,
+            share: ShareMode::default(),
+            entry: None,
+            runtime: None,
+        }
+    }
+
+    /// Does the type provide the async runtime?
+    pub fn is_runtime(&self) -> bool {
+        self.entry.is_some() || self.runtime.is_some()
+    }
 }
 
 /// The full description of a component type.

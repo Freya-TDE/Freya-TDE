@@ -488,3 +488,75 @@ init-file = "../secret.j2"
     let runtime = registry.get(&TypeRef::pack("tokio", "Runtime")).unwrap();
     assert!(runtime.codegen.as_ref().unwrap().entry.is_some());
 }
+
+#[test]
+fn backend_sections_are_checked() {
+    let backend = r#"
+[pack]
+name = "ui"
+version = "0.1.0"
+kind = "backend"
+license = "MIT"
+generated-code-license = "MIT"
+
+[backend]
+event-loop = "async"
+absolute-positioning = true
+platforms = ["linux", "amiga"]
+form = "{% for %}"
+run = "Ok(())"
+run-file = "run.j2"
+
+[[extend]]
+type = "core/Label"
+[extend.codegen]
+type = "String"
+init = "{{ rust.text }}.to_string()"
+runtime = "x()"
+"#;
+    let found = problems(backend);
+    assert_eq!(found.len(), 4, "{found:#?}");
+    assert!(
+        found
+            .iter()
+            .any(|p| p == "backend: unknown platform \"amiga\"")
+    );
+    assert!(
+        found
+            .iter()
+            .any(|p| p.starts_with("backend: template `form`: syntax error"))
+    );
+    assert!(
+        found
+            .iter()
+            .any(|p| p == "backend: give either `run` or `run-file`, not both")
+    );
+    assert!(
+        found
+            .iter()
+            .any(|p| p.ends_with("only non-visual components can provide `entry` or `runtime`"))
+    );
+
+    // Valid: descriptor and core-widget code generation are registered.
+    let valid = backend
+        .replace(", \"amiga\"", "")
+        .replace("{% for %}", "impl {{ form.struct }} {}")
+        .replace("run-file = \"run.j2\"\n", "")
+        .replace("runtime = \"x()\"\n", "");
+    let pack = Pack::parse(&valid).unwrap();
+    let mut registry = TypeRegistry::with_builtins();
+    pack.register(&mut registry).unwrap();
+    let descriptor = registry.backend("ui").unwrap();
+    assert_eq!(descriptor.event_loop, EventLoop::Async);
+    assert!(descriptor.absolute_positioning);
+    let label = builtin::label();
+    assert_eq!(registry.codegen(&label, "ui").unwrap().rust_type, "String");
+    assert!(registry.codegen(&label, "other").is_none());
+
+    // Component packs cannot describe a backend.
+    let found = problems(&with_header("[backend]\nevent-loop = \"async\"\n"));
+    assert_eq!(
+        found,
+        ["backend: only packs with kind = \"backend\" may have [backend]"]
+    );
+}

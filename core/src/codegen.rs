@@ -12,20 +12,27 @@
 //!
 //! | File | Owner | Content |
 //! |---|---|---|
-//! | `Cargo.toml` | user | dependencies of all used types are merged in; nothing is removed, formatting and comments stay |
-//! | `src/main.rs` | user | created once: `main()` and `started(app)` |
-//! | `src/app.gen.rs` | generator | module list, `App` with all forms, `App::init` in dependency order, `run()` |
-//! | `src/<form>.gen.rs` | generator | the form's struct with one field per generated component |
+//! | `Cargo.toml` | user | dependencies of all used types and the backend are merged in; nothing is removed, formatting and comments stay |
+//! | `src/main.rs` | user | created once: `main()` and `started(&mut app)` |
+//! | `src/app.gen.rs` | generator | module list, `App` with all forms, `App::init` in dependency order, `run()` with the event loop |
+//! | `src/<form>.gen.rs` | generator | the form's struct with one field per generated component, plus the backend's `form` template (e.g. `ui()` calling the handlers) |
 //! | `src/<form>.rs` | user | created once with `include!("<form>.gen.rs")` and event handler stubs; later only missing stubs are appended |
 //!
-//! `*.gen.rs` files are overwritten on every run. User files are never
-//! overwritten – they are created once, and missing handler stubs are
-//! appended as a new `impl` block.
+//! Only Freya-TD writes `*.gen.rs`: [`write()`] makes them read-only, and
+//! each carries a checksum of its content. A generated file edited
+//! elsewhere is reported ([`CodegenIssue::GeneratedFileModified`]) before
+//! it is overwritten. User files are never overwritten.
+//!
+//! [`Generation::source_map`] maps lines of generated files to elements, so
+//! compiler errors of a debug build point back to the designer
+//! ([`crate::preview`]).
 //!
 //! # Templates
 //!
 //! A component type's [`CodegenSpec`] holds MiniJinja templates (undefined
-//! values are errors). Their context:
+//! values are errors). A UI backend gives the specs of its widgets and of
+//! the core widgets (`[[extend]]`). Context of `type`, `init`, `entry` and
+//! `runtime`:
 //!
 //! | Name | Content |
 //! |---|---|
@@ -34,14 +41,31 @@
 //! | `rust.<property>` | the value as a Rust expression: literals, `vec![…]`, the dependency for references (by the target's [`ShareMode`]), `cfg` blocks for platform overrides; none if unset or unconnected |
 //! | `events.<event>` | the handler name or none |
 //!
-//! Every rendered type, expression and attribute is parsed with `syn`;
-//! errors are reported for the component and template part concerned.
+//! The backend's `form` template ([`crate::BackendDescriptor::form`]) gets
+//! `form` (`{name, struct, data_module}`), `root` (the widget tree or none),
+//! `widgets` (all widgets, depth-first) and `components` (non-visual). Each
+//! node has `name`, `type` (`"core/Button"`), `type_name` (`"Button"`),
+//! `field` (has a generated field), `props`, `rust` (references as
+//! `self.<name>`), `events`, `children`, `placement`
+//! (`{kind: "layout", stretch, align, cell}` or
+//! `{kind: "absolute", x, y, width, height}`) and `layout`
+//! (`{kind, columns, name, spacing, padding}` or none).
 //!
-//! # Async
+//! The backend's `run` template gets `forms` (list of `{name, struct,
+//! data_module}`), `app` (the variable holding the `App`) and `runtime`
+//! (the runtime variable or none). It must evaluate to `Result<(), Error>`.
 //!
-//! A component type with an `entry` attribute (e.g. a Tokio runtime with
-//! `#[tokio::main]`) makes `App::init` and `run` async. Types whose `init`
-//! awaits (`is_async`) need such a runtime in the project.
+//! Every rendered piece is parsed with `syn`; errors are reported for the
+//! component and template part concerned.
+//!
+//! # Event loop and async
+//!
+//! The backend's [`EventLoop`] decides. `main-thread` (default): `run()` is
+//! synchronous, builds the runtime with the runtime component's `runtime`
+//! template, runs `App::init` via `block_on`, calls `started` and then the
+//! UI loop. `async`: `run()` carries the runtime's `entry` attribute
+//! (`#[tokio::main]`) and `started` is async. Types whose `init` awaits
+//! (`is_async`) need a runtime component in the project.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::{self, Write as _};
@@ -52,6 +76,7 @@ use minijinja::{AutoEscape, Environment, UndefinedBehavior};
 use serde::Serialize;
 use toml_edit::{Array, DocumentMut, InlineTable, Item, Table};
 
+use crate::backend::{BackendDescriptor, EventLoop};
 use crate::component_type::{CargoDependency, CodegenSpec, ComponentType, ShareMode};
 use crate::element::Element;
 use crate::event::EventParam;
@@ -64,9 +89,14 @@ use crate::registry::TypeRegistry;
 use crate::type_ref::TypeRef;
 use crate::validate::{Issue, Severity, ValidationContext};
 use crate::value::Value;
+use crate::widget::{LayoutKind, Placement, Widget};
 
 /// First line of every generated file.
 pub const GENERATED_MARK: &str = "// @generated by Freya-TD";
+
+/// Start of the second line of every generated file, followed by the
+/// checksum of everything after the header.
+pub const CHECKSUM_MARK: &str = "// checksum: fnv1a64:";
 
 /// Form names that would clash with the generated files.
 const RESERVED_FORM_NAMES: &[&str] = &["app", "main"];
@@ -147,9 +177,12 @@ pub enum CodegenIssue {
     Project(ProjectIssue),
     /// A non-visual type has no code generation; the component is left out.
     NoCodegen(TypeRef),
+    /// The project's UI backend is not loaded; the project is generated
+    /// without UI code and event loop.
+    NoBackendDescriptor(String),
     /// A template could not be rendered.
     Template {
-        /// `type`, `init` or `entry`.
+        /// `type`, `init`, `entry`, `runtime`, or the backend's `form` / `run`.
         part: String,
         message: String,
         /// Line within the template.
@@ -160,8 +193,14 @@ pub enum CodegenIssue {
     /// A component awaits during initialisation, but no component provides
     /// an async runtime (`entry`).
     AsyncWithoutRuntime,
-    /// More than one component provides the entry point.
+    /// More than one component provides the async runtime.
     MultipleRuntimes(Vec<ComponentPath>),
+    /// The runtime component has no template for the backend's event loop
+    /// (`entry` for `async`, `runtime` for `main-thread`).
+    RuntimeUnsupported { event_loop: EventLoop },
+    /// A generated file was changed outside Freya-TD and will be
+    /// overwritten (`foreign`: it was never generated – nothing is written).
+    GeneratedFileModified { file: String, foreign: bool },
     /// One handler serves events with different signatures.
     HandlerConflict {
         handler: HandlerName,
@@ -196,6 +235,35 @@ impl fmt::Display for CodegenIssue {
         match self {
             CodegenIssue::Form(issue) => issue.fmt(f),
             CodegenIssue::Project(issue) => issue.fmt(f),
+            CodegenIssue::NoBackendDescriptor(b) => write!(
+                f,
+                "UI backend {b:?} is not loaded; no UI code and no event loop are generated"
+            ),
+            CodegenIssue::RuntimeUnsupported { event_loop } => write!(
+                f,
+                "the runtime has no template for the {} event loop (`{}`)",
+                match event_loop {
+                    EventLoop::MainThread => "main-thread",
+                    EventLoop::Async => "async",
+                },
+                match event_loop {
+                    EventLoop::MainThread => "runtime",
+                    EventLoop::Async => "entry",
+                }
+            ),
+            CodegenIssue::GeneratedFileModified { file, foreign } => {
+                if *foreign {
+                    write!(
+                        f,
+                        "{file} was not generated by Freya-TD; it is not overwritten"
+                    )
+                } else {
+                    write!(
+                        f,
+                        "{file} was changed outside Freya-TD; the changes are overwritten"
+                    )
+                }
+            }
             CodegenIssue::NoCodegen(t) => {
                 write!(
                     f,
@@ -220,7 +288,7 @@ impl fmt::Display for CodegenIssue {
                 let paths: Vec<String> = paths.iter().map(ToString::to_string).collect();
                 write!(
                     f,
-                    "only one component may provide the entry point: {}",
+                    "only one component may provide the async runtime: {}",
                     paths.join(", ")
                 )
             }
@@ -278,12 +346,24 @@ impl fmt::Display for CodegenDiagnostic {
     }
 }
 
+/// Lines of a generated file that belong to one element.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SourceSpan {
+    pub file: String,
+    /// First and last line, 1-based, inclusive.
+    pub first_line: usize,
+    pub last_line: usize,
+    pub element: ComponentPath,
+}
+
 /// The result of [`generate`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Generation {
     pub files: Vec<GeneratedFile>,
     /// Generated components in initialisation order.
     pub order: Vec<ComponentPath>,
+    /// Which lines of the generated files belong to which element.
+    pub source_map: Vec<SourceSpan>,
     /// Form validation, dependency graph and code generation findings.
     pub diagnostics: Vec<CodegenDiagnostic>,
 }
@@ -302,6 +382,14 @@ impl Generation {
     /// Files [`write()`] would create or update.
     pub fn changed(&self) -> impl Iterator<Item = &GeneratedFile> {
         self.files.iter().filter(|f| f.change != Change::Unchanged)
+    }
+
+    /// The element a line of a generated file belongs to.
+    pub fn element_at(&self, file: &str, line: usize) -> Option<&ComponentPath> {
+        self.source_map
+            .iter()
+            .find(|s| s.file == file && (s.first_line..=s.last_line).contains(&line))
+            .map(|s| &s.element)
     }
 }
 
@@ -350,10 +438,58 @@ pub fn write(dir: &Path, generation: &Generation) -> Result<Vec<String>, WriteEr
         // half-written file.
         let temp = target.with_extension("tdr-tmp");
         std::fs::write(&temp, &file.content).map_err(|e| io(&temp, e))?;
+        if file.kind == FileKind::Generated {
+            // Only Freya-TD writes generated files.
+            set_read_only(&temp, true).map_err(|e| io(&temp, e))?;
+            if target.exists() {
+                // Windows cannot replace a read-only file.
+                set_read_only(&target, false).map_err(|e| io(&target, e))?;
+            }
+        }
         std::fs::rename(&temp, &target).map_err(|e| io(&target, e))?;
         written.push(file.path.clone());
     }
     Ok(written)
+}
+
+fn set_read_only(path: &Path, read_only: bool) -> std::io::Result<()> {
+    let mut permissions = std::fs::metadata(path)?.permissions();
+    #[allow(clippy::permissions_set_readonly_false)]
+    permissions.set_readonly(read_only);
+    std::fs::set_permissions(path, permissions)
+}
+
+/// FNV-1a, 64 bit: stable across Rust versions and platforms.
+fn checksum(text: &str) -> String {
+    let hash = text.bytes().fold(0xcbf2_9ce4_8422_2325_u64, |h, b| {
+        (h ^ u64::from(b)).wrapping_mul(0x0000_0100_0000_01b3)
+    });
+    format!("{hash:016x}")
+}
+
+/// Header plus body of a generated file.
+fn generated_file(what: &str, body: &str) -> String {
+    format!(
+        "{GENERATED_MARK} from {what} – do not edit, changes are overwritten.\n{CHECKSUM_MARK}{}\n\n{body}",
+        checksum(body)
+    )
+}
+
+/// Was an existing generated file changed after it was written? `None`
+/// = unchanged, `Some(true)` = never generated, `Some(false)` = edited.
+fn tampered(content: &str) -> Option<bool> {
+    let mut lines = content.splitn(3, '\n');
+    let (Some(mark), Some(sum), Some(rest)) = (lines.next(), lines.next(), lines.next()) else {
+        return Some(true);
+    };
+    if !mark.starts_with(GENERATED_MARK) {
+        return Some(true);
+    }
+    let body = rest.strip_prefix('\n').unwrap_or(rest);
+    match sum.strip_prefix(CHECKSUM_MARK) {
+        Some(sum) if sum == checksum(body) => None,
+        _ => Some(false),
+    }
 }
 
 // --- Templates ---------------------------------------------------------------------------
@@ -564,6 +700,88 @@ struct Generated {
     statement: String,
     is_async: bool,
     entry: Option<String>,
+    runtime: Option<String>,
+    is_runtime: bool,
+}
+
+/// How references are written in a template's `rust` values.
+type Resolve<'r> = &'r dyn Fn(&ComponentPath) -> Option<String>;
+
+/// `props`, `rust` and `events` of an element.
+fn element_data(
+    form: &Form,
+    element: &dyn Element,
+    ty: &ComponentType,
+    registry: &TypeRegistry,
+    resolve: Resolve<'_>,
+) -> (JValue, JValue, JValue) {
+    let component = element.component();
+    let mut props = BTreeMap::new();
+    let mut rust = BTreeMap::new();
+    for def in registry.property_defs(&ty.type_ref, &form.backend) {
+        let value = match (component.get(&def.name), &def.default) {
+            (Some(value), _) => value.clone(),
+            (None, Some(default)) => PropertyValue::new(default.clone()),
+            (None, None) => continue,
+        };
+        props.insert(def.name.clone(), data(&value.value));
+        rust.insert(
+            def.name.clone(),
+            property_expr(&value, resolve).map_or(JValue::from(()), JValue::from),
+        );
+    }
+    let events: BTreeMap<String, JValue> = ty
+        .events
+        .iter()
+        .map(|e| {
+            let handler = component.events.get(&e.name);
+            (
+                e.name.clone(),
+                handler.map_or(JValue::from(()), |h| JValue::from(h.as_str())),
+            )
+        })
+        .collect();
+    (
+        JValue::from(props),
+        JValue::from(rust),
+        JValue::from(events),
+    )
+}
+
+/// Renders a template; on failure the issue is recorded and `None`
+/// returned.
+fn render(
+    env: &Environment<'static>,
+    part: &str,
+    source: &str,
+    context: &JValue,
+    issues: &mut Vec<CodegenIssue>,
+) -> Option<String> {
+    let rendered = env
+        .template_from_named_str(part, source)
+        .and_then(|t| t.render(context));
+    match rendered {
+        Ok(text) => Some(text.trim().to_owned()),
+        Err(e) => {
+            let (message, line) = describe(&e);
+            issues.push(CodegenIssue::Template {
+                part: part.to_owned(),
+                message,
+                line,
+            });
+            None
+        }
+    }
+}
+
+/// Records an [`CodegenIssue::InvalidRust`] if `result` failed.
+fn check_rust(issues: &mut Vec<CodegenIssue>, part: &str, text: &str, result: syn::Result<()>) {
+    if let Err(e) = result {
+        issues.push(CodegenIssue::InvalidRust {
+            part: format!("rendered `{part}` ({text})"),
+            message: e.to_string(),
+        });
+    }
 }
 
 /// Renders the templates of one component.
@@ -582,31 +800,7 @@ fn render_component(
             .get(&target.qualified(&form.name))
             .map(|(var, share)| share_expr(var, *share))
     };
-    let mut props = BTreeMap::new();
-    let mut rust = BTreeMap::new();
-    for def in registry.property_defs(&ty.type_ref, &form.backend) {
-        let value = match (component.get(&def.name), &def.default) {
-            (Some(value), _) => value.clone(),
-            (None, Some(default)) => PropertyValue::new(default.clone()),
-            (None, None) => continue,
-        };
-        props.insert(def.name.clone(), data(&value.value));
-        rust.insert(
-            def.name.clone(),
-            property_expr(&value, &resolve).map_or(JValue::from(()), JValue::from),
-        );
-    }
-    let events: BTreeMap<String, JValue> = ty
-        .events
-        .iter()
-        .map(|e| {
-            let handler = component.events.get(&e.name);
-            (
-                e.name.clone(),
-                handler.map_or(JValue::from(()), |h| JValue::from(h.as_str())),
-            )
-        })
-        .collect();
+    let (props, rust, events) = element_data(form, element, ty, registry, &resolve);
     let context = minijinja::context! {
         name => component.name.as_str(),
         form => form.name.as_str(),
@@ -616,58 +810,51 @@ fn render_component(
     };
 
     let mut issues = Vec::new();
-    let mut render = |part: &str, source: &str| -> Option<String> {
-        let rendered = env
-            .template_from_named_str(part, source)
-            .and_then(|t| t.render(&context));
-        match rendered {
-            Ok(text) => Some(text.trim().to_owned()),
-            Err(e) => {
-                let (message, line) = describe(&e);
-                issues.push(CodegenIssue::Template {
-                    part: part.to_owned(),
-                    message,
-                    line,
-                });
-                None
-            }
-        }
-    };
-    let rust_type = render("type", &spec.rust_type);
-    let init = render("init", &spec.init);
-    let entry = spec.entry.as_ref().and_then(|e| render("entry", e));
+    let rust_type = render(env, "type", &spec.rust_type, &context, &mut issues);
+    let init = render(env, "init", &spec.init, &context, &mut issues);
+    let entry = spec
+        .entry
+        .as_ref()
+        .and_then(|e| render(env, "entry", e, &context, &mut issues));
+    let runtime = spec
+        .runtime
+        .as_ref()
+        .and_then(|r| render(env, "runtime", r, &context, &mut issues));
 
-    let mut check = |part: &str, text: &str, result: Result<(), String>| {
-        if let Err(message) = result {
-            issues.push(CodegenIssue::InvalidRust {
-                part: format!("rendered `{part}` ({text})"),
-                message,
-            });
-        }
-    };
-    let syntax = |e: syn::Error| e.to_string();
     if let Some(t) = &rust_type {
-        check(
+        check_rust(
+            &mut issues,
             "type",
             t,
-            syn::parse_str::<syn::Type>(t).map(drop).map_err(syntax),
+            syn::parse_str::<syn::Type>(t).map(drop),
         );
     }
     if let Some(i) = &init {
-        check(
+        check_rust(
+            &mut issues,
             "init",
             i,
-            syn::parse_str::<syn::Expr>(i).map(drop).map_err(syntax),
+            syn::parse_str::<syn::Expr>(i).map(drop),
+        );
+    }
+    if let Some(r) = &runtime {
+        check_rust(
+            &mut issues,
+            "runtime",
+            r,
+            syn::parse_str::<syn::Expr>(r).map(drop),
         );
     }
     if let Some(e) = &entry {
-        let result = match syn::parse_str::<syn::ItemFn>(&format!("{e} fn entry() {{}}")) {
-            Ok(f) if f.attrs.is_empty() => {
-                Err("expected an attribute such as #[tokio::main]".to_owned())
-            }
-            other => other.map(drop).map_err(syntax),
+        let parsed = syn::parse_str::<syn::ItemFn>(&format!("{e} fn entry() {{}}"));
+        let result = match parsed {
+            Ok(f) if f.attrs.is_empty() => Err(syn::Error::new(
+                f.sig.ident.span(),
+                "expected an attribute such as #[tokio::main]",
+            )),
+            other => other.map(drop),
         };
-        check("entry", e, result);
+        check_rust(&mut issues, "entry", e, result);
     }
     let (Some(rust_type), Some(init), true) = (rust_type, init, issues.is_empty()) else {
         return Err(issues);
@@ -690,7 +877,29 @@ fn render_component(
         statement,
         is_async: spec.is_async,
         entry,
+        runtime,
+        is_runtime: spec.is_runtime(),
     })
+}
+
+/// How `run()` starts the program.
+enum Start {
+    /// Synchronous `run()`, no runtime.
+    Plain,
+    /// Async `run()` with this entry attribute.
+    Entry(String),
+    /// Synchronous `run()` that builds the runtime with this expression.
+    Runtime(String),
+}
+
+impl Start {
+    fn init_is_async(&self) -> bool {
+        !matches!(self, Start::Plain)
+    }
+
+    fn started_is_async(&self) -> bool {
+        matches!(self, Start::Entry(_))
+    }
 }
 
 /// Generates the project. See the [module documentation](self).
@@ -701,9 +910,16 @@ pub fn generate(
     source: &dyn FileSource,
 ) -> Generation {
     let mut out = Diagnostics::default();
+    let backend = registry.backend(&project.backend);
+    if backend.is_none() {
+        out.warning(
+            None,
+            CodegenIssue::NoBackendDescriptor(project.backend.clone()),
+        );
+    }
 
     // Checks of the model.
-    let context = ValidationContext::new(registry);
+    let context = ValidationContext::for_backend(registry, &project.backend);
     for form in forms {
         for d in form.validate(&context) {
             let element = d.element.map(|e| ComponentPath::on(form.name.clone(), e));
@@ -730,8 +946,8 @@ pub fn generate(
         let Some(ty) = registry.get(element.type_ref()) else {
             continue;
         };
-        let Some(spec) = &ty.codegen else {
-            // Widgets are generated by the UI backend.
+        let Some(spec) = registry.codegen(&ty.type_ref, &form.backend) else {
+            // Widgets without code are drawn by the backend's form template.
             if !ty.kind.is_widget() {
                 out.warning(
                     Some(path.clone()),
@@ -753,35 +969,171 @@ pub fn generate(
         }
     }
 
-    // The async runtime, if any.
-    let entries: Vec<&Generated> = generated.iter().filter(|g| g.entry.is_some()).collect();
-    if entries.len() > 1 {
-        out.error(
-            None,
-            CodegenIssue::MultipleRuntimes(entries.iter().map(|g| g.path.clone()).collect()),
-        );
-    }
-    let entry = entries.first().and_then(|g| g.entry.clone());
-    if entry.is_none() {
-        for g in generated.iter().filter(|g| g.is_async) {
-            out.error(Some(g.path.clone()), CodegenIssue::AsyncWithoutRuntime);
-        }
+    let start = start(backend, &generated, &mut out);
+    let mut cargo = analysis.cargo.clone();
+    if let Some(backend) = backend {
+        merge_cargo(&mut cargo, &backend.cargo);
     }
 
     let mut files = vec![
-        manifest(project, &analysis.cargo, source, &mut out),
-        main_file(entry.is_some(), source, &mut out),
-        app_file(forms, &generated, entry.as_deref(), source, &mut out),
+        manifest(project, &cargo, source, &mut out),
+        main_file(start.started_is_async(), source, &mut out),
+        app_file(forms, &generated, &start, backend, &env, source, &mut out),
     ];
     for form in forms {
-        files.push(form_gen_file(form, &generated, source, &mut out));
+        files.push(form_gen_file(
+            form, &generated, registry, backend, &env, source, &mut out,
+        ));
         files.push(form_user_file(form, registry, source, &mut out));
+    }
+
+    let mut source_map = Vec::new();
+    for file in files.iter().filter(|f| f.kind == FileKind::Generated) {
+        map_sources(file, forms, &generated, &mut source_map);
+        if let Some(previous) = &file.previous
+            && let Some(foreign) = tampered(previous)
+        {
+            let issue = CodegenIssue::GeneratedFileModified {
+                file: file.path.clone(),
+                foreign,
+            };
+            if foreign {
+                out.error(None, issue);
+            } else {
+                out.warning(None, issue);
+            }
+        }
     }
 
     Generation {
         files,
         order: generated.into_iter().map(|g| g.path).collect(),
+        source_map,
         diagnostics: out.0,
+    }
+}
+
+/// Decides how `run()` starts: from the backend's event loop and the
+/// project's runtime component.
+fn start(
+    backend: Option<&BackendDescriptor>,
+    generated: &[Generated],
+    out: &mut Diagnostics,
+) -> Start {
+    let runtimes: Vec<&Generated> = generated.iter().filter(|g| g.is_runtime).collect();
+    if runtimes.len() > 1 {
+        out.error(
+            None,
+            CodegenIssue::MultipleRuntimes(runtimes.iter().map(|g| g.path.clone()).collect()),
+        );
+    }
+    let Some(runtime) = runtimes.first() else {
+        for g in generated.iter().filter(|g| g.is_async) {
+            out.error(Some(g.path.clone()), CodegenIssue::AsyncWithoutRuntime);
+        }
+        return Start::Plain;
+    };
+    // Without a backend there is no UI loop: the runtime may own `run()`.
+    let event_loop = backend.map_or(EventLoop::Async, |b| b.event_loop);
+    let chosen = match event_loop {
+        EventLoop::Async => runtime.entry.clone().map(Start::Entry),
+        EventLoop::MainThread => runtime.runtime.clone().map(Start::Runtime),
+    };
+    chosen.unwrap_or_else(|| {
+        out.error(
+            Some(runtime.path.clone()),
+            CodegenIssue::RuntimeUnsupported { event_loop },
+        );
+        Start::Plain
+    })
+}
+
+/// Does `line` contain `word` not as part of a longer identifier?
+fn contains_word(line: &str, word: &str) -> bool {
+    let ident = |c: char| c == '_' || c.is_alphanumeric();
+    line.match_indices(word)
+        .any(|(at, _)| !line[..at].ends_with(ident) && !line[at + word.len()..].starts_with(ident))
+}
+
+/// Adds `extra` to `cargo` (features are merged), sorted by crate name.
+fn merge_cargo(cargo: &mut Vec<CargoDependency>, extra: &[CargoDependency]) {
+    for dep in extra {
+        match cargo.iter_mut().find(|c| c.crate_name == dep.crate_name) {
+            Some(existing) => {
+                for feature in &dep.features {
+                    if !existing.features.contains(feature) {
+                        existing.features.push(feature.clone());
+                    }
+                }
+                existing.features.sort();
+                existing.default_features |= dep.default_features;
+            }
+            None => cargo.push(dep.clone()),
+        }
+    }
+    cargo.sort_by(|a, b| a.crate_name.cmp(&b.crate_name));
+}
+
+/// Records which lines of a generated file belong to which element.
+fn map_sources(
+    file: &GeneratedFile,
+    forms: &[Form],
+    generated: &[Generated],
+    out: &mut Vec<SourceSpan>,
+) {
+    let lines: Vec<&str> = file.content.lines().collect();
+    let mut owner: Vec<Option<ComponentPath>> = vec![None; lines.len()];
+    if file.path == APP {
+        // `let form__name = …;` up to the next statement.
+        let mut current: Option<ComponentPath> = None;
+        for (i, line) in lines.iter().enumerate() {
+            let trimmed = line.trim_start();
+            if trimmed.starts_with("let ") || trimmed.starts_with("Ok(") || trimmed == "}" {
+                current = generated
+                    .iter()
+                    .find(|g| trimmed.starts_with(&format!("let {} ", g.var)))
+                    .map(|g| g.path.clone());
+            }
+            owner[i] = current.clone();
+        }
+    } else if let Some(form) = forms
+        .iter()
+        .find(|f| file.path == format!("src/{}.gen.rs", f.name))
+    {
+        // Fields, and lines of the form template naming the element or
+        // calling one of its handlers.
+        let elements = form.elements();
+        for (i, line) in lines.iter().enumerate() {
+            if line.trim_start().starts_with("//") {
+                continue;
+            }
+            owner[i] = elements.iter().find_map(|e| {
+                let mentioned = contains_word(line, e.name().as_str())
+                    || e.component()
+                        .events
+                        .values()
+                        .any(|h| contains_word(line, &format!("self.{h}")));
+                mentioned.then(|| ComponentPath::on(form.name.clone(), e.name().clone()))
+            });
+        }
+    }
+    let mut i = 0;
+    while i < lines.len() {
+        let Some(element) = owner[i].clone() else {
+            i += 1;
+            continue;
+        };
+        let first = i;
+        while i + 1 < lines.len() && owner[i + 1].as_ref() == Some(&element) {
+            i += 1;
+        }
+        out.push(SourceSpan {
+            file: file.path.clone(),
+            first_line: first + 1,
+            last_line: i + 1,
+            element,
+        });
+        i += 1;
     }
 }
 
@@ -816,10 +1168,6 @@ fn file(path: &str, kind: FileKind, content: String, source: &dyn FileSource) ->
         content,
         previous,
     }
-}
-
-fn generated_header(what: &str) -> String {
-    format!("{GENERATED_MARK} from {what} – do not edit, changes are overwritten.\n\n")
 }
 
 // --- Cargo.toml ----------------------------------------------------------------------------
@@ -957,7 +1305,7 @@ const APP: &str = "src/app.gen.rs";
 
 fn started_signature(is_async: bool) -> String {
     let asyncness = if is_async { "async " } else { "" };
-    format!("{asyncness}fn started(app: app::App) -> Result<(), app::Error>")
+    format!("{asyncness}fn started(app: &mut app::App) -> Result<(), app::Error>")
 }
 
 fn main_file(is_async: bool, source: &dyn FileSource, out: &mut Diagnostics) -> GeneratedFile {
@@ -977,7 +1325,7 @@ fn main() {{
     }}
 }}
 
-/// Called once all components are created.
+/// Called once all components are created, before the UI starts.
 {expected} {{
     let _ = app;
     Ok(())
@@ -1005,10 +1353,21 @@ fn main() {{
     file(MAIN, FileKind::User, existing, source)
 }
 
+/// `{name, struct, data_module}` of a form, for templates.
+fn form_data(form: &Form) -> JValue {
+    minijinja::context! {
+        name => form.name.as_str(),
+        struct => pascal_case(form.name.as_str()),
+        data_module => form.is_data_module(),
+    }
+}
+
 fn app_file(
     forms: &[Form],
     generated: &[Generated],
-    entry: Option<&str>,
+    start: &Start,
+    backend: Option<&BackendDescriptor>,
+    env: &Environment<'static>,
     source: &dyn FileSource,
     out: &mut Diagnostics,
 ) -> GeneratedFile {
@@ -1031,7 +1390,7 @@ fn app_file(
             pascal_case(form.name.as_str())
         );
     }
-    let asyncness = if entry.is_some() { "async " } else { "" };
+    let asyncness = if start.init_is_async() { "async " } else { "" };
     let _ = write!(
         code,
         "}}\nimpl App {{\n\
@@ -1058,25 +1417,57 @@ fn app_file(
         code.push_str("},\n");
     }
     code.push_str("})\n}\n}\n");
-    match entry {
-        Some(entry) => {
+
+    // The event loop of the backend.
+    let runtime_var = matches!(start, Start::Runtime(_)).then_some("runtime");
+    let ui = backend.and_then(|b| b.run.as_ref()).and_then(|template| {
+        let context = minijinja::context! {
+            forms => forms.iter().map(form_data).collect::<Vec<_>>(),
+            app => "app",
+            runtime => runtime_var,
+        };
+        let mut issues = Vec::new();
+        let rendered = render(env, "run", template, &context, &mut issues).filter(|text| {
+            let parsed = syn::parse_str::<syn::Block>(&format!("{{ {text} }}")).map(drop);
+            check_rust(&mut issues, "run", text, parsed);
+            issues.is_empty()
+        });
+        for issue in issues {
+            out.error(None, issue);
+        }
+        rendered
+    });
+    let ui = ui.unwrap_or_else(|| "Ok(())".to_owned());
+
+    code.push_str("/// Creates the application, calls `started` in `main.rs` and runs the UI.\n");
+    match start {
+        Start::Entry(entry) => {
             let _ = write!(
                 code,
-                "/// Creates the application and hands it to `started` in `main.rs`.\n\
-                 {entry}\n\
-                 pub async fn run() -> Result<(), Error> {{\n\
-                 let app = App::init().await?;\n\
-                 crate::started(app).await\n}}\n"
+                "{entry}\npub async fn run() -> Result<(), Error> {{\n\
+                 let mut app = App::init().await?;\n\
+                 crate::started(&mut app).await?;\n{ui}\n}}\n"
             );
         }
-        None => code.push_str(
-            "/// Creates the application and hands it to `started` in `main.rs`.\n\
-             pub fn run() -> Result<(), Error> {\n\
-             let app = App::init()?;\n\
-             crate::started(app)\n}\n",
-        ),
+        Start::Runtime(runtime) => {
+            let _ = write!(
+                code,
+                "pub fn run() -> Result<(), Error> {{\n\
+                 let runtime = {runtime};\n\
+                 let mut app = runtime.block_on(App::init())?;\n\
+                 crate::started(&mut app)?;\n{ui}\n}}\n"
+            );
+        }
+        Start::Plain => {
+            let _ = write!(
+                code,
+                "pub fn run() -> Result<(), Error> {{\n\
+                 let mut app = App::init()?;\n\
+                 crate::started(&mut app)?;\n{ui}\n}}\n"
+            );
+        }
     }
-    let content = generated_header("the project") + &format_rust(APP, &code, out);
+    let content = generated_file("the project", &format_rust(APP, &code, out));
     file(APP, FileKind::Generated, content, source)
 }
 
@@ -1096,9 +1487,104 @@ fn form_components<'g>(form: &Form, generated: &'g [Generated]) -> Vec<&'g Gener
 
 // --- Forms ----------------------------------------------------------------------------------
 
+/// Template data of the form's elements; references become `self.<name>`.
+struct FormData<'a> {
+    form: &'a Form,
+    registry: &'a TypeRegistry,
+    fields: BTreeSet<&'a ComponentName>,
+}
+
+impl FormData<'_> {
+    fn resolve(&self, target: &ComponentPath) -> Option<String> {
+        let own = target.target_form(&self.form.name) == &self.form.name;
+        (own && self.fields.contains(&target.name)).then(|| format!("self.{}", target.name))
+    }
+
+    fn node(
+        &self,
+        element: &dyn Element,
+        children: Vec<JValue>,
+        widget: Option<&Widget>,
+    ) -> JValue {
+        let type_ref = element.type_ref();
+        let (props, rust, events) = match self.registry.get(type_ref) {
+            Some(ty) => element_data(self.form, element, ty, self.registry, &|t| self.resolve(t)),
+            None => (JValue::from(()), JValue::from(()), JValue::from(())),
+        };
+        minijinja::context! {
+            name => element.name().as_str(),
+            type => type_ref.to_string(),
+            type_name => type_ref.name.as_str(),
+            field => self.fields.contains(element.name()),
+            props => props,
+            rust => rust,
+            events => events,
+            children => children,
+            placement => widget.map(|w| placement_data(&w.visual.placement)),
+            layout => widget.and_then(|w| w.visual.layout.as_ref()).map(|l| {
+                let (kind, columns, name) = match &l.kind {
+                    LayoutKind::Vertical => ("vertical", None, None),
+                    LayoutKind::Horizontal => ("horizontal", None, None),
+                    LayoutKind::Grid { columns } => ("grid", Some(*columns), None),
+                    LayoutKind::Stack => ("stack", None, None),
+                    LayoutKind::Absolute => ("absolute", None, None),
+                    LayoutKind::Custom(n) => ("custom", None, Some(n.as_str())),
+                };
+                minijinja::context! {
+                    kind => kind,
+                    columns => columns,
+                    name => name,
+                    spacing => l.spacing,
+                    padding => minijinja::context! {
+                        left => l.padding.left,
+                        top => l.padding.top,
+                        right => l.padding.right,
+                        bottom => l.padding.bottom,
+                    },
+                }
+            }),
+        }
+    }
+
+    fn widget(&self, widget: &Widget) -> JValue {
+        let children = widget.children.iter().map(|c| self.widget(c)).collect();
+        self.node(widget, children, Some(widget))
+    }
+}
+
+fn placement_data(placement: &Placement) -> JValue {
+    match placement {
+        Placement::Layout {
+            stretch,
+            align,
+            cell,
+        } => minijinja::context! {
+            kind => "layout",
+            stretch => stretch,
+            align => format!("{align:?}"),
+            cell => cell.as_ref().map(|c| minijinja::context! {
+                row => c.row,
+                column => c.column,
+                row_span => c.row_span,
+                column_span => c.column_span,
+            }),
+        },
+        Placement::Absolute { position, size } => minijinja::context! {
+            kind => "absolute",
+            x => position.x,
+            y => position.y,
+            width => size.width,
+            height => size.height,
+        },
+    }
+}
+
 fn form_gen_file(
     form: &Form,
     generated: &[Generated],
+    registry: &TypeRegistry,
+    backend: Option<&BackendDescriptor>,
+    env: &Environment<'static>,
     source: &dyn FileSource,
     out: &mut Diagnostics,
 ) -> GeneratedFile {
@@ -1108,6 +1594,7 @@ fn form_gen_file(
     } else {
         "Form"
     };
+    let components = form_components(form, generated);
     let mut code = format!(
         "/// {what} `{}`: its components, created by `App::init`.\n\
          #[allow(dead_code)]\n\
@@ -1115,7 +1602,7 @@ fn form_gen_file(
         form.name,
         pascal_case(form.name.as_str())
     );
-    for g in form_components(form, generated) {
+    for g in &components {
         let _ = writeln!(
             code,
             "/// `{}`\npub {}: {},",
@@ -1123,8 +1610,39 @@ fn form_gen_file(
         );
     }
     code.push_str("}\n");
-    let content =
-        generated_header(&format!("form `{}`", form.name)) + &format_rust(&path, &code, out);
+
+    // The backend's code for the form (drawing, building, event dispatch).
+    if let Some(template) = backend.and_then(|b| b.form.as_ref()) {
+        let data = FormData {
+            form,
+            registry,
+            fields: components.iter().map(|g| &g.path.name).collect(),
+        };
+        let context = minijinja::context! {
+            form => form_data(form),
+            root => form.root.as_ref().map(|r| data.widget(r)),
+            widgets => form.widgets().into_iter().map(|w| data.node(w, Vec::new(), Some(w))).collect::<Vec<_>>(),
+            components => form.components.iter().map(|c| data.node(c, Vec::new(), None)).collect::<Vec<_>>(),
+        };
+        let mut issues = Vec::new();
+        if let Some(text) = render(env, "form", template, &context, &mut issues) {
+            let parsed = syn::parse_file(&text).map(drop);
+            check_rust(&mut issues, "form", &text, parsed);
+            if issues.is_empty() {
+                code.push_str(&text);
+                code.push('\n');
+            }
+        }
+        let anchor = ComponentPath::on(form.name.clone(), form_anchor(form));
+        for issue in issues {
+            out.error(Some(anchor.clone()), issue);
+        }
+    }
+
+    let content = generated_file(
+        &format!("form `{}`", form.name),
+        &format_rust(&path, &code, out),
+    );
     file(&path, FileKind::Generated, content, source)
 }
 

@@ -22,7 +22,9 @@
 //! | Rename/remove across all forms | [`project`] |
 //! | Component packs and backend palettes from `pack.toml` | [`pack`] |
 //! | The project file (`.ptdr`, RON) | [`ProjectFile`] |
-//! | Code generation: preview, then write | [`codegen`] |
+//! | Code generation: dry run, then write | [`codegen`] |
+//! | UI backend: event loop, form and run templates | [`BackendDescriptor`] |
+//! | Preview: debug build, compiler messages traced to elements | [`preview`] |
 //! | The common widget core | [`builtin`] |
 //!
 //! Everything is library API with machine-readable results: diagnostics
@@ -53,6 +55,7 @@
 //! assert_eq!(Form::from_ron(&text).unwrap(), form);
 //! ```
 
+mod backend;
 pub mod builtin;
 mod capability;
 pub mod codegen;
@@ -66,6 +69,7 @@ pub mod graph;
 mod name;
 pub mod pack;
 mod platform;
+pub mod preview;
 pub mod project;
 mod project_file;
 mod property;
@@ -75,6 +79,7 @@ mod validate;
 mod value;
 mod widget;
 
+pub use backend::{BackendDescriptor, EventLoop};
 pub use capability::{Capability, Condition, Provide, Require, RequireKind};
 pub use component::Component;
 pub use component_type::{CargoDependency, CodegenSpec, ComponentType, ShareMode, TypeKind};

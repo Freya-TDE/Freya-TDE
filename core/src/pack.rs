@@ -56,7 +56,22 @@
 //! type = "core/Button"
 //! [extend.properties.small]
 //! type = "bool"
+//! [extend.codegen]                      # … and/or say how the backend generates the type
+//! type = "MyButton"
+//! init = "MyButton::new({{ rust.caption }})"
+//!
+//! [backend]                             # backend packs only: the backend descriptor
+//! event-loop = "main-thread"            # or "async"; see BackendDescriptor
+//! absolute-positioning = true           # default false
+//! platforms = ["windows", "linux"]      # optional, empty = all
+//! cargo = [{ crate = "eframe", version = "0.33" }]
+//! form = "impl {{ form.struct }} { … }" # template for <form>.gen.rs (or form-file)
+//! run = "…"                             # template for the event loop in run() (or run-file)
 //! ```
+//!
+//! `[component.codegen]` of a runtime component may also give
+//! `runtime = "tokio::runtime::Builder::new_multi_thread().enable_all().build()?"`,
+//! used when the UI loop owns the main thread.
 //!
 //! ## Property keys
 //!
@@ -92,6 +107,7 @@ use std::path::{Path, PathBuf};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
+use crate::backend::{BackendDescriptor, EventLoop};
 use crate::capability::{Capability, Condition, Provide, Require, RequireKind};
 use crate::component_type::{CargoDependency, CodegenSpec, ComponentType, ShareMode, TypeKind};
 use crate::error::ModelError;
@@ -117,6 +133,24 @@ struct RawPack {
     component: Vec<RawComponent>,
     #[serde(default)]
     extend: Vec<RawExtend>,
+    backend: Option<RawBackend>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "kebab-case")]
+struct RawBackend {
+    #[serde(default)]
+    event_loop: EventLoop,
+    #[serde(default)]
+    absolute_positioning: bool,
+    #[serde(default)]
+    platforms: Vec<String>,
+    #[serde(default)]
+    cargo: Vec<RawCargo>,
+    form: Option<String>,
+    form_file: Option<String>,
+    run: Option<String>,
+    run_file: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -179,6 +213,7 @@ struct RawCodegen {
     #[serde(default)]
     share: ShareMode,
     entry: Option<String>,
+    runtime: Option<String>,
 }
 
 /// The type part of a property (also used for list items).
@@ -309,7 +344,9 @@ fn yes() -> bool {
 struct RawExtend {
     #[serde(rename = "type")]
     type_ref: String,
+    #[serde(default)]
     properties: IndexMap<String, RawProperty>,
+    codegen: Option<RawCodegen>,
 }
 
 // --- Public model ----------------------------------------------------------------------
@@ -340,13 +377,24 @@ pub struct PackInfo {
     pub generated_code_license: String,
 }
 
+/// Properties and code generation a backend pack adds to an existing type.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Extension {
+    pub type_ref: TypeRef,
+    pub properties: Vec<PropertyDef>,
+    /// How the backend generates code for the type.
+    pub codegen: Option<CodegenSpec>,
+}
+
 /// A loaded, validated pack.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Pack {
     pub info: PackInfo,
     pub types: Vec<ComponentType>,
-    /// Properties added to existing types (backend packs only).
-    pub extensions: Vec<(TypeRef, Vec<PropertyDef>)>,
+    /// Additions to existing types (backend packs only).
+    pub extensions: Vec<Extension>,
+    /// The `[backend]` section (backend packs only).
+    pub backend: Option<BackendDescriptor>,
     /// Directory the pack was loaded from (templates live there).
     pub dir: Option<PathBuf>,
 }
@@ -813,24 +861,8 @@ impl Checker<'_> {
         }
 
         for cargo in &raw.cargo {
-            let loc = format!("{location}, cargo");
-            let valid = !cargo.crate_name.is_empty()
-                && cargo
-                    .crate_name
-                    .chars()
-                    .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-');
-            if !valid {
-                self.problem(&loc, format!("invalid crate name {:?}", cargo.crate_name));
-            }
-            if cargo.version.trim().is_empty() {
-                self.problem(&loc, format!("crate {} needs a version", cargo.crate_name));
-            }
-            ty.cargo.push(CargoDependency {
-                crate_name: cargo.crate_name.clone(),
-                version: cargo.version.clone(),
-                features: cargo.features.clone(),
-                default_features: cargo.default_features,
-            });
+            let dep = self.cargo(&format!("{location}, cargo"), cargo);
+            ty.cargo.push(dep);
         }
 
         if let Some(codegen) = &raw.codegen {
@@ -848,13 +880,17 @@ impl Checker<'_> {
                 return None;
             }
         };
-        if raw.entry.is_some() && kind.is_widget() {
-            self.problem(location, "only non-visual components can provide `entry`");
+        if (raw.entry.is_some() || raw.runtime.is_some()) && kind.is_widget() {
+            self.problem(
+                location,
+                "only non-visual components can provide `entry` or `runtime`",
+            );
         }
         let templates = [
             ("type", Some(&raw.rust_type)),
             ("init", Some(&init)),
             ("entry", raw.entry.as_ref()),
+            ("runtime", raw.runtime.as_ref()),
         ];
         for (part, source) in templates {
             let Some(source) = source else { continue };
@@ -870,7 +906,83 @@ impl Checker<'_> {
             is_async: raw.is_async,
             share: raw.share,
             entry: raw.entry.clone(),
+            runtime: raw.runtime.clone(),
         })
+    }
+
+    /// An inline template or one from a file (`key` / `key-file`).
+    fn template(
+        &mut self,
+        location: &str,
+        key: &str,
+        inline: &Option<String>,
+        file: &Option<String>,
+    ) -> Option<String> {
+        let source = match (inline, file) {
+            (None, None) => return None,
+            (Some(text), None) => text.clone(),
+            (None, Some(file)) => self.template_file(location, file)?,
+            (Some(_), Some(_)) => {
+                self.problem(
+                    location,
+                    format!("give either `{key}` or `{key}-file`, not both"),
+                );
+                return None;
+            }
+        };
+        if let Err(message) = crate::codegen::check_template(&source) {
+            self.problem(location, format!("template `{key}`: {message}"));
+        }
+        Some(source)
+    }
+
+    fn backend(&mut self, info: &PackInfo, raw: &RawBackend) -> BackendDescriptor {
+        let location = "backend";
+        let mut backend = BackendDescriptor::new(info.name.clone());
+        backend.event_loop = raw.event_loop;
+        backend.absolute_positioning = raw.absolute_positioning;
+        for p in &raw.platforms {
+            match parse_platform(p) {
+                Some(platform) => {
+                    backend.platforms.insert(platform);
+                }
+                None => self.problem(location, format!("unknown platform {p:?}")),
+            }
+        }
+        backend.cargo = raw
+            .cargo
+            .iter()
+            .map(|c| self.cargo(&format!("{location}, cargo"), c))
+            .collect();
+        backend.form = self.template(location, "form", &raw.form, &raw.form_file);
+        backend.run = self.template(location, "run", &raw.run, &raw.run_file);
+        backend
+    }
+
+    fn cargo(&mut self, location: &str, cargo: &RawCargo) -> CargoDependency {
+        let valid = !cargo.crate_name.is_empty()
+            && cargo
+                .crate_name
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-');
+        if !valid {
+            self.problem(
+                location,
+                format!("invalid crate name {:?}", cargo.crate_name),
+            );
+        }
+        if cargo.version.trim().is_empty() {
+            self.problem(
+                location,
+                format!("crate {} needs a version", cargo.crate_name),
+            );
+        }
+        CargoDependency {
+            crate_name: cargo.crate_name.clone(),
+            version: cargo.version.clone(),
+            features: cargo.features.clone(),
+            default_features: cargo.default_features,
+        }
     }
 
     /// Reads a template file relative to the pack directory.
@@ -1129,14 +1241,37 @@ impl Pack {
                     properties.push(def);
                 }
             }
-            extensions.push((type_ref, properties));
+            // Extensions target widgets of the core or other palettes.
+            let kind = TypeKind::Widget { container: false };
+            let codegen = extend
+                .codegen
+                .as_ref()
+                .and_then(|c| checker.codegen(&format!("{location}, codegen"), kind, c));
+            extensions.push(Extension {
+                type_ref,
+                properties,
+                codegen,
+            });
         }
+
+        let backend = match (&raw.backend, info.kind) {
+            (Some(raw), PackKind::Backend) => Some(checker.backend(&info, raw)),
+            (Some(_), PackKind::Components) => {
+                checker.problem(
+                    "backend",
+                    "only packs with kind = \"backend\" may have [backend]",
+                );
+                None
+            }
+            (None, _) => None,
+        };
 
         if checker.problems.is_empty() {
             Ok(Self {
                 info,
                 types,
                 extensions,
+                backend,
                 dir: None,
             })
         } else {
@@ -1191,8 +1326,9 @@ impl Pack {
         for ty in &self.types {
             staged.register(ty.clone())?;
         }
-        for (type_ref, properties) in &self.extensions {
-            for property in properties {
+        for extension in &self.extensions {
+            let type_ref = &extension.type_ref;
+            for property in &extension.properties {
                 if staged
                     .property_def(type_ref, &self.info.name, &property.name)
                     .is_some()
@@ -1203,7 +1339,17 @@ impl Pack {
                     });
                 }
             }
-            staged.extend(self.info.name.clone(), type_ref, properties.clone())?;
+            staged.extend(
+                self.info.name.clone(),
+                type_ref,
+                extension.properties.clone(),
+            )?;
+            if let Some(codegen) = &extension.codegen {
+                staged.extend_codegen(self.info.name.clone(), type_ref, codegen.clone())?;
+            }
+        }
+        if let Some(backend) = &self.backend {
+            staged.register_backend(backend.clone())?;
         }
         *registry = staged;
         Ok(())
