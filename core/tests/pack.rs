@@ -1,0 +1,490 @@
+//! Pack descriptions: the real packs in `components/`, and error reporting
+//! for broken descriptions.
+
+use std::path::PathBuf;
+
+use tdr_core::graph::{ProjectIssue, Suggestion, analyze};
+use tdr_core::pack::{Pack, PackError, PackKind, load_all};
+use tdr_core::*;
+
+fn components_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../components")
+}
+
+fn name(n: &str) -> ComponentName {
+    ComponentName::new(n).unwrap()
+}
+
+/// Core types plus all packs from `components/`.
+fn registry() -> TypeRegistry {
+    let (packs, errors) = load_all(&components_dir());
+    assert!(errors.is_empty(), "{errors:#?}");
+    let mut registry = TypeRegistry::with_builtins();
+    for pack in &packs {
+        pack.register(&mut registry).unwrap();
+    }
+    registry
+}
+
+/// Parses a pack and returns its problems as "location: message" lines.
+fn problems(text: &str) -> Vec<String> {
+    match Pack::parse(text) {
+        Ok(_) => Vec::new(),
+        Err(e @ PackError::Syntax(_)) => vec![e.to_string()],
+        Err(e) => e.problems().iter().map(ToString::to_string).collect(),
+    }
+}
+
+const HEADER: &str = r#"
+[pack]
+name = "demo"
+version = "0.1.0"
+license = "MIT"
+generated-code-license = "MIT"
+"#;
+
+fn with_header(body: &str) -> String {
+    format!("{HEADER}\n{body}")
+}
+
+#[test]
+fn real_packs_load() {
+    let (packs, errors) = load_all(&components_dir());
+    assert!(errors.is_empty(), "{errors:#?}");
+    let names: Vec<&str> = packs.iter().map(|p| p.info.name.as_str()).collect();
+    assert_eq!(names, ["axum", "sqlx", "tokio"]);
+    assert!(
+        packs
+            .iter()
+            .all(|p| p.dir.is_some() && p.info.kind == PackKind::Components)
+    );
+
+    let registry = registry();
+    assert_eq!(registry.len(), 6 + 4);
+    let pool = registry.get(&TypeRef::pack("sqlx", "Pool")).unwrap();
+    // Property order follows the file (object inspector).
+    let names: Vec<&str> = pool.properties.iter().map(|p| p.name.as_str()).collect();
+    assert_eq!(names, ["url", "max_connections", "connect_timeout"]);
+    assert!(pool.property("url").unwrap().is_required());
+    assert_eq!(
+        pool.property("max_connections").unwrap().default,
+        Some(Value::Int(5))
+    );
+    // Natural default: first enum variant.
+    let runtime = registry.get(&TypeRef::pack("tokio", "Runtime")).unwrap();
+    assert_eq!(
+        runtime.property("flavor").unwrap().default,
+        Some(Value::Enum("MultiThread".into()))
+    );
+    let query = registry.get(&TypeRef::pack("sqlx", "Query")).unwrap();
+    assert_eq!(
+        query.event("on_row").unwrap().params[0].rust_type,
+        "&sqlx::postgres::PgRow"
+    );
+}
+
+#[test]
+fn project_from_real_packs() {
+    let registry = registry();
+    let mut services = Form::data_module(name("services"), "egui");
+    services
+        .add_component(
+            Component::new(name("db_pool"), TypeRef::pack("sqlx", "Pool"))
+                .with("url", "postgres://localhost/app"),
+        )
+        .unwrap();
+    let mut main = Form::new(
+        name("main"),
+        "egui",
+        Widget::new(name("main_window"), builtin::form()),
+    );
+    main.add_component(Component::new(name("api"), TypeRef::pack("axum", "Router")))
+        .unwrap();
+    main.add_component(
+        Component::new(name("customers"), TypeRef::pack("sqlx", "Query"))
+            .with(
+                "pool",
+                Value::reference_on(name("services"), name("db_pool")),
+            )
+            .with("router", Value::reference(name("api"))),
+    )
+    .unwrap();
+    let mut forms = vec![services, main];
+
+    for form in &forms {
+        assert!(form.validate(&ValidationContext::new(&registry)).is_empty());
+    }
+    let analysis = analyze(&forms, &registry);
+    let issues: Vec<&ProjectIssue> = analysis.diagnostics.iter().map(|d| &d.issue).collect();
+    // No runtime yet, and the router needs the pool because a query is attached.
+    assert!(issues.contains(&&ProjectIssue::Unsatisfied {
+        capability: Capability::new("tokio.runtime").unwrap(),
+        via: None,
+        suggestion: Suggestion::Create(vec![TypeRef::pack("tokio", "Runtime")]),
+    }));
+    assert!(issues.contains(&&ProjectIssue::Unsatisfied {
+        capability: Capability::new("sqlx.pool").unwrap(),
+        via: Some("pool".into()),
+        suggestion: Suggestion::Connect(vec!["services::db_pool".parse().unwrap()]),
+    }));
+
+    // Follow the suggestions.
+    forms[0]
+        .add_component(Component::new(
+            name("runtime"),
+            TypeRef::pack("tokio", "Runtime"),
+        ))
+        .unwrap();
+    forms[1].component_mut(&name("api")).unwrap().set(
+        "pool",
+        Value::reference_on(name("services"), name("db_pool")),
+    );
+    let analysis = analyze(&forms, &registry);
+    assert!(
+        analysis.diagnostics.is_empty(),
+        "{:#?}",
+        analysis.diagnostics
+    );
+    let order: Vec<String> = analysis.order.iter().map(ToString::to_string).collect();
+    assert_eq!(
+        order,
+        [
+            "services::runtime",
+            "services::db_pool",
+            "main::main_window",
+            "main::api",
+            "main::customers"
+        ]
+    );
+    let crates: Vec<&str> = analysis
+        .cargo
+        .iter()
+        .map(|d| d.crate_name.as_str())
+        .collect();
+    assert_eq!(crates, ["axum", "sqlx", "tokio"]);
+}
+
+#[test]
+fn syntax_and_unknown_keys_have_positions() {
+    let found = problems(&with_header(
+        "[[component]]\nname = \"Pool\"\n[component.properties.size]\ntype = \"int\"\ndefualt = 5\n",
+    ));
+    assert_eq!(found.len(), 1);
+    assert!(found[0].contains("defualt"), "{found:?}");
+    assert!(found[0].contains("line"), "{found:?}");
+
+    let found = problems("[pack\nname = 1");
+    assert!(found[0].contains("line 1"), "{found:?}");
+}
+
+#[test]
+fn header_checks() {
+    let found = problems(
+        "[pack]\nname = \"My Pack\"\nversion = \"1.0\"\nlicense = \"\"\ngenerated-code-license = \"\"\n",
+    );
+    assert_eq!(found.len(), 4, "{found:#?}");
+    assert!(found.iter().any(|p| p.contains("generated-code-license")));
+
+    // generated-code-license is mandatory.
+    let found = problems("[pack]\nname = \"x\"\nversion = \"1.0.0\"\nlicense = \"MIT\"\n");
+    assert!(found[0].contains("generated-code-license"), "{found:?}");
+}
+
+#[test]
+fn property_checks() {
+    let found = problems(&with_header(
+        r#"
+[[component]]
+name = "Thing"
+
+[component.properties.Bad_Name]
+type = "text"
+
+[component.properties.count]
+type = "int"
+min = 10
+max = 1
+variants = ["A"]
+
+[component.properties.level]
+type = "int"
+min = 1
+default = 0
+
+[component.properties.mode]
+type = "enum"
+variants = ["Fast", "Slow"]
+default = "Medium"
+
+[component.properties.token]
+type = "text"
+required = true
+default = "x"
+
+[component.properties.items]
+type = "list"
+
+[component.properties.target]
+type = "reference"
+default = "x"
+
+[component.properties.shape]
+type = "triangle"
+
+[component.properties.hint]
+type = "text"
+platforms = ["amiga"]
+"#,
+    ));
+    let has = |location: &str, part: &str| {
+        assert!(
+            found
+                .iter()
+                .any(|p| p.starts_with(location) && p.contains(part)),
+            "missing {location:?} / {part:?} in {found:#?}"
+        );
+    };
+    has("component Thing, property Bad_Name", "snake_case");
+    has(
+        "component Thing, property count",
+        "min 10 is greater than max 1",
+    );
+    has(
+        "component Thing, property count",
+        "`variants` is not allowed for type int",
+    );
+    has("component Thing, property level", "out of range");
+    has("component Thing, property mode", "unknown variant");
+    has(
+        "component Thing, property token",
+        "required property cannot have a default",
+    );
+    has("component Thing, property items", "needs `item`");
+    has(
+        "component Thing, property target",
+        "references cannot have a default",
+    );
+    has(
+        "component Thing, property shape",
+        "unknown type \"triangle\"",
+    );
+    has("component Thing, property hint", "unknown platform");
+    assert_eq!(found.len(), 10, "{found:#?}");
+}
+
+#[test]
+fn requirement_and_capability_checks() {
+    let found = problems(&with_header(
+        r#"
+[[component]]
+name = "thing"
+kind = "widget"
+provides = ["db", "x.y", "x.y"]
+requires = [
+    { capability = "sqlx.pool", via = "missing" },
+    { capability = "sqlx.pool", via = "plain" },
+    { capability = "sqlx.pool", via = "other" },
+    { capability = "sqlx.pool", via = "open" },
+    { capability = "sqlx.pool", when = { property-set = "nope" } },
+    { capability = "sqlx.pool", when = { referenced-by = "a.b", project-provides = "c.d" } },
+]
+cargo = [{ crate = "bad crate", version = "" }]
+
+[component.properties.plain]
+type = "text"
+
+[component.properties.other]
+type = "reference"
+capability = "http.router"
+
+[component.properties.open]
+type = "reference"
+
+[component.events.OnClick]
+params = [{ name = "1x", type = "" }]
+
+[[component]]
+name = "Twin"
+[[component]]
+name = "Twin"
+"#,
+    ));
+    let has = |part: &str| {
+        assert!(
+            found.iter().any(|p| p.contains(part)),
+            "missing {part:?} in {found:#?}"
+        )
+    };
+    has("component names must be PascalCase");
+    has("component packs are non-visual");
+    has("invalid capability \"db\"");
+    has("x.y is listed twice");
+    has("`via` names \"missing\", which is not a property");
+    has("property \"plain\" is not a reference");
+    has("property \"other\" references http.router, not sqlx.pool");
+    has("property \"open\" must declare `capability = \"sqlx.pool\"`");
+    has("`when.property-set` names \"nope\"");
+    has("`when` needs exactly one of");
+    has("invalid crate name \"bad crate\"");
+    has("needs a version");
+    has("event names must be snake_case");
+    has("parameter name \"1x\"");
+    has("component Twin: defined twice");
+}
+
+#[test]
+fn backend_packs_extend_types() {
+    let text = r##"
+[pack]
+name = "egui"
+version = "0.1.0"
+kind = "backend"
+license = "MIT OR Apache-2.0"
+generated-code-license = "MIT OR Apache-2.0"
+
+[[component]]
+name = "Slider"
+kind = "widget"
+[component.properties.value]
+type = "float"
+min = 0.0
+max = 1.0
+[component.properties.stroke]
+type = "custom"
+custom = "egui.Stroke"
+default = "Stroke::new(1.0, Color32::BLACK)"
+
+[[extend]]
+type = "core/Button"
+[extend.properties.small]
+type = "bool"
+[extend.properties.fill]
+type = "color"
+default = "#3366ff"
+platforms = ["windows", "cfg(unix)"]
+"##;
+    let pack = Pack::parse(text).unwrap();
+    assert_eq!(pack.types[0].type_ref, TypeRef::backend("egui", "Slider"));
+    let mut registry = TypeRegistry::with_builtins();
+    pack.register(&mut registry).unwrap();
+    let fill = registry
+        .property_def(&builtin::button(), "egui", "fill")
+        .unwrap();
+    assert_eq!(
+        fill.default,
+        Some(Value::Color(Color::rgb(0x33, 0x66, 0xff)))
+    );
+    assert_eq!(fill.platforms.len(), 2);
+    assert!(
+        registry
+            .property_def(&builtin::button(), "slint", "small")
+            .is_none()
+    );
+
+    // Registering twice fails and leaves the registry untouched.
+    let before = registry.len();
+    assert!(pack.register(&mut registry).is_err());
+    assert_eq!(registry.len(), before);
+
+    // Extending with an existing property name is rejected.
+    let clash = text
+        .replace("[extend.properties.small]", "[extend.properties.caption]")
+        .replace("name = \"Slider\"", "name = \"Slider2\"");
+    let mut registry = TypeRegistry::with_builtins();
+    assert_eq!(
+        Pack::parse(&clash).unwrap().register(&mut registry),
+        Err(ModelError::DuplicateProperty {
+            type_ref: builtin::button(),
+            property: "caption".into()
+        })
+    );
+
+    // Component packs may not extend.
+    let found = problems(
+        &text
+            .replace("kind = \"backend\"", "kind = \"components\"")
+            .replace("kind = \"widget\"", ""),
+    );
+    assert!(
+        found
+            .iter()
+            .any(|p| p.contains("only backend packs may extend")),
+        "{found:#?}"
+    );
+}
+
+#[test]
+fn load_errors_name_the_file() {
+    let dir = std::env::temp_dir().join(format!("tdr-pack-test-{}", std::process::id()));
+    std::fs::create_dir_all(dir.join("broken")).unwrap();
+    std::fs::write(dir.join("broken/pack.toml"), "[pack]\nname = ").unwrap();
+    std::fs::create_dir_all(dir.join("not-a-pack")).unwrap();
+    std::fs::create_dir_all(dir.join("wrong")).unwrap();
+    std::fs::write(
+        dir.join("wrong/pack.toml"),
+        "[pack]\nname = \"wrong\"\nversion = \"1\"\nlicense = \"MIT\"\ngenerated-code-license = \"MIT\"\n",
+    )
+    .unwrap();
+    let (packs, errors) = load_all(&dir);
+    assert!(packs.is_empty());
+    assert_eq!(errors.len(), 2);
+    assert!(
+        errors[0].to_string().contains("broken/pack.toml"),
+        "{}",
+        errors[0]
+    );
+    // Problems in the meaning name the file as well.
+    assert!(
+        errors[1].to_string().contains("wrong/pack.toml"),
+        "{}",
+        errors[1]
+    );
+    assert_eq!(errors[1].problems().len(), 1);
+    assert!(matches!(
+        Pack::load(&dir.join("nope")),
+        Err(PackError::Io { .. })
+    ));
+    std::fs::remove_dir_all(dir).ok();
+}
+
+#[test]
+fn codegen_sections_are_checked() {
+    let found = problems(&with_header(
+        r#"
+[[component]]
+name = "Timer"
+[component.codegen]
+type = "std::time::Duration"
+init = "{% if %}"
+
+[[component]]
+name = "Clock"
+[component.codegen]
+type = "u64"
+init = "0"
+init-file = "clock.rs.j2"
+
+[[component]]
+name = "Disk"
+[component.codegen]
+type = "u64"
+init-file = "../secret.j2"
+"#,
+    ));
+    assert_eq!(found.len(), 3, "{found:#?}");
+    assert!(found[0].starts_with("component Timer, codegen: template `init`: syntax error"));
+    assert_eq!(
+        found[1],
+        "component Clock, codegen: needs exactly one of `init` and `init-file`"
+    );
+    assert!(found[2].contains("must be a relative path inside the pack"));
+
+    // The real packs carry code generation.
+    let registry = registry();
+    let pool = registry.get(&TypeRef::pack("sqlx", "Pool")).unwrap();
+    let codegen = pool.codegen.as_ref().unwrap();
+    assert_eq!(codegen.rust_type, "sqlx::PgPool");
+    assert!(codegen.is_async);
+    let runtime = registry.get(&TypeRef::pack("tokio", "Runtime")).unwrap();
+    assert!(runtime.codegen.as_ref().unwrap().entry.is_some());
+}

@@ -1,0 +1,26 @@
+[workspace]
+resolver = "3"
+members = ["core"]
+# Eigenständige Projekte mit eigenem Workspace bzw. Testordner.
+exclude = ["RUF", "CT-Editor", "test_fold"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+authors = ["Dragon Software <info@dragon-software.net>"]
+repository = "https://github.com/Dragon-InterActive/Freya-TD"
+rust-version = "1.99"
+
+[workspace.dependencies]
+serde = { version = "1.0.229", features = ["derive"] }
+ron = "0.12.2"
+thiserror = "2.0.21"
+toml = { version = "1.1.8", features = ["preserve_order"] }
+indexmap = { version = "2.14.2", features = ["serde"] }
+minijinja = "3.0.2"
+prettyplease = "0.3.0"
+syn = { version = "3.0.9", features = ["full"] }
+toml_edit = "0.25.17"
+serde_json = "1.0.154"
+tdr-core = { path = "core", version = "0.1.0" }

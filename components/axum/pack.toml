@@ -1,0 +1,40 @@
+# Axum – HTTP-Server / HTTP server
+[pack]
+name = "axum"
+version = "0.1.0"
+description = "HTTP routing with Axum"
+authors = ["Dragon Software <info@dragon-software.net>"]
+license = "MIT OR Apache-2.0"
+generated-code-license = "MIT OR Apache-2.0"
+
+[[component]]
+name = "Router"
+category = "Web"
+icon = "globe"
+description = "An HTTP router serving requests"
+provides = ["http.router"]
+requires = [
+    { capability = "tokio.runtime" },
+    # Braucht nur dann einen Pool, wenn eine Query an den Router gehängt ist.
+    # Needs a pool only if a query is attached to the router.
+    { capability = "sqlx.pool", via = "pool", when = { referenced-by = "sqlx.query" } },
+]
+cargo = [{ crate = "axum", version = "0.8" }]
+
+[component.properties.bind]
+type = "text"
+default = "127.0.0.1:3000"
+category = "Server"
+description = "Address and port to listen on"
+
+[component.properties.pool]
+type = "reference"
+capability = "sqlx.pool"
+category = "Server"
+
+[component.events.on_start]
+params = [{ name = "address", type = "std::net::SocketAddr" }]
+
+[component.codegen]
+type = "axum::Router"
+init = "axum::Router::new(){% if rust.pool %}.with_state({{ rust.pool }}){% endif %}"

@@ -1,0 +1,45 @@
+# Tokio – asynchrone Laufzeit / async runtime
+[pack]
+name = "tokio"
+version = "0.1.0"
+description = "Tokio runtime for async components"
+authors = ["Dragon Software <info@dragon-software.net>"]
+license = "MIT OR Apache-2.0"
+generated-code-license = "MIT OR Apache-2.0"
+
+[[component]]
+name = "Runtime"
+category = "System"
+icon = "cpu"
+description = "The async runtime all async components run on"
+provides = [{ capability = "tokio.runtime", description = "An async runtime" }]
+cargo = [{ crate = "tokio", version = "1.54", features = ["rt-multi-thread", "macros"] }]
+
+[component.properties.flavor]
+type = "enum"
+variants = ["MultiThread", "CurrentThread"]
+category = "Runtime"
+description = "Scheduler: work-stealing thread pool or a single thread"
+
+[component.properties.worker_threads]
+type = "int"
+min = 0
+max = 1024
+default = 0
+category = "Runtime"
+description = "Number of worker threads (0 = number of CPU cores)"
+
+# Die Laufzeit liefert den Einstiegspunkt; im App-Struct steht ein Handle.
+# The runtime provides the entry point; the app struct holds a handle.
+[component.codegen]
+type = "tokio::runtime::Handle"
+init = "tokio::runtime::Handle::current()"
+entry = """
+{%- if props.flavor == "CurrentThread" -%}
+#[tokio::main(flavor = "current_thread")]
+{%- elif props.worker_threads > 0 -%}
+#[tokio::main(flavor = "multi_thread", worker_threads = {{ props.worker_threads }})]
+{%- else -%}
+#[tokio::main(flavor = "multi_thread")]
+{%- endif -%}
+"""

@@ -1,0 +1,93 @@
+# SQLx – Datenbankzugriff / database access
+[pack]
+name = "sqlx"
+version = "0.1.0"
+description = "Database pools and queries with SQLx"
+authors = ["Dragon Software <info@dragon-software.net>"]
+license = "MIT OR Apache-2.0"
+generated-code-license = "MIT OR Apache-2.0"
+
+[[component]]
+name = "Pool"
+category = "Database"
+icon = "database"
+description = "A connection pool to a database"
+provides = [{ capability = "sqlx.pool", description = "A database connection pool" }]
+requires = [{ capability = "tokio.runtime", description = "SQLx runs on Tokio" }]
+cargo = [{ crate = "sqlx", version = "0.9", features = ["runtime-tokio", "postgres"] }]
+
+[component.properties.url]
+type = "text"
+required = true
+category = "Connection"
+description = "Connection URL, e.g. postgres://user@localhost/app"
+
+[component.properties.max_connections]
+type = "int"
+min = 1
+max = 1000
+default = 5
+category = "Connection"
+
+[component.properties.connect_timeout]
+type = "float"
+min = 0.1
+default = 30.0
+category = "Connection"
+description = "Seconds to wait for a connection"
+
+[component.codegen]
+type = "sqlx::PgPool"
+async = true
+init = """
+sqlx::postgres::PgPoolOptions::new()
+    .max_connections({{ rust.max_connections }})
+    .acquire_timeout(std::time::Duration::from_secs_f64({{ rust.connect_timeout }}))
+    .connect({{ rust.url }})
+    .await?
+"""
+
+[[component]]
+name = "Query"
+category = "Database"
+icon = "table"
+description = "An SQL query executed on a pool"
+provides = ["sqlx.query"]
+requires = [{ capability = "sqlx.pool", via = "pool" }]
+cargo = [{ crate = "sqlx", version = "0.9", features = ["macros"] }]
+
+[component.properties.pool]
+type = "reference"
+capability = "sqlx.pool"
+category = "Connection"
+
+[component.properties.router]
+type = "reference"
+capability = "http.router"
+category = "Web"
+description = "Expose the query as an HTTP endpoint"
+
+[component.properties.sql]
+type = "code"
+default = "\"SELECT 1\""
+category = "Query"
+description = "The SQL statement (a Rust string expression)"
+
+[component.properties.params]
+type = "list"
+item = "code"
+category = "Query"
+description = "Bind parameters (Rust expressions)"
+
+[component.events.on_row]
+params = [{ name = "row", type = "&sqlx::postgres::PgRow" }]
+description = "Called for every fetched row"
+
+[component.events.on_error]
+params = [{ name = "error", type = "&sqlx::Error" }]
+
+# Pool und SQL-Anweisung; Ausführen und Parameter binden bleibt beim Entwickler.
+# Pool and SQL statement; running it and binding parameters is up to the developer.
+[component.codegen]
+type = "(sqlx::PgPool, &'static str)"
+init = "({{ rust.pool }}, {{ rust.sql }})"
