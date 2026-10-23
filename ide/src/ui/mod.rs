@@ -1,0 +1,497 @@
+//! The windows (RUF). Each is a free-floating top-level window; [`Ide`]
+//! owns them together with the [`Session`] and refreshes them after every
+//! change.
+
+mod convert;
+mod designer;
+mod inspector;
+mod main_window;
+mod messages;
+mod structure;
+
+use std::cell::{Cell, RefCell};
+use std::path::{Path, PathBuf};
+use std::rc::{Rc, Weak};
+
+use rncl::prelude::*;
+use ruf::dialog::{self, FileFilter};
+use tdr_core::pack::load_all;
+use tdr_core::{ComponentName, TypeRef, TypeRegistry};
+use tdr_designer::{Command, CommandError};
+
+use crate::desktop::{Desktop, Place, window};
+use crate::session::{Changes, Session};
+
+use designer::DesignerWindow;
+use inspector::InspectorWindow;
+use main_window::MainWindow;
+use messages::MessagesWindow;
+use structure::StructureWindow;
+
+/// Backend of new projects until real backend packs exist.
+const DEFAULT_BACKEND: &str = "none";
+
+/// Directories searched for component and backend packs.
+fn pack_dirs() -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+    if let Some(list) = std::env::var_os("FREYA_TD_PACKS") {
+        dirs.extend(std::env::split_paths(&list));
+    }
+    let exe = std::env::current_exe().ok();
+    let exe_dir = exe.as_deref().and_then(Path::parent);
+    for base in [
+        exe_dir.map(Path::to_path_buf),
+        exe_dir.and_then(Path::parent).map(Path::to_path_buf),
+        // Entwicklung: das Repository.
+        Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..")),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        for sub in ["components", "widgets"] {
+            let dir = base.join(sub);
+            if dir.is_dir() && !dirs.contains(&dir) {
+                dirs.push(dir);
+            }
+        }
+    }
+    dirs
+}
+
+/// Core types plus every pack found; returns the registry and the names of
+/// the component packs.
+fn full_registry(dirs: &[PathBuf]) -> (TypeRegistry, Vec<String>) {
+    let mut registry = TypeRegistry::with_builtins();
+    let mut names = Vec::new();
+    for dir in dirs {
+        let (packs, _) = load_all(dir);
+        for pack in packs {
+            if pack.register(&mut registry).is_ok()
+                && pack.info.kind == tdr_core::pack::PackKind::Components
+            {
+                names.push(pack.info.name.clone());
+            }
+        }
+    }
+    (registry, names)
+}
+
+/// The IDE: session, windows and actions.
+pub struct Ide {
+    /// Weak self reference (windows connect callbacks while refreshing).
+    me: Weak<Ide>,
+    session: RefCell<Session>,
+    /// The `.ptdr` file; `None` while the project is unsaved.
+    path: RefCell<Option<PathBuf>>,
+    pack_dirs: Vec<PathBuf>,
+    desktop: RefCell<Desktop>,
+    /// Set while windows are refilled (their signals must not edit).
+    refreshing: Cell<bool>,
+    main: MainWindow,
+    designer: DesignerWindow,
+    inspector: InspectorWindow,
+    structure: StructureWindow,
+    messages: MessagesWindow,
+}
+
+/// A callback that runs `f` with the IDE while it exists.
+fn with<A>(ide: &Rc<Ide>, f: impl Fn(&Rc<Ide>, A) + 'static) -> impl FnMut(A) + 'static {
+    let weak: Weak<Ide> = Rc::downgrade(ide);
+    move |arg| {
+        if let Some(ide) = weak.upgrade() {
+            f(&ide, arg);
+        }
+    }
+}
+
+fn with0(ide: &Rc<Ide>, f: impl Fn(&Rc<Ide>) + 'static) -> impl FnMut() + 'static {
+    let mut call = with(ide, move |ide, ()| f(ide));
+    move || call(())
+}
+
+impl Ide {
+    /// Builds all windows, restores their places and opens `project` (or a
+    /// new, unsaved one).
+    pub fn start(project: Option<&Path>) -> Rc<Self> {
+        let pack_dirs = pack_dirs();
+        let (registry, packs) = full_registry(&pack_dirs);
+        let session = Session::untitled("projekt1", DEFAULT_BACKEND, packs, registry)
+            .expect("valid project name");
+        let ide = Rc::new_cyclic(|me| Self {
+            me: me.clone(),
+            session: RefCell::new(session),
+            path: RefCell::new(None),
+            pack_dirs,
+            desktop: RefCell::new(Desktop::load()),
+            refreshing: Cell::new(false),
+            main: MainWindow::build(),
+            designer: DesignerWindow::build(),
+            inspector: InspectorWindow::build(),
+            structure: StructureWindow::build(),
+            messages: MessagesWindow::build(),
+        });
+        main_window::connect(&ide);
+        designer::connect(&ide);
+        inspector::connect(&ide);
+        structure::connect(&ide);
+        messages::connect(&ide);
+        if let Some(path) = project {
+            ide.open_path(path);
+        }
+        ide.refresh(Changes {
+            model: true,
+            selection: true,
+        });
+        ide.restore_desktop();
+        ide
+    }
+
+    pub fn session(&self) -> std::cell::Ref<'_, Session> {
+        self.session.borrow()
+    }
+
+    fn windows(&self) -> [(&'static str, &RnclWindow); 5] {
+        [
+            (window::MAIN, &self.main.window),
+            (window::STRUCTURE, &self.structure.window),
+            (window::INSPECTOR, &self.inspector.window),
+            (window::DESIGNER, &self.designer.window),
+            (window::MESSAGES, &self.messages.window),
+        ]
+    }
+
+    fn restore_desktop(&self) {
+        let desktop = self.desktop.borrow().clone();
+        for (name, window) in self.windows() {
+            let place = desktop.place(name);
+            window.set_size(place.width, place.height);
+            if let (Some(x), Some(y)) = (place.x, place.y) {
+                window.set_screen_position(x, y);
+            }
+            if place.visible || name == window::MAIN {
+                window.show();
+            }
+        }
+    }
+
+    fn save_desktop(&self) {
+        let mut desktop = self.desktop.borrow_mut();
+        for (name, window) in self.windows() {
+            let size = window.size();
+            let position = window.screen_position();
+            desktop.set(
+                name,
+                Place {
+                    x: position.map(|p| p.x),
+                    y: position.map(|p| p.y),
+                    width: size.width,
+                    height: size.height,
+                    visible: window.widget().is_visible(),
+                },
+            );
+        }
+        if let Err(e) = desktop.save() {
+            eprintln!("freya-td: Fensteranordnung nicht gespeichert: {e}");
+        }
+    }
+
+    /// Applies designer commands (JSON array, as in `tdr_designer::Command`)
+    /// – for scripts, tests and an AI driving the IDE.
+    pub fn run_commands(&self, json: &str) -> Result<usize, String> {
+        let commands: Vec<Command> = serde_json::from_str(json).map_err(|e| e.to_string())?;
+        let count = commands.len();
+        for command in commands {
+            let result = self.session.borrow_mut().apply(command);
+            result.map_err(|e| e.to_string())?;
+        }
+        self.refresh(Changes {
+            model: true,
+            selection: true,
+        });
+        Ok(count)
+    }
+
+    /// Saves a screenshot of every visible window as `<dir>/<name>.png`.
+    pub fn screenshots(&self, dir: &Path) -> Vec<PathBuf> {
+        let _ = std::fs::create_dir_all(dir);
+        self.windows()
+            .into_iter()
+            .filter(|(_, w)| w.widget().is_visible())
+            .filter_map(|(name, w)| {
+                let path = dir.join(format!("{name}.png"));
+                w.widget().save_screenshot(&path).then_some(path)
+            })
+            .collect()
+    }
+
+    /// The design surface – for automation (tests, AI): send mouse and key
+    /// events with `simulate_mouse` / `simulate_key`.
+    pub fn design_surface(&self) -> Widget {
+        self.designer.canvas_widget()
+    }
+
+    /// The element the object inspector currently shows.
+    pub fn inspected(&self) -> Option<tdr_core::ComponentPath> {
+        self.inspector.shown()
+    }
+
+    /// Back to the standard arrangement.
+    pub fn reset_desktop(&self) {
+        *self.desktop.borrow_mut() = Desktop::standard();
+        self.restore_desktop();
+    }
+
+    pub fn show_window(&self, name: &str) {
+        if let Some((_, window)) = self.windows().into_iter().find(|(n, _)| *n == name) {
+            window.show();
+        }
+    }
+
+    // --- Refresh ------------------------------------------------------------------
+
+    /// Refreshes the windows after `changes`.
+    pub fn refresh(&self, changes: Changes) {
+        if !changes.any() {
+            return;
+        }
+        self.refreshing.set(true);
+        self.main.refresh(self);
+        self.designer.refresh(self);
+        self.structure.refresh(self);
+        if changes.model {
+            self.messages.refresh(self);
+        }
+        if let Some(me) = self.me.upgrade() {
+            self.inspector.refresh(&me, changes.model);
+        }
+        self.refreshing.set(false);
+    }
+
+    pub fn is_refreshing(&self) -> bool {
+        self.refreshing.get()
+    }
+
+    /// Reports the result of an edit in the status line.
+    fn report(&self, result: Result<Changes, CommandError>) {
+        match result {
+            Ok(changes) => {
+                self.main.set_status("");
+                self.refresh(changes);
+            }
+            Err(e) => self.main.set_status(&e.to_string()),
+        }
+    }
+
+    // --- Actions --------------------------------------------------------------------
+
+    pub fn apply(&self, command: Command) {
+        let result = self.session.borrow_mut().apply(command);
+        self.report(result);
+    }
+
+    /// Like [`Ide::apply`], but leaves the object inspector as it is (its
+    /// own edits must not rebuild the field being edited).
+    pub fn apply_from_inspector(&self, command: Command) {
+        let result = self.session.borrow_mut().apply(command);
+        match result {
+            Ok(_) => {
+                self.main.set_status("");
+                self.refreshing.set(true);
+                self.main.refresh(self);
+                self.designer.refresh(self);
+                self.structure.refresh(self);
+                self.messages.refresh(self);
+                self.refreshing.set(false);
+            }
+            Err(e) => self.main.set_status(&e.to_string()),
+        }
+    }
+
+    pub fn arm(&self, type_ref: Option<TypeRef>) {
+        self.session.borrow_mut().arm(type_ref);
+        self.main.refresh(self);
+    }
+
+    pub fn select(&self, names: Vec<ComponentName>) {
+        self.session.borrow_mut().select(names);
+        self.refresh(Changes {
+            model: false,
+            selection: true,
+        });
+    }
+
+    pub fn select_form(&self, form: &ComponentName) {
+        if self.session.borrow_mut().set_form(form) {
+            self.refresh(Changes {
+                model: false,
+                selection: true,
+            });
+        }
+    }
+
+    pub fn undo(&self) {
+        let done = self.session.borrow_mut().undo();
+        if done {
+            self.refresh(Changes {
+                model: true,
+                selection: true,
+            });
+        }
+    }
+
+    pub fn redo(&self) {
+        let done = self.session.borrow_mut().redo();
+        if done {
+            self.refresh(Changes {
+                model: true,
+                selection: true,
+            });
+        }
+    }
+
+    pub fn delete_selection(&self) {
+        let result = self.session.borrow_mut().delete_selection();
+        self.report(result);
+    }
+
+    pub fn add_form(&self, data_module: bool) {
+        let prefix = if data_module { "data" } else { "form" };
+        let name = {
+            let session = self.session.borrow();
+            let forms = session.document().forms();
+            (1..)
+                .map(|n| format!("{prefix}{n}"))
+                .find(|n| forms.iter().all(|f| f.name.as_str() != n))
+                .and_then(|n| ComponentName::new(n).ok())
+                .expect("free name")
+        };
+        self.apply(Command::AddForm { name, data_module });
+    }
+
+    fn confirm_discard(&self) -> bool {
+        !self.session.borrow().document().is_dirty()
+            || dialog::confirm(
+                Some(self.main.window.widget()),
+                "Ungespeicherte Änderungen",
+                "Das Projekt hat ungespeicherte Änderungen. Verwerfen?",
+            )
+    }
+
+    pub fn new_project(&self) {
+        if !self.confirm_discard() {
+            return;
+        }
+        let (registry, packs) = full_registry(&self.pack_dirs);
+        match Session::untitled("projekt1", DEFAULT_BACKEND, packs, registry) {
+            Ok(session) => {
+                *self.session.borrow_mut() = session;
+                *self.path.borrow_mut() = None;
+                self.refresh(Changes {
+                    model: true,
+                    selection: true,
+                });
+            }
+            Err(e) => self.main.set_status(&e),
+        }
+    }
+
+    pub fn open_dialog(&self) {
+        if !self.confirm_discard() {
+            return;
+        }
+        let filters = [FileFilter::new("Freya-TD-Projekt", &["*.ptdr"])];
+        if let Some(path) =
+            dialog::open_file(Some(self.main.window.widget()), "Projekt öffnen", &filters)
+        {
+            self.open_path(&path);
+        }
+    }
+
+    fn open_path(&self, path: &Path) {
+        match Session::open(path, &self.pack_dirs) {
+            Ok((session, report)) => {
+                *self.session.borrow_mut() = session;
+                *self.path.borrow_mut() = Some(path.to_path_buf());
+                let mut notes: Vec<String> = report
+                    .missing_packs
+                    .iter()
+                    .map(|p| format!("Pack „{p}“ nicht gefunden"))
+                    .collect();
+                notes.extend(report.pack_errors.iter().map(ToString::to_string));
+                self.main.set_status(&notes.join("; "));
+                self.refresh(Changes {
+                    model: true,
+                    selection: true,
+                });
+            }
+            Err(e) => dialog::error(
+                Some(self.main.window.widget()),
+                "Projekt öffnen",
+                &e.to_string(),
+            ),
+        }
+    }
+
+    /// Saves; an unsaved project asks for its folder first.
+    pub fn save(&self) -> bool {
+        let dir = self
+            .path
+            .borrow()
+            .as_ref()
+            .and_then(|p| p.parent().map(Path::to_path_buf));
+        let dir = match dir {
+            Some(dir) => dir,
+            None => match dialog::choose_folder(
+                Some(self.main.window.widget()),
+                "Ordner für das Projekt wählen",
+            ) {
+                Some(dir) => dir,
+                None => return false,
+            },
+        };
+        let result = self.session.borrow_mut().document_mut().save(Some(&dir));
+        match result {
+            Ok(_) => {
+                let name = self.session.borrow().document().project().name.clone();
+                *self.path.borrow_mut() = Some(dir.join(format!("{name}.ptdr")));
+                self.main.set_status("Gespeichert.");
+                self.main.refresh(self);
+                true
+            }
+            Err(e) => {
+                dialog::error(Some(self.main.window.widget()), "Speichern", &e.to_string());
+                false
+            }
+        }
+    }
+
+    /// Ends Freya-TD (asks about unsaved changes).
+    pub fn quit(&self) -> bool {
+        if !self.confirm_discard() {
+            return false;
+        }
+        self.save_desktop();
+        Application::quit();
+        true
+    }
+
+    /// Title for the main window: project, path, unsaved mark.
+    fn title(&self) -> String {
+        let session = self.session.borrow();
+        let dirty = if session.document().is_dirty() {
+            " *"
+        } else {
+            ""
+        };
+        let path = self
+            .path
+            .borrow()
+            .as_ref()
+            .map(|p| format!(" – {}", p.display()))
+            .unwrap_or_else(|| " – (nicht gespeichert)".to_owned());
+        format!(
+            "Freya-TD – {}{dirty}{path}",
+            session.document().project().name
+        )
+    }
+}

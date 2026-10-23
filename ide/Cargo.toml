@@ -1,0 +1,28 @@
+[package]
+name = "freya-td"
+description = "Freya-TD: visual development environment for Rust (RAD, Delphi/Lazarus style)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+keywords = ["rad", "gui", "designer", "ide"]
+categories = ["development-tools", "gui"]
+
+[[bin]]
+name = "freya-td"
+path = "src/main.rs"
+
+[dependencies]
+tdr-core.workspace = true
+tdr-designer.workspace = true
+ruf = { path = "../RUF/crates/ruf", version = "0.2.0" }
+rncl = { path = "../RUF/crates/rncl", version = "0.2.0" }
+serde.workspace = true
+toml.workspace = true
+serde_json.workspace = true
+
+[[test]]
+name = "ui"
+harness = false

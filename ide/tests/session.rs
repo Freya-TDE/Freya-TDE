@@ -1,0 +1,135 @@
+//! The IDE session without UI: placing from the palette, selecting,
+//! dragging to reorder, deleting, undo, new projects.
+
+use tdr_core::{ComponentName, ProjectFile, TypeRef, TypeRegistry, builtin};
+use tdr_designer::{Command, Document, Point};
+
+use freya_td::Session;
+
+fn name(n: &str) -> ComponentName {
+    ComponentName::new(n).unwrap()
+}
+
+fn session() -> Session {
+    let mut doc = Document::new(
+        ProjectFile::new("demo", "1.99", "plain").unwrap(),
+        TypeRegistry::with_builtins(),
+    );
+    doc.apply(Command::AddForm {
+        name: name("main"),
+        data_module: false,
+    })
+    .unwrap();
+    Session::new(doc)
+}
+
+/// Centre of an element on the design surface.
+fn centre(s: &Session, element: &str) -> Point {
+    s.layout().unwrap().rect(&name(element)).unwrap().center()
+}
+
+/// A point inside the window's client area, below all children.
+fn empty_spot(s: &Session) -> Point {
+    let window = s
+        .layout()
+        .unwrap()
+        .item(&name("window"))
+        .unwrap()
+        .content
+        .unwrap();
+    Point::new(window.center().x, window.bottom() - 5)
+}
+
+#[test]
+fn place_select_and_delete() {
+    let mut s = session();
+    assert_eq!(s.form_name(), Some(&name("main")));
+
+    // Arm the palette, click into the form: the widget is placed and selected.
+    s.arm(Some(builtin::button()));
+    let at = empty_spot(&s);
+    assert!(s.press(at, false).unwrap().model);
+    assert_eq!(s.selection(), [name("button1")]);
+    assert_eq!(s.armed(), None, "one click places one widget");
+
+    s.arm(Some(builtin::label()));
+    s.press(empty_spot(&s), false).unwrap();
+    assert_eq!(s.selection(), [name("label1")]);
+
+    // Clicking selects; clicking empty space outside the form deselects.
+    let button = centre(&s, "button1");
+    s.press(button, false).unwrap();
+    s.release(button).unwrap();
+    assert_eq!(s.selection(), [name("button1")]);
+    s.press(Point::new(1, 1), false).unwrap();
+    assert!(s.selection().is_empty());
+
+    // Delete keeps the window, removes the rest; undo brings it back.
+    s.select(vec![name("window"), name("button1")]);
+    assert!(s.delete_selection().unwrap().model);
+    let form = s.form().unwrap();
+    assert!(form.contains(&name("window")));
+    assert!(!form.contains(&name("button1")));
+    assert!(s.undo());
+    assert!(s.form().unwrap().contains(&name("button1")));
+}
+
+#[test]
+fn drag_reorders_widgets() {
+    let mut s = session();
+    for type_ref in [builtin::label(), builtin::button()] {
+        s.arm(Some(type_ref));
+        s.press(empty_spot(&s), false).unwrap();
+    }
+    // Drag the button above the label.
+    let button = centre(&s, "button1");
+    let label = s.layout().unwrap().rect(&name("label1")).unwrap();
+    let above = Point::new(label.center().x, label.y + 1);
+    s.press(button, false).unwrap();
+    assert!(s.drag(above));
+    assert_eq!(s.drop_preview(above), Some((name("window"), 0)));
+    assert!(s.release(above).unwrap().model);
+    let window = s.form().unwrap().widget(&name("window")).unwrap();
+    let order: Vec<&str> = window
+        .children
+        .iter()
+        .map(|c| c.component.name.as_str())
+        .collect();
+    assert_eq!(order, ["button1", "label1"]);
+
+    // A small wobble is a click, not a drag.
+    let label = centre(&s, "label1");
+    s.press(label, false).unwrap();
+    assert!(!s.drag(Point::new(label.x + 2, label.y + 1)));
+    assert!(!s.release(label).unwrap().model);
+}
+
+#[test]
+fn non_visual_components_go_to_the_tray() {
+    let mut s = session();
+    let mut registry = s.document().registry().clone();
+    registry
+        .register(tdr_core::ComponentType::new(
+            TypeRef::pack("demo", "Timer"),
+            tdr_core::TypeKind::NonVisual,
+        ))
+        .unwrap();
+    *s.document_mut().registry_mut() = registry;
+    s.arm(Some(TypeRef::pack("demo", "Timer")));
+    s.press(Point::new(5, 5), false).unwrap();
+    assert_eq!(s.selection(), [name("timer1")]);
+    assert_eq!(s.form().unwrap().components.len(), 1);
+}
+
+#[test]
+fn new_project_is_saved() {
+    let dir = std::env::temp_dir().join(format!("freya-new-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let s = Session::create(&dir, "shop", "plain", TypeRegistry::with_builtins()).unwrap();
+    assert_eq!(s.form_name(), Some(&name("main")));
+    assert!(dir.join("shop.ptdr").exists());
+    assert!(dir.join("src/main.ftdr").exists());
+    let (opened, _) = Session::open(&dir.join("shop.ptdr"), &[]).unwrap();
+    assert_eq!(opened.document().forms(), s.document().forms());
+    std::fs::remove_dir_all(&dir).unwrap();
+}
