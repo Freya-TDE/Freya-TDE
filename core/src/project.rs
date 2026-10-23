@@ -65,3 +65,27 @@ pub fn rename_form(
     }
     Ok(())
 }
+
+/// Removes a form and clears references to its elements on every other
+/// form. Returns the removed form.
+pub fn remove_form(forms: &mut Vec<Form>, name: &ComponentName) -> Result<Form, ModelError> {
+    let index = forms
+        .iter()
+        .position(|f| &f.name == name)
+        .ok_or_else(|| ModelError::NotFound(name.clone()))?;
+    let removed = forms.remove(index);
+    let gone: Vec<ComponentName> = removed
+        .elements()
+        .iter()
+        .map(|e| e.name().clone())
+        .collect();
+    for other in forms.iter_mut() {
+        let current = other.name.clone();
+        other.for_each_component_mut(|c| {
+            for element in &gone {
+                c.clear_references(&current, name, element);
+            }
+        });
+    }
+    Ok(removed)
+}

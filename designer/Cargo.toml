@@ -1,0 +1,20 @@
+[package]
+name = "tdr-designer"
+description = "Freya-TD designer logic without UI: document, commands with undo/redo, layout from theme tables, display list, hit testing"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+keywords = ["rad", "gui", "designer"]
+categories = ["development-tools", "gui"]
+
+[dependencies]
+tdr-core.workspace = true
+serde.workspace = true
+toml.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

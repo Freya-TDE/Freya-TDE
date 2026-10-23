@@ -1,0 +1,55 @@
+# Theme-/Metrik-Tabelle für macos – optische Anpassungen hier, nicht im Code.
+# Theme and metric table for macos – optical adjustments here, not in code.
+name = "macos"
+font-size = 13
+char-width = 0.55
+title-bar-height = 28
+padding = 16
+spacing = 8
+radius = 6
+check-size = 16
+tray-height = 64
+icon-size = 28
+margin = 24
+
+[colors]
+desktop = "#dedede"
+window = "#ececec"
+window-border = "#b5b5b5"
+title-bar = "#e3e3e3"
+title-text = "#262626"
+control = "#ffffff"
+control-border = "#c4c4c4"
+input = "#ffffff"
+text = "#262626"
+disabled-text = "#a8a8a8"
+placeholder = "#a8a8a8"
+accent = "#007aff"
+container-border = "#b8b8b8"
+selection = "#007aff"
+tray = "#e6e6e6"
+
+[widgets."core/Button"]
+height = 28
+min-width = 80
+padding-x = 14
+
+[widgets."core/Label"]
+height = 22
+min-width = 20
+padding-x = 0
+
+[widgets."core/Edit"]
+height = 28
+min-width = 160
+padding-x = 8
+
+[widgets."core/CheckBox"]
+height = 24
+min-width = 24
+padding-x = 0
+
+[widgets."core/Container"]
+height = 60
+min-width = 100
+padding-x = 0

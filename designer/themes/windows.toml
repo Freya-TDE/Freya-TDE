@@ -1,0 +1,55 @@
+# Theme-/Metrik-Tabelle für windows – optische Anpassungen hier, nicht im Code.
+# Theme and metric table for windows – optical adjustments here, not in code.
+name = "windows"
+font-size = 13
+char-width = 0.55
+title-bar-height = 31
+padding = 10
+spacing = 6
+radius = 4
+check-size = 16
+tray-height = 64
+icon-size = 28
+margin = 24
+
+[colors]
+desktop = "#dcdcdc"
+window = "#f3f3f3"
+window-border = "#a0a0a0"
+title-bar = "#ffffff"
+title-text = "#1a1a1a"
+control = "#fbfbfb"
+control-border = "#d0d0d0"
+input = "#ffffff"
+text = "#1a1a1a"
+disabled-text = "#a0a0a0"
+placeholder = "#8a8a8a"
+accent = "#0067c0"
+container-border = "#b4b4b4"
+selection = "#0067c0"
+tray = "#ececec"
+
+[widgets."core/Button"]
+height = 32
+min-width = 80
+padding-x = 14
+
+[widgets."core/Label"]
+height = 22
+min-width = 20
+padding-x = 0
+
+[widgets."core/Edit"]
+height = 32
+min-width = 160
+padding-x = 8
+
+[widgets."core/CheckBox"]
+height = 24
+min-width = 24
+padding-x = 0
+
+[widgets."core/Container"]
+height = 60
+min-width = 100
+padding-x = 0

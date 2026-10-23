@@ -181,6 +181,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "tdr-designer"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tdr-core",
+ "thiserror",
+ "toml",
+]
+
+[[package]]
 name = "thiserror"
 version = "2.0.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"

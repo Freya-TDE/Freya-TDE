@@ -4,7 +4,10 @@
 use crate::name::ComponentName;
 use crate::type_ref::TypeRef;
 
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+/// Serialized as `{"code": "duplicate_name", "detail": …}`; the codes are
+/// stable.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, thiserror::Error)]
+#[serde(tag = "code", content = "detail", rename_all = "snake_case")]
 pub enum ModelError {
     #[error("invalid {kind} {text:?}: must be a Rust identifier and not a keyword")]
     InvalidIdentifier { kind: &'static str, text: String },
@@ -26,6 +29,8 @@ pub enum ModelError {
     DuplicateName(ComponentName),
     #[error("{0} not found on this form")]
     NotFound(ComponentName),
+    #[error("{0} cannot be moved into its own subtree")]
+    MoveIntoItself(ComponentName),
     #[error("the root widget of a form cannot be removed")]
     CannotRemoveRoot,
     #[error("form file format {0} is newer than this version of Freya-TD supports")]

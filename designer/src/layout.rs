@@ -1,0 +1,519 @@
+//! Layout of a form on the design surface: where every widget sits.
+//!
+//! The designer draws widgets itself, so it computes their rectangles from
+//! the model (container layouts, placements, property values) and the
+//! [`Theme`] tables. Text widths are estimated; the result is stable and
+//! good enough for designing – the real look comes from the debug run.
+//!
+//! Non-visual components (pools, timers …) have no position in the model;
+//! they appear as icons in a tray below the form.
+
+use serde::Serialize;
+use tdr_core::{ComponentName, Form, LayoutKind, Placement, TypeRegistry, Value, Widget, builtin};
+
+use crate::geometry::{Point, Rect};
+use crate::theme::Theme;
+
+/// What a laid-out item is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ItemKind {
+    /// The form's root widget: the window, including its title bar.
+    Window,
+    Widget,
+    /// A non-visual component in the tray.
+    Component,
+}
+
+/// One element and its rectangle.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct LayoutItem {
+    pub name: ComponentName,
+    pub kind: ItemKind,
+    pub rect: Rect,
+    /// Nesting depth (window = 0); tray components have depth 0.
+    pub depth: usize,
+    pub parent: Option<ComponentName>,
+    /// For containers: the area children are laid out in.
+    pub content: Option<Rect>,
+}
+
+/// The layout of one form.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct FormLayout {
+    /// Size of the whole design surface.
+    pub width: i32,
+    pub height: i32,
+    /// Widgets depth-first (parents before children), then tray components.
+    pub items: Vec<LayoutItem>,
+}
+
+impl FormLayout {
+    pub fn item(&self, name: &ComponentName) -> Option<&LayoutItem> {
+        self.items.iter().find(|i| &i.name == name)
+    }
+
+    pub fn rect(&self, name: &ComponentName) -> Option<Rect> {
+        self.item(name).map(|i| i.rect)
+    }
+}
+
+/// Reads property values of a widget, falling back to the type's default.
+pub(crate) struct Props<'a> {
+    pub form: &'a Form,
+    pub registry: &'a TypeRegistry,
+}
+
+impl Props<'_> {
+    pub fn value(&self, widget: &Widget, property: &str) -> Option<Value> {
+        let component = &widget.component;
+        component
+            .get(property)
+            .map(|v| v.value.clone())
+            .or_else(|| {
+                self.registry
+                    .property_def(&component.type_ref, &self.form.backend, property)?
+                    .default
+                    .clone()
+            })
+    }
+
+    pub fn text(&self, widget: &Widget, property: &str) -> Option<String> {
+        match self.value(widget, property)? {
+            Value::Text(t) => Some(t),
+            _ => None,
+        }
+    }
+
+    pub fn bool(&self, widget: &Widget, property: &str, default: bool) -> bool {
+        match self.value(widget, property) {
+            Some(Value::Bool(b)) => b,
+            _ => default,
+        }
+    }
+
+    pub fn is_container(&self, widget: &Widget) -> bool {
+        !widget.children.is_empty()
+            || self
+                .registry
+                .get(&widget.component.type_ref)
+                .is_some_and(|t| t.kind.is_container())
+    }
+}
+
+/// The text that decides a widget's natural width.
+pub(crate) fn display_text(props: &Props<'_>, widget: &Widget) -> Option<String> {
+    let type_ref = &widget.component.type_ref;
+    if *type_ref == builtin::label() {
+        props.text(widget, "text")
+    } else if *type_ref == builtin::button() || *type_ref == builtin::check_box() {
+        props.text(widget, "caption")
+    } else if *type_ref == builtin::edit() {
+        None
+    } else {
+        props
+            .text(widget, "caption")
+            .or_else(|| props.text(widget, "text"))
+    }
+}
+
+struct Layouter<'a> {
+    props: Props<'a>,
+    theme: &'a Theme,
+    items: Vec<LayoutItem>,
+}
+
+impl Layouter<'_> {
+    /// Layout kind, spacing and padding (left, top, right, bottom).
+    fn params(&self, widget: &Widget) -> (LayoutKind, i32, [i32; 4]) {
+        match &widget.visual.layout {
+            Some(l) => (
+                l.kind.clone(),
+                l.spacing,
+                [
+                    l.padding.left,
+                    l.padding.top,
+                    l.padding.right,
+                    l.padding.bottom,
+                ],
+            ),
+            None => (
+                LayoutKind::Vertical,
+                self.theme.spacing,
+                [self.theme.padding; 4],
+            ),
+        }
+    }
+
+    fn natural(&self, widget: &Widget) -> (i32, i32) {
+        if widget.component.type_ref == builtin::form() {
+            return match self.props.value(widget, "size") {
+                Some(Value::Size(s)) => (s.width, s.height + self.theme.title_bar_height),
+                _ => (640, 480 + self.theme.title_bar_height),
+            };
+        }
+        let metrics = self.theme.metrics(&widget.component.type_ref);
+        if !self.props.is_container(widget) {
+            let text = display_text(&self.props, widget)
+                .map(|t| self.theme.text_width(&t))
+                .unwrap_or_else(|| {
+                    if self
+                        .props
+                        .registry
+                        .get(&widget.component.type_ref)
+                        .is_none()
+                    {
+                        self.theme.text_width(&widget.component.type_ref.name)
+                    } else {
+                        0
+                    }
+                });
+            let check = if widget.component.type_ref == builtin::check_box() {
+                self.theme.check_size + self.theme.spacing
+            } else {
+                0
+            };
+            let width = (text + 2 * metrics.padding_x + check).max(metrics.min_width);
+            return (width, metrics.height);
+        }
+
+        let (kind, spacing, [left, top, right, bottom]) = self.params(widget);
+        let flow: Vec<(i32, i32)> = widget
+            .children
+            .iter()
+            .filter(|c| !c.visual.placement.is_absolute())
+            .map(|c| self.natural(c))
+            .collect();
+        let gaps = spacing * (flow.len().saturating_sub(1) as i32);
+        let (w, h) = match kind {
+            LayoutKind::Horizontal => (
+                flow.iter().map(|s| s.0).sum::<i32>() + gaps,
+                flow.iter().map(|s| s.1).max().unwrap_or(0),
+            ),
+            LayoutKind::Grid { columns } => {
+                let columns = columns.max(1) as usize;
+                let rows = flow.len().div_ceil(columns);
+                let width = (0..columns)
+                    .map(|c| {
+                        flow.iter()
+                            .skip(c)
+                            .step_by(columns)
+                            .map(|s| s.0)
+                            .max()
+                            .unwrap_or(0)
+                    })
+                    .sum::<i32>()
+                    + spacing * (columns.min(flow.len()).saturating_sub(1) as i32);
+                let height = (0..rows)
+                    .map(|r| {
+                        flow.iter()
+                            .skip(r * columns)
+                            .take(columns)
+                            .map(|s| s.1)
+                            .max()
+                            .unwrap_or(0)
+                    })
+                    .sum::<i32>()
+                    + spacing * (rows.saturating_sub(1) as i32);
+                (width, height)
+            }
+            LayoutKind::Stack => (
+                flow.iter().map(|s| s.0).max().unwrap_or(0),
+                flow.iter().map(|s| s.1).max().unwrap_or(0),
+            ),
+            LayoutKind::Absolute => widget
+                .children
+                .iter()
+                .filter_map(|c| match c.visual.placement {
+                    Placement::Absolute { position, size } => {
+                        Some((position.x + size.width, position.y + size.height))
+                    }
+                    _ => None,
+                })
+                .fold((0, 0), |a, b| (a.0.max(b.0), a.1.max(b.1))),
+            LayoutKind::Vertical | LayoutKind::Custom(_) => (
+                flow.iter().map(|s| s.0).max().unwrap_or(0),
+                flow.iter().map(|s| s.1).sum::<i32>() + gaps,
+            ),
+        };
+        (
+            (w + left + right).max(metrics.min_width),
+            (h + top + bottom).max(metrics.height),
+        )
+    }
+
+    /// Places `natural` inside `cell` by `align` on one axis.
+    fn align(align: tdr_core::Align, start: i32, space: i32, natural: i32) -> (i32, i32) {
+        let size = natural.min(space);
+        match align {
+            tdr_core::Align::Fill => (start, space),
+            tdr_core::Align::Start => (start, size),
+            tdr_core::Align::Center => (start + (space - size) / 2, size),
+            tdr_core::Align::End => (start + space - size, size),
+        }
+    }
+
+    fn arrange(
+        &mut self,
+        widget: &Widget,
+        rect: Rect,
+        depth: usize,
+        parent: Option<&ComponentName>,
+    ) {
+        let is_window = depth == 0 && widget.component.type_ref == builtin::form();
+        let container = self.props.is_container(widget);
+        let (kind, spacing, [left, top, right, bottom]) = self.params(widget);
+        let client = if is_window {
+            rect.inset(0, self.theme.title_bar_height, 0, 0)
+        } else {
+            rect
+        };
+        let content = client.inset(left, top, right, bottom);
+        self.items.push(LayoutItem {
+            name: widget.component.name.clone(),
+            kind: if is_window {
+                ItemKind::Window
+            } else {
+                ItemKind::Widget
+            },
+            rect,
+            depth,
+            parent: parent.cloned(),
+            content: container.then_some(content),
+        });
+        if !container {
+            return;
+        }
+
+        let name = widget.component.name.clone();
+        let flow: Vec<&Widget> = widget
+            .children
+            .iter()
+            .filter(|c| !c.visual.placement.is_absolute())
+            .collect();
+        let naturals: Vec<(i32, i32)> = flow.iter().map(|c| self.natural(c)).collect();
+        let mut placed: Vec<(&Widget, Rect)> = Vec::new();
+        let stretch_of = |w: &Widget| match w.visual.placement {
+            Placement::Layout { stretch, .. } => stretch as i32,
+            Placement::Absolute { .. } => 0,
+        };
+        let align_of = |w: &Widget| match w.visual.placement {
+            Placement::Layout { align, .. } => align,
+            Placement::Absolute { .. } => tdr_core::Align::Start,
+        };
+        let gaps = spacing * (flow.len().saturating_sub(1) as i32);
+
+        match kind {
+            LayoutKind::Vertical | LayoutKind::Custom(_) | LayoutKind::Horizontal => {
+                let vertical = !matches!(kind, LayoutKind::Horizontal);
+                let main = |s: (i32, i32)| if vertical { s.1 } else { s.0 };
+                let total: i32 = naturals.iter().map(|s| main(*s)).sum::<i32>() + gaps;
+                let space = if vertical {
+                    content.height
+                } else {
+                    content.width
+                };
+                let extra = (space - total).max(0);
+                let weights: i32 = flow.iter().map(|w| stretch_of(w)).sum();
+                let mut cursor = if vertical { content.y } else { content.x };
+                let mut given = 0;
+                let stretched = flow.iter().filter(|w| stretch_of(w) > 0).count();
+                let mut seen = 0;
+                for (child, natural) in flow.iter().zip(&naturals) {
+                    let mut size = main(*natural);
+                    let weight = stretch_of(child);
+                    if weights > 0 && weight > 0 {
+                        seen += 1;
+                        // The last stretched child takes the rounding rest.
+                        let share = if seen == stretched {
+                            extra - given
+                        } else {
+                            extra * weight / weights
+                        };
+                        given += share;
+                        size += share;
+                    }
+                    let rect = if vertical {
+                        let (x, w) =
+                            Self::align(align_of(child), content.x, content.width, natural.0);
+                        Rect::new(x, cursor, w, size)
+                    } else {
+                        let (y, h) =
+                            Self::align(align_of(child), content.y, content.height, natural.1);
+                        Rect::new(cursor, y, size, h)
+                    };
+                    placed.push((child, rect));
+                    cursor += size + spacing;
+                }
+            }
+            LayoutKind::Grid { columns } => {
+                let columns = columns.max(1) as usize;
+                // Cell of every child: explicit, else in order.
+                let cells: Vec<(usize, usize)> = flow
+                    .iter()
+                    .enumerate()
+                    .map(|(i, w)| match &w.visual.placement {
+                        Placement::Layout {
+                            cell: Some(cell), ..
+                        } => (cell.row as usize, (cell.column as usize).min(columns - 1)),
+                        _ => (i / columns, i % columns),
+                    })
+                    .collect();
+                let rows = cells.iter().map(|c| c.0 + 1).max().unwrap_or(0);
+                let mut widths = vec![0; columns];
+                let mut heights = vec![0; rows];
+                for ((row, column), natural) in cells.iter().zip(&naturals) {
+                    widths[*column] = widths[*column].max(natural.0);
+                    heights[*row] = heights[*row].max(natural.1);
+                }
+                // Columns share the remaining width evenly.
+                let used: i32 = widths.iter().sum::<i32>() + spacing * (columns as i32 - 1);
+                let extra = (content.width - used).max(0);
+                for (i, w) in widths.iter_mut().enumerate() {
+                    *w += extra / columns as i32 + i32::from(i < (extra % columns as i32) as usize);
+                }
+                let xs: Vec<i32> = widths
+                    .iter()
+                    .scan(content.x, |x, w| {
+                        let start = *x;
+                        *x += w + spacing;
+                        Some(start)
+                    })
+                    .collect();
+                let ys: Vec<i32> = heights
+                    .iter()
+                    .scan(content.y, |y, h| {
+                        let start = *y;
+                        *y += h + spacing;
+                        Some(start)
+                    })
+                    .collect();
+                for ((child, (row, column)), natural) in flow.iter().zip(&cells).zip(&naturals) {
+                    let align = align_of(child);
+                    let (x, w) = Self::align(align, xs[*column], widths[*column], natural.0);
+                    let (y, h) = Self::align(align, ys[*row], heights[*row], natural.1);
+                    placed.push((child, Rect::new(x, y, w, h)));
+                }
+            }
+            LayoutKind::Stack => {
+                for (child, natural) in flow.iter().zip(&naturals) {
+                    let align = align_of(child);
+                    let (x, w) = Self::align(align, content.x, content.width, natural.0);
+                    let (y, h) = Self::align(align, content.y, content.height, natural.1);
+                    placed.push((child, Rect::new(x, y, w, h)));
+                }
+            }
+            LayoutKind::Absolute => {
+                for (child, natural) in flow.iter().zip(&naturals) {
+                    placed.push((child, Rect::new(content.x, content.y, natural.0, natural.1)));
+                }
+            }
+        }
+        for child in widget.children.iter() {
+            if let Placement::Absolute { position, size } = child.visual.placement {
+                placed.push((
+                    child,
+                    Rect::new(
+                        content.x + position.x,
+                        content.y + position.y,
+                        size.width,
+                        size.height,
+                    ),
+                ));
+            }
+        }
+        // Keep the model's child order (depth-first, as in the tree).
+        for child in &widget.children {
+            if let Some((_, rect)) = placed.iter().find(|(c, _)| std::ptr::eq(*c, child)) {
+                self.arrange(child, *rect, depth + 1, Some(&name));
+            }
+        }
+    }
+}
+
+/// Lays out `form` on the design surface.
+pub fn layout(form: &Form, registry: &TypeRegistry, theme: &Theme) -> FormLayout {
+    let mut layouter = Layouter {
+        props: Props { form, registry },
+        theme,
+        items: Vec::new(),
+    };
+    let margin = theme.margin;
+    let mut width = 400;
+    let mut bottom = margin;
+    if let Some(root) = &form.root {
+        let (w, h) = layouter.natural(root);
+        layouter.arrange(root, Rect::new(margin, margin, w, h), 0, None);
+        width = width.max(w + 2 * margin);
+        bottom = margin + h + margin;
+    }
+
+    // Tray of non-visual components, wrapping at the surface width.
+    let tray_item = |name: &str| (theme.text_width(name) + 16).max(theme.icon_size + 32);
+    let mut x = margin;
+    let mut y = bottom;
+    let mut rows_used = false;
+    for component in &form.components {
+        let w = tray_item(component.name.as_str());
+        if x + w > width - margin && x > margin {
+            x = margin;
+            y += theme.tray_height;
+        }
+        layouter.items.push(LayoutItem {
+            name: component.name.clone(),
+            kind: ItemKind::Component,
+            rect: Rect::new(x, y, w, theme.tray_height),
+            depth: 0,
+            parent: None,
+            content: None,
+        });
+        x += w + theme.spacing;
+        rows_used = true;
+    }
+    let height = if rows_used {
+        y + theme.tray_height + margin
+    } else {
+        bottom
+    };
+    FormLayout {
+        width,
+        height,
+        items: layouter.items,
+    }
+}
+
+/// Where a new or moved widget dropped at `point` would go: the deepest
+/// container under the point and the child index (by position in its
+/// layout). `None` outside of every container.
+pub fn drop_target(
+    form: &Form,
+    registry: &TypeRegistry,
+    layout: &FormLayout,
+    point: Point,
+) -> Option<(ComponentName, usize)> {
+    let props = Props { form, registry };
+    let container = layout.items.iter().rev().find(|i| {
+        i.kind != ItemKind::Component
+            && i.content.is_some_and(|c| c.contains(point))
+            && form.widget(&i.name).is_some_and(|w| props.is_container(w))
+    })?;
+    let widget = form.widget(&container.name)?;
+    let horizontal = matches!(
+        widget.visual.layout.as_ref().map(|l| &l.kind),
+        Some(LayoutKind::Horizontal)
+    );
+    let index = widget
+        .children
+        .iter()
+        .filter_map(|c| layout.rect(&c.component.name))
+        .filter(|r| {
+            let center = r.center();
+            if horizontal {
+                center.x < point.x
+            } else {
+                center.y < point.y
+            }
+        })
+        .count();
+    Some((container.name.clone(), index))
+}

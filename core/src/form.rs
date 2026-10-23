@@ -153,6 +153,55 @@ impl Form {
         Ok(())
     }
 
+    /// Inserts a widget (with its subtree) as child `index` of `parent`
+    /// (clamped to the number of children).
+    pub fn insert_widget(
+        &mut self,
+        parent: &ComponentName,
+        index: usize,
+        widget: Widget,
+    ) -> Result<(), ModelError> {
+        self.ensure_free(widget.descendants().into_iter().map(|w| &w.component.name))?;
+        let parent = self
+            .widget_mut(parent)
+            .ok_or_else(|| ModelError::NotFound(parent.clone()))?;
+        let index = index.min(parent.children.len());
+        parent.children.insert(index, widget);
+        Ok(())
+    }
+
+    /// Moves a widget (with its subtree) to child `index` of `new_parent` –
+    /// another container or a new position in the same one. References stay
+    /// valid, names do not change.
+    pub fn move_widget(
+        &mut self,
+        name: &ComponentName,
+        new_parent: &ComponentName,
+        index: usize,
+    ) -> Result<(), ModelError> {
+        let root = self
+            .root
+            .as_mut()
+            .ok_or_else(|| ModelError::NotFound(name.clone()))?;
+        if &root.component.name == name {
+            return Err(ModelError::CannotRemoveRoot);
+        }
+        let moved = root
+            .find_mut(name)
+            .ok_or_else(|| ModelError::NotFound(name.clone()))?;
+        if moved.find_mut(new_parent).is_some() {
+            return Err(ModelError::MoveIntoItself(name.clone()));
+        }
+        if root.find_mut(new_parent).is_none() {
+            return Err(ModelError::NotFound(new_parent.clone()));
+        }
+        let widget = root.remove_descendant(name).expect("found above");
+        let parent = root.find_mut(new_parent).expect("found above");
+        let index = index.min(parent.children.len());
+        parent.children.insert(index, widget);
+        Ok(())
+    }
+
     /// Adds a non-visual component.
     pub fn add_component(&mut self, component: Component) -> Result<(), ModelError> {
         self.ensure_free([&component.name])?;

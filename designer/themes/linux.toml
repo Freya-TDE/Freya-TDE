@@ -1,0 +1,55 @@
+# Theme-/Metrik-Tabelle für linux – optische Anpassungen hier, nicht im Code.
+# Theme and metric table for linux – optical adjustments here, not in code.
+name = "linux"
+font-size = 14
+char-width = 0.55
+title-bar-height = 38
+padding = 12
+spacing = 8
+radius = 6
+check-size = 16
+tray-height = 64
+icon-size = 28
+margin = 24
+
+[colors]
+desktop = "#e4e4e4"
+window = "#fafafa"
+window-border = "#c0bfbc"
+title-bar = "#ebebeb"
+title-text = "#2e3436"
+control = "#f6f5f4"
+control-border = "#c0bfbc"
+input = "#ffffff"
+text = "#2e3436"
+disabled-text = "#9a9996"
+placeholder = "#9a9996"
+accent = "#3584e4"
+container-border = "#b0b0b0"
+selection = "#3584e4"
+tray = "#f0f0f0"
+
+[widgets."core/Button"]
+height = 34
+min-width = 80
+padding-x = 14
+
+[widgets."core/Label"]
+height = 22
+min-width = 20
+padding-x = 0
+
+[widgets."core/Edit"]
+height = 34
+min-width = 160
+padding-x = 8
+
+[widgets."core/CheckBox"]
+height = 24
+min-width = 24
+padding-x = 0
+
+[widgets."core/Container"]
+height = 60
+min-width = 100
+padding-x = 0
