@@ -40,6 +40,7 @@ pub mod window {
     pub const INSPECTOR: &str = "inspector";
     pub const STRUCTURE: &str = "structure";
     pub const MESSAGES: &str = "messages";
+    pub const CODE: &str = "code";
 }
 
 /// All window places.
@@ -76,6 +77,7 @@ impl Desktop {
             (window::INSPECTOR, Place::at(40, 490, 280, 420)),
             (window::DESIGNER, Place::at(340, 200, 800, 560)),
             (window::MESSAGES, Place::at(340, 790, 800, 120)),
+            (window::CODE, Place::at(370, 230, 820, 600)),
         ];
         Self {
             windows: windows

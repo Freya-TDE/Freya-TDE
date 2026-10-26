@@ -28,6 +28,10 @@ fn main() {
     unsafe {
         std::env::set_var("HOME", &home);
         std::env::set_var("XDG_CONFIG_HOME", home.join("config"));
+        // Ohne Bildschirm (Xvfb) ist Software-Vulkan unzuverlässig.
+        if std::env::var_os("GSK_RENDERER").is_none() {
+            std::env::set_var("GSK_RENDERER", "cairo");
+        }
     }
     let _app = Application::new();
     let ide = freya_td::Ide::start(None);
@@ -95,7 +99,44 @@ fn main() {
     assert!(ide.session().form().unwrap().contains(&name("hint")));
     println!("test run_commands ... ok");
 
+    // Doppelklick im Designer: Handler anlegen, Code erzeugen, hinspringen.
+    let project_dir = home.join("shop");
+    let session = freya_td::Session::create(
+        &project_dir,
+        "shop",
+        "none",
+        tdr_core::TypeRegistry::with_builtins(),
+    )
+    .unwrap();
+    drop(session);
+    let ide = freya_td::Ide::start(Some(&project_dir.join("shop.ptdr")));
+    let surface = ide.design_surface();
+    ide.arm(Some(builtin::button()));
+    let client = {
+        let session = ide.session();
+        let layout = session.layout().unwrap();
+        layout.item(&name("window")).unwrap().content.unwrap()
+    };
+    let spot = tdr_designer::Point::new(client.center().x, client.bottom() - 5);
+    mouse(&surface, MouseAction::Pressed, spot);
+    mouse(&surface, MouseAction::Released, spot);
+    let button = ide
+        .session()
+        .layout()
+        .unwrap()
+        .rect(&name("button1"))
+        .unwrap();
+    mouse(&surface, MouseAction::DoubleClicked, button.center());
+    assert_eq!(
+        ide.code_file(),
+        Some(project_dir.join("src/main_form.rs")),
+        "Code-Editor zeigt die Formulardatei"
+    );
+    let source = std::fs::read_to_string(project_dir.join("src/main_form.rs")).unwrap();
+    assert!(source.contains("pub fn button1_click(&mut self)"));
+    println!("test double_click_opens_handler ... ok");
+
     Application::process_events();
     let _ = std::fs::remove_dir_all(&home);
-    println!("\ntest result: ok. 4 passed");
+    println!("\ntest result: ok. 5 passed");
 }

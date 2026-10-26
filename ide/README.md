@@ -9,15 +9,19 @@ is saved per user and restored on start.*
 | Fenster / window | Inhalt / content |
 |---|---|
 | Hauptfenster | Menü, Komponentenpalette (ein Reiter je Kategorie), Statuszeile |
-| Designer | das Formular auf einer Zeichenfläche: klicken wählt (Strg/Umschalt ergänzt), mit gewählter Palette klicken platziert, ziehen ordnet um bzw. verschiebt in einen anderen Container, Entf löscht, Esc bricht ab, Rechtsklick-Menü |
+| Designer | das Formular auf einer Zeichenfläche: klicken wählt (Strg/Umschalt ergänzt), mit gewählter Palette klicken platziert, ziehen ordnet um bzw. verschiebt in einen anderen Container, Doppelklick springt zum Handler (legt ihn an), Entf löscht, Esc bricht ab, Rechtsklick-Menü, F12 = Code |
+| Code | ein Reiter je Datei (GtkSourceView): Hervorhebung, Zeilennummern, Fehlermarken vom Build; `.gen.rs` schreibgeschützt; Strg+S speichert, Strg+W schließt, F12 = Designer; der Designer folgt dem Reiter |
 | Objektinspektor | Eigenschaften (Editor passend zum Typ, ↺ = Standardwert) und Ereignisse (… schlägt einen Handler vor) |
 | Struktur | Formulare und Elemente als Baum |
-| Meldungen | Prüfergebnisse; Auswahl springt zum Element |
+| Meldungen | Prüfergebnisse, Code- und Compilermeldungen; Auswahl springt zum Element bzw. zur Quellzeile |
+
+Projekt-Menü: Code erzeugen (Strg+G), Bauen (Strg+F9, im Hintergrund), Starten (F9).
 
 ```bash
 cargo run -p freya-td                          # neues, ungespeichertes Projekt
 cargo run -p freya-td -- pfad/app.ptdr         # Projekt öffnen
 cargo run -p freya-td -- --commands cmds.json  # Designer-Befehle (JSON) anwenden
+cargo run -p freya-td -- --generate --show-code # Code erzeugen und im Editor öffnen
 cargo run -p freya-td -- --screenshots shots   # alle Fenster als PNG, dann beenden
 xvfb-run -a cargo test -p freya-td             # Tests (Linux ohne Bildschirm)
 ```

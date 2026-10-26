@@ -24,6 +24,7 @@ pub struct DesignerWindow {
 impl DesignerWindow {
     pub fn build() -> Self {
         let window = RnclWindow::new("Designer");
+        window.set_menu_bar(menu_bar());
         let scroll = RnclScrollView::new(&window);
         let canvas = RnclCanvas::new(scroll.content());
         Self {
@@ -135,6 +136,13 @@ fn drop_marker(
     })
 }
 
+fn menu_bar() -> MenuBar {
+    vec![(
+        "Ansicht".into(),
+        Menu::new().item("designer.code", "Code", Some("F12")),
+    )]
+}
+
 fn context_menu(kind: Option<ItemKind>) -> Menu {
     let menu = Menu::new();
     match kind {
@@ -232,6 +240,7 @@ pub fn connect(ide: &Rc<Ide>) {
         .on_menu(with(ide, |ide, id: String| match id.as_str() {
             "designer.delete" => ide.delete_selection(),
             "designer.inspector" => ide.show_window(crate::desktop::window::INSPECTOR),
+            "designer.code" => ide.show_code(),
             _ => {}
         }));
 }

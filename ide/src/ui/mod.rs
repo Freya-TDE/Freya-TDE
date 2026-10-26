@@ -2,6 +2,7 @@
 //! owns them together with the [`Session`] and refreshes them after every
 //! change.
 
+mod code;
 mod convert;
 mod designer;
 mod inspector;
@@ -23,6 +24,7 @@ use tdr_designer::{Command, CommandError};
 use crate::desktop::{Desktop, Place, window};
 use crate::session::{Changes, Session};
 
+use code::CodeWindow;
 use designer::DesignerWindow;
 use inspector::InspectorWindow;
 use main_window::MainWindow;
@@ -93,6 +95,7 @@ pub struct Ide {
     inspector: InspectorWindow,
     structure: StructureWindow,
     messages: MessagesWindow,
+    code: CodeWindow,
     /// Debug binary of the last successful build.
     executable: RefCell<Option<PathBuf>>,
     /// A build is running; start the program when it succeeds.
@@ -137,6 +140,7 @@ impl Ide {
             inspector: InspectorWindow::build(),
             structure: StructureWindow::build(),
             messages: MessagesWindow::build(),
+            code: CodeWindow::build(),
             executable: RefCell::new(None),
             building: Cell::new(false),
             run_after_build: Cell::new(false),
@@ -153,6 +157,7 @@ impl Ide {
         inspector::connect(&ide);
         structure::connect(&ide);
         messages::connect(&ide);
+        code::connect(&ide);
         if let Some(path) = project {
             ide.open_path(path);
         }
@@ -168,13 +173,14 @@ impl Ide {
         self.session.borrow()
     }
 
-    fn windows(&self) -> [(&'static str, &RnclWindow); 5] {
+    fn windows(&self) -> [(&'static str, &RnclWindow); 6] {
         [
             (window::MAIN, &self.main.window),
             (window::STRUCTURE, &self.structure.window),
             (window::INSPECTOR, &self.inspector.window),
             (window::DESIGNER, &self.designer.window),
             (window::MESSAGES, &self.messages.window),
+            (window::CODE, &self.code.window),
         ]
     }
 
@@ -246,6 +252,11 @@ impl Ide {
     /// events with `simulate_mouse` / `simulate_key`.
     pub fn design_surface(&self) -> Widget {
         self.designer.canvas_widget()
+    }
+
+    /// The file in the front tab of the code editor (automation).
+    pub fn code_file(&self) -> Option<PathBuf> {
+        self.code.current_path()
     }
 
     /// The element the object inspector currently shows.
@@ -387,7 +398,7 @@ impl Ide {
     }
 
     fn confirm_discard(&self) -> bool {
-        !self.session.borrow().document().is_dirty()
+        !(self.session.borrow().document().is_dirty() || self.code.has_unsaved())
             || dialog::confirm(
                 Some(self.main.window.widget()),
                 "Ungespeicherte Änderungen",
@@ -491,9 +502,16 @@ impl Ide {
         if self.path.borrow().is_none() && !self.save() {
             return None;
         }
+        // Ungespeicherte Änderungen im Code zuerst sichern (der Generator
+        // hängt Handler-Stubs an die Nutzerdateien an).
+        if let Err(e) = self.code.save_all() {
+            self.main.set_status(&e);
+            return None;
+        }
         let result = self.session.borrow_mut().write_code();
         match result {
             Ok((generation, written)) => {
+                self.code.reload_from_disk();
                 self.messages.show_codegen(&generation);
                 self.main.set_status(&if written.is_empty() {
                     "Code ist aktuell.".to_owned()
@@ -562,6 +580,22 @@ impl Ide {
         self.building.set(false);
         let dir = self.session().project_dir();
         self.messages.show_build(&report, dir.as_deref());
+        let mut marks: std::collections::BTreeMap<PathBuf, Vec<LineMark>> = Default::default();
+        if let Some(dir) = &dir {
+            for m in &report.messages {
+                if let (Some(file), Some(line)) = (&m.file, m.line) {
+                    let kind = match m.severity {
+                        tdr_core::Severity::Error => MarkKind::Error,
+                        tdr_core::Severity::Warning => MarkKind::Warning,
+                    };
+                    marks
+                        .entry(dir.join(file))
+                        .or_default()
+                        .push(LineMark::new(line, kind, &m.message));
+                }
+            }
+        }
+        self.code.set_marks(marks);
         let errors = report.errors().count();
         if report.success {
             *self.executable.borrow_mut() = report.executable.clone();
@@ -629,8 +663,25 @@ impl Ide {
 
     /// Opens a source file at a line (1-based) in the code editor.
     pub fn open_source(&self, path: &Path, line: usize) {
-        // Der Code-Editor (GtkSourceView) folgt; bis dahin der Fundort.
-        self.main.set_status(&format!("{}:{line}", path.display()));
+        let Some(me) = self.me.upgrade() else {
+            return;
+        };
+        if let Err(e) = self.code.open(&me, path, line) {
+            self.main.set_status(&e);
+        }
+    }
+
+    /// Opens the `.rs` of the current form in the code editor (F12).
+    pub fn show_code(&self) {
+        match self.session().form_source() {
+            Some(path) if path.exists() => self.open_source(&path, 1),
+            Some(_) => self
+                .main
+                .set_status("Noch kein Code – „Code erzeugen“ (Strg+G) legt ihn an."),
+            None => self
+                .main
+                .set_status("Das Projekt ist noch nicht gespeichert."),
+        }
     }
 
     /// Ends Freya-TD (asks about unsaved changes).

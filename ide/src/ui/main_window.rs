@@ -62,6 +62,7 @@ fn menu_bar() -> MenuBar {
                 .item("window.inspector", "Objektinspektor", Some("F11"))
                 .item("window.structure", "Struktur", None)
                 .item("window.messages", "Meldungen", None)
+                .item("window.code", "Code", None)
                 .separator()
                 .item("window.reset", "Standardanordnung", None),
         ),
@@ -217,6 +218,7 @@ pub fn connect(ide: &Rc<Ide>) {
             "window.inspector" => ide.show_window(window::INSPECTOR),
             "window.structure" => ide.show_window(window::STRUCTURE),
             "window.messages" => ide.show_window(window::MESSAGES),
+            "window.code" => ide.show_code(),
             "window.reset" => ide.reset_desktop(),
             _ => {}
         }));

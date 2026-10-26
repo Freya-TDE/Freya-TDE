@@ -4,6 +4,8 @@
 //! freya-td                                  # neues, ungespeichertes Projekt
 //! freya-td pfad/zu/app.ptdr                 # Projekt öffnen
 //! freya-td --commands befehle.json          # Designer-Befehle anwenden (JSON)
+//! freya-td --generate                      # Code erzeugen (nach --commands)
+//! freya-td --show-code                     # Code des Formulars im Editor öffnen
 //! freya-td --screenshots ordner             # alle Fenster als PNG speichern, beenden
 //! ```
 
@@ -15,6 +17,8 @@ struct Args {
     project: Option<PathBuf>,
     commands: Option<PathBuf>,
     screenshots: Option<PathBuf>,
+    generate: bool,
+    show_code: bool,
 }
 
 fn args() -> Args {
@@ -22,12 +26,16 @@ fn args() -> Args {
         project: None,
         commands: None,
         screenshots: None,
+        generate: false,
+        show_code: false,
     };
     let mut it = std::env::args_os().skip(1);
     while let Some(arg) = it.next() {
         match arg.to_str() {
             Some("--commands") => args.commands = it.next().map(PathBuf::from),
             Some("--screenshots") => args.screenshots = it.next().map(PathBuf::from),
+            Some("--generate") => args.generate = true,
+            Some("--show-code") => args.show_code = true,
             _ => args.project = Some(PathBuf::from(arg)),
         }
     }
@@ -55,6 +63,12 @@ fn main() {
         if let Err(e) = result {
             eprintln!("freya-td: {}: {e}", file.display());
         }
+    }
+    if args.generate {
+        ide.generate_code();
+    }
+    if args.show_code {
+        ide.show_code();
     }
     if let Some(dir) = &args.screenshots {
         for _ in 0..30 {
