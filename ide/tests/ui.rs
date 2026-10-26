@@ -254,6 +254,13 @@ fn main() {
             ide.code_file()
                 .is_some_and(|p| p.to_string_lossy().contains("diff:u:README.md"))
         );
+        ide.set_graph_refs(freya_td::git::LogRefs::All);
+        assert!(
+            ide.git_output().contains("> git commit -F -"),
+            "{}",
+            ide.git_output()
+        );
+        ide.git_show_output();
         ide.open_project_file("src/main_form.ftdr");
         println!("test git ... ok");
         passed += 1;

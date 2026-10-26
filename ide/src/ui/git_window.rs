@@ -1,30 +1,36 @@
 //! Source control window (like VS Code, see `images/vsc-git*.png`): the
-//! repository with branch and ↓/↑, the commit message with the commit
-//! button and its variants, the staged and unstaged changes with their
-//! status letters, and the commit graph. The logic is [`crate::git`];
-//! the window shows [`Ide`]'s Git state and forwards input.
+//! repository row with branch, sync and more actions; the commit message
+//! (grows with the text) with the commit button and its variants; the
+//! staged and unstaged changes (list or tree) with their status letters;
+//! the commit graph with its toolbar (branches shown, current commit,
+//! fetch, pull, push, refresh). The logic is [`crate::git`]; the window
+//! shows [`Ide`]'s Git state and forwards input.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
+use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use rncl::prelude::*;
 use ruf::{Application, Color, ColorScheme, Point, Rect, Shape};
 
 use super::{Ide, with, with0};
-use crate::git::{After, Change, Commit, GitOp, GraphRow, RowPos, Status};
+use crate::git::{After, Change, Commit, GitOp, GraphRow, LogRefs, RowPos, Status};
 
 const MARGIN: i32 = 6;
-const HEADER: i32 = 24;
-const MESSAGE: i32 = 64;
+const BAR: i32 = 28;
+const ICON: i32 = 30;
 const BUTTON: i32 = 30;
 const DROPDOWN: i32 = 30;
+/// Height of a line in the commit message; it shows 2 to 12 lines.
+const MESSAGE_LINE: i32 = 18;
 
 /// Height of a graph row and width of a lane.
 const ROW: i32 = 22;
 const LANE: i32 = 12;
 const GRAPH_LEFT: i32 = 10;
 
-/// Tree ids of the two groups; files are `s:<path>` and `u:<path>`.
+/// Tree ids of the two groups; files are `s:<path>` / `u:<path>`, folders
+/// (tree view) `sd:<path>` / `ud:<path>`.
 const STAGED: &str = "staged";
 const UNSTAGED: &str = "unstaged";
 
@@ -65,50 +71,101 @@ fn dim_color() -> Color {
     Color::rgb(0x88, 0x88, 0x88)
 }
 
-fn file_name(path: &str) -> &str {
-    path.rsplit_once('/').map_or(path, |(_, n)| n)
+fn split(path: &str) -> (&str, &str) {
+    path.rsplit_once('/').unwrap_or(("", path))
 }
 
-fn file_item(prefix: &str, path: &str, change: Change) -> TreeItem {
-    let dir = path.rsplit_once('/').map_or("", |(d, _)| d);
-    let text = if dir.is_empty() {
-        file_name(path).to_owned()
+fn file_item(prefix: &str, path: &str, change: Change, show_dir: bool) -> TreeItem {
+    let (dir, name) = split(path);
+    let text = if show_dir && !dir.is_empty() {
+        format!("{name}   {dir}")
     } else {
-        format!("{}   {dir}", file_name(path))
+        name.to_owned()
     };
     TreeItem::new(&format!("{prefix}:{path}"), &text)
         .with_color(change_color(change))
         .with_badge(&change.letter().to_string())
 }
 
-/// The change tree: „Gestaged“ and „Änderungen“ with counters.
-fn change_items(status: &Status) -> Vec<TreeItem> {
-    let mut items = Vec::new();
-    let staged: Vec<TreeItem> = status
-        .staged()
-        .map(|(f, c)| file_item("s", &f.path, c))
-        .collect();
-    if !staged.is_empty() {
-        let mut group = TreeItem::new(STAGED, "Gestaged").with_badge(&staged.len().to_string());
-        group.children = staged;
-        items.push(group);
+/// Files of a group as a folder tree (VS Code's „View as Tree“).
+fn folder_tree(prefix: &str, files: &[(String, Change)]) -> Vec<TreeItem> {
+    #[derive(Default)]
+    struct Node {
+        folders: BTreeMap<String, Node>,
+        files: Vec<(String, Change)>,
     }
-    let unstaged: Vec<TreeItem> = status
+    let mut root = Node::default();
+    for (path, change) in files {
+        let (dir, _) = split(path);
+        let mut node = &mut root;
+        if !dir.is_empty() {
+            for part in dir.split('/') {
+                node = node.folders.entry(part.to_owned()).or_default();
+            }
+        }
+        node.files.push((path.clone(), *change));
+    }
+    fn items(prefix: &str, base: &str, node: &Node) -> Vec<TreeItem> {
+        let mut out = Vec::new();
+        for (name, child) in &node.folders {
+            let path = if base.is_empty() {
+                name.clone()
+            } else {
+                format!("{base}/{name}")
+            };
+            let mut item = TreeItem::new(&format!("{prefix}d:{path}"), &format!("{name}/"));
+            item.children = items(prefix, &path, child);
+            out.push(item);
+        }
+        out.extend(
+            node.files
+                .iter()
+                .map(|(path, change)| file_item(prefix, path, *change, false)),
+        );
+        out
+    }
+    items(prefix, "", &root)
+}
+
+/// The change tree: „Gestaged“ and „Änderungen“ with counters.
+fn change_items(status: &Status, as_tree: bool) -> Vec<TreeItem> {
+    let group = |id: &str, label: &str, prefix: &str, files: Vec<(String, Change)>| {
+        let mut group = TreeItem::new(id, label).with_badge(&files.len().to_string());
+        group.children = if as_tree {
+            folder_tree(prefix, &files)
+        } else {
+            files
+                .iter()
+                .map(|(p, c)| file_item(prefix, p, *c, true))
+                .collect()
+        };
+        group
+    };
+    let staged: Vec<(String, Change)> = status.staged().map(|(f, c)| (f.path.clone(), c)).collect();
+    let unstaged: Vec<(String, Change)> = status
         .unstaged()
-        .map(|(f, c)| file_item("u", &f.path, c))
+        .map(|(f, c)| (f.path.clone(), c))
         .collect();
-    let mut group = TreeItem::new(UNSTAGED, "Änderungen").with_badge(&unstaged.len().to_string());
-    group.children = unstaged;
-    items.push(group);
+    let mut items = Vec::new();
+    if !staged.is_empty() {
+        items.push(group(STAGED, "Gestaged", "s", staged));
+    }
+    items.push(group(UNSTAGED, "Änderungen", "u", unstaged));
     items
 }
 
-/// Keeps the expansion of the groups.
+/// Keeps the expansion of nodes that exist before and after a rebuild.
 fn keep_expansion(new: &mut [TreeItem], old: &[TreeItem]) {
+    fn find<'a>(items: &'a [TreeItem], id: &str) -> Option<&'a TreeItem> {
+        items
+            .iter()
+            .find_map(|i| (i.id == id).then_some(i).or_else(|| find(&i.children, id)))
+    }
     for item in new.iter_mut() {
-        if let Some(previous) = old.iter().find(|o| o.id == item.id) {
+        if let Some(previous) = find(old, &item.id) {
             item.expanded = previous.expanded;
         }
+        keep_expansion(&mut item.children, old);
     }
 }
 
@@ -116,7 +173,7 @@ fn lane_x(lane: usize) -> i32 {
     GRAPH_LEFT + lane as i32 * LANE
 }
 
-/// The graph as shapes: lines, dots, refs and subject per row.
+/// The graph as shapes: lines, dots, subject, author and refs per row.
 fn graph_shapes(commits: &[Commit], rows: &[GraphRow]) -> Vec<Shape> {
     let mut shapes = Vec::new();
     let fg = text_color();
@@ -173,8 +230,9 @@ fn graph_shapes(commits: &[Commit], rows: &[GraphRow]) -> Vec<Shape> {
         text_x += commit.author.chars().count() as i32 * 7 + 10;
         for name in &commit.refs {
             let w = name.chars().count() as i32 * 7 + 14;
-            let remote = name.contains('/') && !name.starts_with("tag: ");
-            let color = if remote {
+            let color = if name.starts_with("tag: ") {
+                Color::rgb(0x4e, 0xa8, 0x5a)
+            } else if name.contains('/') {
                 Color::rgb(0xb0, 0x6c, 0xd8)
             } else {
                 Color::rgb(0x3d, 0x8b, 0xd9)
@@ -200,45 +258,90 @@ fn graph_shapes(commits: &[Commit], rows: &[GraphRow]) -> Vec<Shape> {
     shapes
 }
 
-pub struct GitWindow {
-    pub window: RnclWindow,
-    header: RnclLabel,
-    message: RnclTextArea,
-    commit: RnclButton,
-    variants: RnclButton,
-    changes: RnclTreeView,
-    graph_title: RnclLabel,
-    graph_scroll: RnclScrollView,
-    graph: RnclCanvas,
-    /// Commits shown in the graph.
-    commits: RefCell<Vec<Commit>>,
-    /// The tree node the context menu was opened for.
-    menu_target: RefCell<String>,
-}
-
-fn menu_bar() -> MenuBar {
-    vec![(
-        "Git".into(),
-        Menu::new()
-            .item("git.commit", "Commit", Some("Ctrl+Enter"))
-            .item("git.commit_amend", "Commit (Amend)", None)
-            .item("git.commit_push", "Commit & Push", None)
-            .item("git.commit_sync", "Commit & Sync", None)
-            .separator()
-            .item("git.stage_all", "Alle Änderungen stagen", None)
-            .item("git.unstage_all", "Alle Änderungen unstagen", None)
-            .separator()
-            .item("git.fetch", "Fetch", None)
-            .item("git.pull", "Pull", None)
-            .item("git.push", "Push", None)
-            .item("git.sync", "Sync (Pull und Push)", None)
-            .separator()
-            .item("git.switch", "Zweig wechseln …", None)
-            .item("git.branch", "Neuer Zweig …", None)
-            .separator()
-            .item("git.refresh", "Aktualisieren", Some("F5"))
-            .item("git.init", "Repository anlegen", None),
-    )]
+/// „Weitere Aktionen“ (VS Code's „…“ at the repository); also the
+/// window's menu bar.
+fn more_actions() -> Menu {
+    Menu::new()
+        .item("git.pull", "Pull", None)
+        .item("git.push", "Push", None)
+        .item("git.clone", "Klonen …", None)
+        .item("git.checkout_to", "Auschecken nach …", None)
+        .item("git.fetch", "Fetch", None)
+        .separator()
+        .submenu(
+            "Commit",
+            Menu::new()
+                .item("git.commit", "Commit", Some("Ctrl+Enter"))
+                .item("git.commit_amend", "Commit (Amend)", None)
+                .item("git.commit_push", "Commit & Push", None)
+                .item("git.commit_sync", "Commit & Sync", None)
+                .separator()
+                .item("git.undo_commit", "Letzten Commit rückgängig", None),
+        )
+        .submenu(
+            "Änderungen",
+            Menu::new()
+                .item("git.stage_all", "Alle stagen", None)
+                .item("git.unstage_all", "Alle unstagen", None)
+                .item("git.discard_all", "Alle verwerfen …", None),
+        )
+        .submenu(
+            "Pull, Push",
+            Menu::new()
+                .item("git.sync", "Sync", None)
+                .separator()
+                .item("git.pull", "Pull", None)
+                .item("git.pull_rebase", "Pull (Rebase)", None)
+                .item("git.push", "Push", None)
+                .separator()
+                .item("git.fetch", "Fetch", None)
+                .item("git.fetch_all", "Fetch (alle Remotes)", None),
+        )
+        .submenu(
+            "Zweig",
+            Menu::new()
+                .item("git.merge", "Zusammenführen …", None)
+                .item("git.rebase", "Rebase …", None)
+                .separator()
+                .item("git.branch", "Neuer Zweig …", None)
+                .item("git.rename_branch", "Umbenennen …", None)
+                .item("git.delete_branch", "Löschen …", None)
+                .separator()
+                .item("git.publish", "Veröffentlichen", None),
+        )
+        .submenu(
+            "Remote",
+            Menu::new()
+                .item("git.add_remote", "Remote hinzufügen …", None)
+                .item("git.remove_remote", "Remote entfernen …", None),
+        )
+        .submenu(
+            "Stash",
+            Menu::new()
+                .item("git.stash", "Zurücklegen", None)
+                .item(
+                    "git.stash_untracked",
+                    "Zurücklegen (mit neuen Dateien)",
+                    None,
+                )
+                .separator()
+                .item("git.stash_pop_latest", "Letzten zurückholen", None)
+                .item("git.stash_apply_pick", "Anwenden …", None)
+                .item("git.stash_pop_pick", "Zurückholen …", None)
+                .item("git.stash_drop_pick", "Verwerfen …", None),
+        )
+        .submenu(
+            "Tags",
+            Menu::new()
+                .item("git.create_tag", "Tag anlegen …", None)
+                .item("git.delete_tag", "Tag löschen …", None)
+                .separator()
+                .item("git.push_tags", "Tags pushen", None),
+        )
+        .separator()
+        .item("git.output", "Git-Ausgabe anzeigen", None)
+        .item("git.init", "Repository anlegen", None)
+        .item("git.refresh", "Aktualisieren", Some("F5"))
 }
 
 fn commit_menu() -> Menu {
@@ -250,58 +353,145 @@ fn commit_menu() -> Menu {
         .item("git.commit_sync", "Commit & Sync", None)
 }
 
+fn icon_button(window: &RnclWindow, text: &str, tip: &str) -> RnclButton {
+    let button = RnclButton::new(window, text);
+    button.widget().set_tool_tip(tip);
+    button
+}
+
+pub struct GitWindow {
+    pub window: RnclWindow,
+    repo_name: RnclLabel,
+    branch: RnclButton,
+    sync: RnclButton,
+    more: RnclButton,
+    message: RnclTextArea,
+    commit: RnclButton,
+    variants: RnclButton,
+    changes: RnclTreeView,
+    graph_title: RnclLabel,
+    graph_refs: RnclButton,
+    /// Graph toolbar: current commit, fetch all, pull, push, refresh, view.
+    graph_tools: Vec<(RnclButton, &'static str)>,
+    graph_scroll: RnclScrollView,
+    graph: RnclCanvas,
+    /// Commits shown in the graph.
+    commits: RefCell<Vec<Commit>>,
+    /// The tree node the context menu was opened for.
+    menu_target: RefCell<String>,
+    /// Changes as a folder tree instead of a list.
+    as_tree: Cell<bool>,
+    /// Last status (to rebuild the changes when the view changes).
+    status: RefCell<Option<Status>>,
+}
+
 impl GitWindow {
     pub fn build() -> Self {
         let window = RnclWindow::new("Quellcodeverwaltung");
-        window.set_menu_bar(menu_bar());
-        let header = RnclLabel::new(&window, "");
+        window.set_menu_bar(vec![("Git".into(), more_actions())]);
+        let repo_name = RnclLabel::new(&window, "");
+        let branch = icon_button(&window, "⎇", "Zweig oder Tag auschecken …");
+        let sync = icon_button(&window, "⟳", "Änderungen synchronisieren");
+        let more = icon_button(&window, "⋯", "Weitere Aktionen …");
         let message = RnclTextArea::new(&window);
         message.set_placeholder("Nachricht (Strg+Enter für Commit)");
+        message.set_word_wrap(true);
         let commit = RnclButton::new(&window, "✓ Commit");
-        let variants = RnclButton::new(&window, "▾");
-        variants
-            .widget()
-            .set_tool_tip("Commit (Amend), Commit & Push, Commit & Sync");
+        let variants = icon_button(&window, "▾", "Commit (Amend), Commit & Push, Commit & Sync");
         let changes = RnclTreeView::new(&window);
         let graph_title = RnclLabel::new(&window, "<b>Graph</b>");
+        let graph_refs = icon_button(&window, "⎇ Auto", "Angezeigte Zweige wählen");
+        let graph_tools = [
+            ("◎", "Zum aktuellen Commit", "git.goto_head"),
+            ("⤓", "Fetch (alle Remotes)", "git.fetch_all"),
+            ("↓", "Pull", "git.pull"),
+            ("↑", "Push", "git.push"),
+            ("↻", "Aktualisieren", "git.refresh"),
+            ("⋯", "Ansicht …", "git.view_menu"),
+        ]
+        .into_iter()
+        .map(|(text, tip, id)| (icon_button(&window, text, tip), id))
+        .collect();
         let graph_scroll = RnclScrollView::new(&window);
         let graph = RnclCanvas::new(graph_scroll.content());
         Self {
             window,
-            header,
+            repo_name,
+            branch,
+            sync,
+            more,
             message,
             commit,
             variants,
             changes,
             graph_title,
+            graph_refs,
+            graph_tools,
             graph_scroll,
             graph,
             commits: RefCell::new(Vec::new()),
             menu_target: RefCell::new(String::new()),
+            as_tree: Cell::new(false),
+            status: RefCell::new(None),
         }
+    }
+
+    /// Lines the commit message needs (wrapped text estimated), 2 to 12.
+    fn message_lines(&self, width: i32) -> i32 {
+        let columns = ((width - 16) / 8).max(10) as usize;
+        let text = self.message.text();
+        let lines: usize = text
+            .split('\n')
+            .map(|l| l.chars().count().div_ceil(columns).max(1))
+            .sum();
+        (lines as i32).clamp(2, 12)
     }
 
     fn layout(&self, width: i32, height: i32) {
         let inner = width - 2 * MARGIN;
+        let right = width - MARGIN;
         let mut y = MARGIN;
-        self.header.set_geometry(MARGIN, y, inner, HEADER);
-        y += HEADER + 4;
-        self.message.set_geometry(MARGIN, y, inner, MESSAGE);
-        y += MESSAGE + 4;
+        // Repository: Name, Zweig, Sync, weitere Aktionen.
+        let branch_width = 130.min(inner / 3);
+        self.more.set_geometry(right - ICON, y, ICON, BAR);
+        self.sync.set_geometry(right - 2 * ICON - 2, y, ICON, BAR);
+        self.branch
+            .set_geometry(right - 2 * ICON - 4 - branch_width, y, branch_width, BAR);
+        self.repo_name
+            .set_geometry(MARGIN, y, inner - 2 * ICON - 8 - branch_width, BAR);
+        y += BAR + 6;
+        let message = self.message_lines(inner) * MESSAGE_LINE + 12;
+        self.message.set_geometry(MARGIN, y, inner, message);
+        y += message + 4;
         self.commit
             .set_geometry(MARGIN, y, inner - DROPDOWN - 2, BUTTON);
         self.variants
-            .set_geometry(width - MARGIN - DROPDOWN, y, DROPDOWN, BUTTON);
+            .set_geometry(right - DROPDOWN, y, DROPDOWN, BUTTON);
         y += BUTTON + 6;
         let rest = (height - y - MARGIN).max(0);
-        let changes = rest * 45 / 100;
+        let changes = (rest * 45 / 100).max(60);
         self.changes.set_geometry(MARGIN, y, inner, changes);
         y += changes + 4;
-        self.graph_title.set_geometry(MARGIN, y, inner, 20);
-        y += 22;
+        // Graph-Leiste: Titel, Zweigauswahl, Werkzeuge rechts.
+        let tools = self.graph_tools.len() as i32;
+        for (i, (button, _)) in self.graph_tools.iter().enumerate() {
+            let x = right - (tools - i as i32) * (ICON + 2) + 2;
+            button.set_geometry(x, y, ICON, BAR);
+        }
+        let refs_width = 90;
+        let refs_x = right - tools * (ICON + 2) - refs_width;
+        self.graph_refs.set_geometry(refs_x, y, refs_width, BAR);
+        self.graph_title
+            .set_geometry(MARGIN, y, (refs_x - MARGIN - 4).max(0), BAR);
+        y += BAR + 2;
         self.graph_scroll
             .set_geometry(MARGIN, y, inner, (height - y - MARGIN).max(0));
         self.layout_graph();
+    }
+
+    fn relayout(&self) {
+        let size = self.window.size();
+        self.layout(size.width, size.height);
     }
 
     fn layout_graph(&self) {
@@ -312,59 +502,89 @@ impl GitWindow {
         self.graph.set_geometry(0, 0, width - 4, height);
     }
 
-    /// Shows the Git state (`None` = no repository).
-    pub fn show_status(&self, name: &str, status: Option<&Status>) {
-        let Some(status) = status else {
-            self.header
-                .set_text("Kein Git-Repository – Git → Repository anlegen");
+    fn show_changes(&self) {
+        let status = self.status.borrow();
+        let Some(status) = status.as_ref() else {
             self.changes.set_items(Vec::new());
-            self.commit.set_text("✓ Commit");
-            self.commit.widget().set_enabled(false);
-            self.variants.widget().set_enabled(false);
-            self.window.set_title("Quellcodeverwaltung");
             return;
         };
-        let sync = match (status.behind, status.ahead) {
-            (0, 0) => String::new(),
-            (behind, ahead) => format!("   {behind}↓ {ahead}↑"),
-        };
-        self.header.set_text(&format!(
-            "<b>{name}</b>   ⎇ {}{sync}",
-            status.branch_label()
-        ));
-        let mut items = change_items(status);
+        let mut items = change_items(status, self.as_tree.get());
         keep_expansion(&mut items, &self.changes.items());
         if items != self.changes.items() {
             self.changes.set_items(items);
         }
+    }
+
+    /// Shows the Git state (`None` = no repository).
+    pub fn show_status(&self, name: &str, status: Option<&Status>) {
+        *self.status.borrow_mut() = status.cloned();
+        self.show_changes();
+        let Some(status) = status else {
+            self.repo_name
+                .set_text("Kein Git-Repository – Git → Repository anlegen");
+            self.branch.set_text("⎇");
+            self.commit.set_text("✓ Commit");
+            for button in [&self.commit, &self.variants, &self.branch, &self.sync] {
+                button.widget().set_enabled(false);
+            }
+            self.window.set_title("Quellcodeverwaltung");
+            return;
+        };
+        self.repo_name.set_text(&format!("<b>{name}</b>"));
+        self.branch
+            .set_text(&format!("⎇ {}", status.branch_label()));
+        let (behind, ahead) = (status.behind, status.ahead);
+        self.sync
+            .set_text(if behind + ahead > 0 { "⟳•" } else { "⟳" });
+        self.sync.widget().set_tool_tip(&match &status.upstream {
+            Some(up) => format!("Änderungen synchronisieren: {behind}↓ {ahead}↑ mit {up}"),
+            None => "Zweig veröffentlichen".to_owned(),
+        });
         // Wie VS Code: ohne Änderungen, aber mit ausstehenden Commits → Sync.
         let changes = status.files.len();
-        let label = if changes == 0 && (status.ahead > 0 || status.behind > 0) {
-            format!("⟳ Sync {}↓ {}↑", status.behind, status.ahead)
+        let label = if changes == 0 && behind + ahead > 0 {
+            format!("⟳ Sync {behind}↓ {ahead}↑")
         } else {
             "✓ Commit".to_owned()
         };
         self.commit.set_text(&label);
+        let branch = status.branch.as_deref().unwrap_or("HEAD");
         self.commit
             .widget()
-            .set_enabled(changes > 0 || status.ahead > 0 || status.behind > 0);
-        self.variants.widget().set_enabled(true);
+            .set_tool_tip(&format!("Änderungen auf „{branch}“ committen"));
+        self.commit
+            .widget()
+            .set_enabled(changes > 0 || ahead > 0 || behind > 0);
+        for button in [&self.variants, &self.branch, &self.sync] {
+            button.widget().set_enabled(true);
+        }
         self.window.set_title(&if changes > 0 {
             format!("Quellcodeverwaltung ({changes})")
         } else {
             "Quellcodeverwaltung".to_owned()
         });
-        self.message.set_placeholder(&format!(
-            "Nachricht (Strg+Enter für Commit auf „{}“)",
-            status.branch.as_deref().unwrap_or("HEAD")
-        ));
+        self.message
+            .set_placeholder(&format!("Nachricht (Strg+Enter für Commit auf „{branch}“)"));
     }
 
-    pub fn show_log(&self, commits: Vec<Commit>) {
+    pub fn show_log(&self, commits: Vec<Commit>, refs: &LogRefs) {
         let rows = crate::git::graph(&commits);
         self.graph.set_shapes(graph_shapes(&commits, &rows));
         *self.commits.borrow_mut() = commits;
+        self.graph_refs.set_text(match refs {
+            LogRefs::Auto => "⎇ Auto",
+            LogRefs::All => "⎇ Alle",
+            LogRefs::Some(_) => "⎇ Auswahl",
+        });
         self.layout_graph();
+    }
+
+    /// Scrolls the graph to the commit HEAD points to.
+    fn goto_head(&self) {
+        if let Some(row) = self.commits.borrow().iter().position(|c| c.head) {
+            self.graph_scroll
+                .scroll_to(0, ((row as i32) - 2).max(0) * ROW);
+        }
     }
 
     pub fn message(&self) -> String {
@@ -388,6 +608,10 @@ impl GitWindow {
                 .separator()
                 .item("git.file_stage", "Stagen", None)
                 .item("git.file_discard", "Änderungen verwerfen …", None),
+            Some(("sd", _)) => Menu::new().item("git.file_unstage", "Ordner unstagen", None),
+            Some(("ud", _)) => Menu::new()
+                .item("git.file_stage", "Ordner stagen", None)
+                .item("git.file_discard", "Ordner verwerfen …", None),
             _ if id == STAGED => Menu::new().item("git.unstage_all", "Alle unstagen", None),
             _ => Menu::new().item("git.stage_all", "Alle stagen", None).item(
                 "git.discard_all",
@@ -397,16 +621,44 @@ impl GitWindow {
         }
     }
 
+    /// (staged group, path) of the node the context menu belongs to.
     fn target(&self) -> Option<(bool, String)> {
         let id = self.menu_target.borrow().clone();
         let (group, path) = id.split_once(':')?;
-        Some((group == "s", path.to_owned()))
+        Some((group.starts_with('s'), path.to_owned()))
+    }
+
+    /// A popup under the repository row (choices: branches, stashes …).
+    fn pick(&self, menu: &Menu) {
+        if menu.entries.is_empty() {
+            return;
+        }
+        let size = self.branch.size();
+        self.branch.widget().popup_menu(menu, 0, size.height);
+    }
+
+    fn ask(&self, title: &str, label: &str, text: &str) -> Option<String> {
+        ruf::dialog::input(Some(self.window.widget()), title, label, text)
+            .map(|t| t.trim().to_owned())
+            .filter(|t| !t.is_empty())
+    }
+
+    fn view_menu(&self) -> Menu {
+        let (list, tree) = if self.as_tree.get() {
+            ("Als Liste anzeigen", "✓ Als Baum anzeigen")
+        } else {
+            ("✓ Als Liste anzeigen", "Als Baum anzeigen")
+        };
+        Menu::new()
+            .item("git.view_list", list, None)
+            .item("git.view_tree", tree, None)
     }
 
     fn menu(&self, ide: &Ide, id: &str) {
         let commit = |then, amend| {
             ide.git_commit(&self.message(), amend, then);
         };
+        let repo = || ide.repo();
         match id {
             "git.commit" => {
                 let sync = self.commit.text().contains("Sync");
@@ -419,33 +671,113 @@ impl GitWindow {
             "git.commit_amend" => commit(After::Nothing, true),
             "git.commit_push" => commit(After::Push, false),
             "git.commit_sync" => commit(After::Sync, false),
+            "git.undo_commit" => ide.git_now(GitOp::UndoLastCommit),
             "git.stage_all" => ide.git_now(GitOp::Stage { paths: vec![] }),
             "git.unstage_all" => ide.git_now(GitOp::Unstage { paths: vec![] }),
             "git.discard_all" => ide.git_discard(Vec::new()),
             "git.fetch" => ide.git_start(GitOp::Fetch),
+            "git.fetch_all" => ide.git_start(GitOp::FetchAll),
             "git.pull" => ide.git_start(GitOp::Pull),
-            "git.push" => ide.git_start(GitOp::Push),
+            "git.pull_rebase" => ide.git_start(GitOp::PullRebase),
+            "git.push" | "git.publish" => ide.git_start(GitOp::Push),
             "git.sync" => ide.git_start(GitOp::Sync),
-            "git.switch" => {
-                let menu = ide.git_branch_menu();
-                let size = self.header.size();
-                self.header.widget().popup_menu(&menu, 40, size.height);
+            "git.clone" => {
+                if let Some(url) = self.ask("Klonen", "Adresse des Repositorys:", "") {
+                    ide.git_clone(&url);
+                }
             }
+            "git.checkout_to" => self.pick(&ide.git_checkout_menu()),
+            "git.merge" => self.pick(&ide.git_branch_pick("git.merge:", false)),
+            "git.rebase" => self.pick(&ide.git_branch_pick("git.rebase:", false)),
+            "git.delete_branch" => self.pick(&ide.git_branch_pick("git.delete_branch:", true)),
             "git.branch" => {
-                if let Some(name) = ruf::dialog::input(
-                    Some(self.window.widget()),
-                    "Neuer Zweig",
-                    "Name des Zweigs:",
-                    "",
-                ) {
+                if let Some(name) = self.ask("Neuer Zweig", "Name des Zweigs:", "") {
                     ide.git_now(GitOp::CreateBranch {
-                        name: name.trim().to_owned(),
+                        name,
                         checkout: true,
                     });
                 }
             }
+            "git.rename_branch" => {
+                let current = ide.git_status().and_then(|s| s.branch).unwrap_or_default();
+                if let Some(name) = self.ask("Zweig umbenennen", "Neuer Name:", &current) {
+                    ide.git_now(GitOp::RenameBranch { name });
+                }
+            }
+            "git.add_remote" => {
+                if let Some(url) = self.ask("Remote hinzufügen", "Adresse:", "")
+                    && let Some(name) = self.ask("Remote hinzufügen", "Name:", "origin")
+                {
+                    ide.git_now(GitOp::AddRemote { name, url });
+                }
+            }
+            "git.remove_remote" => {
+                let mut menu = Menu::new();
+                for name in repo().and_then(|r| r.remotes().ok()).unwrap_or_default() {
+                    menu = menu.item(&format!("git.remove_remote:{name}"), &name, None);
+                }
+                self.pick(&menu);
+            }
+            "git.stash" | "git.stash_untracked" => {
+                let message = self.ask("Zurücklegen", "Nachricht (optional):", "");
+                ide.git_now(GitOp::Stash {
+                    message: message.unwrap_or_default(),
+                    include_untracked: id == "git.stash_untracked",
+                });
+            }
+            "git.stash_pop_latest" => ide.git_now(GitOp::StashApply {
+                index: 0,
+                pop: true,
+            }),
+            "git.stash_apply_pick" | "git.stash_pop_pick" | "git.stash_drop_pick" => {
+                let prefix = id.trim_end_matches("_pick");
+                let mut menu = Menu::new();
+                for stash in repo().and_then(|r| r.stashes().ok()).unwrap_or_default() {
+                    menu = menu.item(
+                        &format!("{prefix}:{}", stash.index),
+                        &format!("{}: {}", stash.index, stash.message),
+                        None,
+                    );
+                }
+                self.pick(&menu);
+            }
+            "git.create_tag" => {
+                if let Some(name) = self.ask("Tag anlegen", "Name des Tags:", "") {
+                    let message = self
+                        .ask("Tag anlegen", "Nachricht (leer = einfacher Tag):", "")
+                        .unwrap_or_default();
+                    ide.git_now(GitOp::CreateTag { name, message });
+                }
+            }
+            "git.delete_tag" => {
+                let mut menu = Menu::new();
+                for tag in repo().and_then(|r| r.tags().ok()).unwrap_or_default() {
+                    menu = menu.item(&format!("git.delete_tag:{tag}"), &tag, None);
+                }
+                self.pick(&menu);
+            }
+            "git.push_tags" => ide.git_start(GitOp::PushTags),
+            "git.output" => ide.git_show_output(),
             "git.refresh" => ide.git_refresh(true),
             "git.init" => ide.git_init(),
+            "git.goto_head" => self.goto_head(),
+            "git.view_menu" => {
+                let (button, _) = &self.graph_tools[self.graph_tools.len() - 1];
+                let size = button.size();
+                button
+                    .widget()
+                    .popup_menu(&self.view_menu(), 0, size.height);
+            }
+            "git.view_list" | "git.view_tree" => {
+                self.as_tree.set(id == "git.view_tree");
+                self.show_changes();
+            }
+            "git.refs_menu" => {
+                let size = self.graph_refs.size();
+                self.graph_refs
+                    .widget()
+                    .popup_menu(&ide.git_refs_menu(), 0, size.height);
+            }
             "git.file_diff" => {
                 if let Some((staged, path)) = self.target() {
                     ide.git_show_diff(&path, staged);
@@ -471,13 +803,60 @@ impl GitWindow {
                     ide.git_discard(vec![path]);
                 }
             }
-            other => {
-                if let Some(branch) = other.strip_prefix("git.checkout:") {
-                    ide.git_now(GitOp::Checkout {
-                        branch: branch.to_owned(),
-                    });
+            other => self.pick_chosen(ide, other),
+        }
+    }
+
+    /// Entries of the choice popups: `git.<action>:<value>`.
+    fn pick_chosen(&self, ide: &Ide, id: &str) {
+        let Some((action, value)) = id.split_once(':') else {
+            return;
+        };
+        let value = value.to_owned();
+        let index = || value.parse().unwrap_or(usize::MAX);
+        match action {
+            "git.checkout" => ide.git_now(GitOp::Checkout { branch: value }),
+            "git.merge" => ide.git_now(GitOp::Merge { branch: value }),
+            "git.rebase" => ide.git_now(GitOp::Rebase { branch: value }),
+            "git.delete_branch" => self.delete_branch(ide, value),
+            "git.remove_remote" => ide.git_now(GitOp::RemoveRemote { name: value }),
+            "git.stash_apply" => ide.git_now(GitOp::StashApply {
+                index: index(),
+                pop: false,
+            }),
+            "git.stash_pop" => ide.git_now(GitOp::StashApply {
+                index: index(),
+                pop: true,
+            }),
+            "git.stash_drop" => ide.git_now(GitOp::StashDrop { index: index() }),
+            "git.delete_tag" => ide.git_now(GitOp::DeleteTag { name: value }),
+            "git.refs" => ide.git_toggle_refs(&value),
+            _ => {}
+        }
+    }
+
+    /// Deletes a branch; a not merged one only after a second question.
+    fn delete_branch(&self, ide: &Ide, name: String) {
+        let parent = Some(self.window.widget());
+        if !ruf::dialog::confirm(parent, "Zweig löschen", &format!("{name} löschen?")) {
+            return;
+        }
+        let op = GitOp::DeleteBranch {
+            name: name.clone(),
+            force: false,
+        };
+        match ide.git_run(&op) {
+            Ok(_) => {}
+            Err(e) if e.code == "not_merged" => {
+                if ruf::dialog::confirm(
+                    parent,
+                    "Zweig löschen",
+                    &format!("{}\n\nTrotzdem löschen?", e.detail),
+                ) {
+                    ide.git_now(GitOp::DeleteBranch { name, force: true });
                 }
             }
+            Err(e) => ruf::dialog::error(parent, "Zweig löschen", &e.to_string()),
         }
     }
 }
@@ -490,8 +869,21 @@ pub fn connect(ide: &Rc<Ide>) {
             ide.git_window.layout(w, h);
         }
     });
-    git.commit
-        .on_clicked(with0(ide, |ide| ide.git_window.menu(ide, "git.commit")));
+    let click = |button: &RnclButton, id: &'static str| {
+        button.on_clicked(with0(ide, move |ide| ide.git_window.menu(ide, id)));
+    };
+    click(&git.commit, "git.commit");
+    click(&git.branch, "git.checkout_to");
+    click(&git.sync, "git.sync");
+    click(&git.graph_refs, "git.refs_menu");
+    for (button, id) in &git.graph_tools {
+        click(button, id);
+    }
+    git.more.on_clicked(with0(ide, |ide| {
+        let w = &ide.git_window;
+        let size = w.more.size();
+        w.more.widget().popup_menu(&more_actions(), 0, size.height);
+    }));
     git.variants.on_clicked(with0(ide, |ide| {
         let w = &ide.git_window;
         let size = w.variants.size();
@@ -499,13 +891,21 @@ pub fn connect(ide: &Rc<Ide>) {
             .widget()
             .popup_menu(&commit_menu(), 0, size.height);
     }));
-    git.changes.on_item_activated(with(ide, |ide, id: String| {
-        if let Some((group, path)) = id.split_once(':') {
-            ide.git_show_diff(path, group == "s");
-        } else {
-            ide.git_window.changes.toggle(&id);
+    // Das Nachrichtenfeld wächst mit dem Text (wie in VS Code).
+    git.message.on_text_changed(with(ide, |ide, _: String| {
+        let w = &ide.git_window;
+        let lines = w.message_lines(w.window.size().width - 2 * MARGIN);
+        if lines * MESSAGE_LINE + 12 != w.message.size().height {
+            w.relayout();
         }
     }));
+    git.changes
+        .on_item_activated(with(ide, |ide, id: String| match id.split_once(':') {
+            Some(("s" | "u", path)) => ide.git_show_diff(path, id.starts_with("s:")),
+            _ => {
+                ide.git_window.changes.toggle(&id);
+            }
+        }));
     let mut context = with(ide, |ide, (id, x, y): (String, i32, i32)| {
         let w = &ide.git_window;
         let menu = w.context_menu(&id);

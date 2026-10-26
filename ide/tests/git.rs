@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use freya_td::git::{After, Change, Git, GitOp};
+use freya_td::git::{After, Change, Git, GitOp, LogRefs};
 
 fn write(dir: &Path, path: &str, text: &str) {
     let file = dir.join(path);
@@ -261,6 +261,163 @@ fn git_round_trip() {
         ),
         ["unknown_branch"]
     );
+
+    // Stash: zurücklegen und wiederholen.
+    write(&dir, "README.md", "# Stash\n");
+    git.run(&GitOp::Stash {
+        message: "wip".into(),
+        include_untracked: false,
+    })
+    .unwrap();
+    assert!(git.status().unwrap().files.is_empty());
+    let stashes = git.stashes().unwrap();
+    assert_eq!(stashes.len(), 1);
+    assert!(stashes[0].message.contains("wip"), "{stashes:?}");
+    assert_eq!(
+        codes(
+            &git,
+            &GitOp::StashApply {
+                index: 3,
+                pop: true
+            }
+        ),
+        ["unknown_stash"]
+    );
+    git.run(&GitOp::StashApply {
+        index: 0,
+        pop: true,
+    })
+    .unwrap();
+    assert!(git.stashes().unwrap().is_empty());
+    assert_eq!(
+        git.status().unwrap().change_of("README.md"),
+        Some(Change::Modified)
+    );
+    git.run(&GitOp::Discard { paths: vec![] }).unwrap();
+
+    // Tags, auch annotiert (Nachricht über stdin), und Checkout eines Tags.
+    git.run(&GitOp::CreateTag {
+        name: "v0.1.0".into(),
+        message: "Erste Version\n\nMit Text.".into(),
+    })
+    .unwrap();
+    assert_eq!(git.tags().unwrap(), ["v0.1.0"]);
+    assert_eq!(
+        codes(
+            &git,
+            &GitOp::CreateTag {
+                name: "v0.1.0".into(),
+                message: String::new()
+            }
+        ),
+        ["tag_exists"]
+    );
+    let all = git.log_refs(20, &LogRefs::All).unwrap();
+    assert!(
+        all.iter()
+            .any(|c| c.refs.contains(&"tag: v0.1.0".to_owned()))
+    );
+    git.run(&GitOp::PushTags).unwrap();
+    git.run(&GitOp::Checkout {
+        branch: "v0.1.0".into(),
+    })
+    .unwrap();
+    assert_eq!(git.status().unwrap().branch, None);
+    git.run(&GitOp::Checkout {
+        branch: "main".into(),
+    })
+    .unwrap();
+    git.run(&GitOp::DeleteTag {
+        name: "v0.1.0".into(),
+    })
+    .unwrap();
+
+    // Zweige: merge, umbenennen, löschen; Log nur eines Zweigs.
+    git.run(&GitOp::Checkout {
+        branch: "feature".into(),
+    })
+    .unwrap();
+    write(&dir, "feature.txt", "f\n");
+    commit(&git, "Feature work");
+    assert_eq!(
+        codes(
+            &git,
+            &GitOp::DeleteBranch {
+                name: "feature".into(),
+                force: false
+            }
+        ),
+        ["current_branch"]
+    );
+    git.run(&GitOp::RenameBranch {
+        name: "feature2".into(),
+    })
+    .unwrap();
+    git.run(&GitOp::Checkout {
+        branch: "main".into(),
+    })
+    .unwrap();
+    let only = git
+        .log_refs(20, &LogRefs::Some(vec!["feature2".into()]))
+        .unwrap();
+    assert_eq!(only[0].subject, "Feature work");
+    let not_merged = git
+        .run(&GitOp::DeleteBranch {
+            name: "feature2".into(),
+            force: false,
+        })
+        .unwrap_err();
+    assert_eq!(not_merged.code, "not_merged", "{not_merged}");
+    git.run(&GitOp::Merge {
+        branch: "feature2".into(),
+    })
+    .unwrap();
+    assert!(dir.join("feature.txt").is_file());
+    git.run(&GitOp::DeleteBranch {
+        name: "feature2".into(),
+        force: false,
+    })
+    .unwrap();
+
+    // Letzten Commit zurücknehmen: Änderungen bleiben gestaged.
+    write(&dir, "undo.txt", "u\n");
+    commit(&git, "To undo");
+    git.run(&GitOp::UndoLastCommit).unwrap();
+    let status = git.status().unwrap();
+    assert_eq!(status.change_of("undo.txt"), Some(Change::Added));
+    git.run(&GitOp::Unstage { paths: vec![] }).unwrap();
+    std::fs::remove_file(dir.join("undo.txt")).unwrap();
+
+    // Remotes; Git-Ausgabe sammelt die Befehle.
+    let sink = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+    let git = git.with_output(Some(sink.clone()));
+    git.run(&GitOp::AddRemote {
+        name: "backup".into(),
+        url: remote.to_string_lossy().into_owned(),
+    })
+    .unwrap();
+    assert_eq!(
+        codes(
+            &git,
+            &GitOp::AddRemote {
+                name: "backup".into(),
+                url: "x".into()
+            }
+        ),
+        ["remote_exists"]
+    );
+    git.run(&GitOp::FetchAll).unwrap();
+    git.run(&GitOp::RemoveRemote {
+        name: "backup".into(),
+    })
+    .unwrap();
+    let output = sink.lock().unwrap().clone();
+    assert!(output.contains("> git remote add backup"), "{output}");
+    assert!(output.contains("> git fetch --all --prune"), "{output}");
+
+    // Klonen.
+    let cloned = Git::clone(&remote.to_string_lossy(), &base.join("cloned"), None).unwrap();
+    assert!(cloned.root().join("LICENSE").is_file());
 
     // Pfade relativ zum Repository.
     assert_eq!(

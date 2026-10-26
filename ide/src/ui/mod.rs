@@ -26,7 +26,7 @@ use tdr_designer::{Command, CommandError};
 use crate::desktop::{Desktop, Place, window};
 use crate::files::{self, Entry, FileError, FileIssue, FileOp, Plan};
 use crate::git::askpass::Askpass;
-use crate::git::{After, Git, GitError, GitOp, Preview, Status};
+use crate::git::{After, Git, GitError, GitOp, LogRefs, Preview, Status};
 use crate::lsp::{DiagnosticSeverity, LspClient, LspEvent};
 use crate::session::{Changes, Session};
 
@@ -90,8 +90,14 @@ fn full_registry(dirs: &[PathBuf]) -> (TypeRegistry, Vec<String>) {
     (registry, names)
 }
 
-/// Result of a background Git operation: what, clear the commit message, result.
-type GitResult = (String, bool, Result<String, GitError>);
+/// Result of a background Git operation: what, clear the commit message,
+/// a cloned folder to open, result.
+type GitResult = (String, bool, Option<PathBuf>, Result<String, GitError>);
+
+/// Choices „Auto“ and „Alle“ of the graph's branch menu (`*` is not
+/// allowed in branch names).
+const REFS_AUTO: &str = "*auto";
+const REFS_ALL: &str = "*all";
 
 /// A question of git/ssh and where the answer goes.
 type Question = (String, std::sync::mpsc::Sender<Option<String>>);
@@ -121,6 +127,10 @@ pub struct Ide {
     git_status: RefCell<Option<Status>>,
     /// HEAD, upstream and ahead/behind of the shown log (reloaded on change).
     git_log_key: RefCell<String>,
+    /// Branches the graph shows.
+    graph_refs: RefCell<LogRefs>,
+    /// Commands of Git operations with their output („Git-Ausgabe“).
+    git_output: std::sync::Arc<std::sync::Mutex<String>>,
     /// A background Git operation (push, pull …) is running.
     git_busy: Cell<bool>,
     /// Delivers results of background Git operations: (what, clear the
@@ -190,6 +200,8 @@ impl Ide {
             repo: RefCell::new(None),
             git_status: RefCell::new(None),
             git_log_key: RefCell::new(String::new()),
+            graph_refs: RefCell::new(LogRefs::Auto),
+            git_output: Default::default(),
             git_busy: Cell::new(false),
             git_results: RefCell::new(None),
             askpass_questions: RefCell::new(None),
@@ -221,12 +233,13 @@ impl Ide {
             }
         }));
         let weak = Rc::downgrade(&ide);
-        *ide.git_results.borrow_mut() =
-            Some(GuiSender::new(move |(what, clear, result): GitResult| {
+        *ide.git_results.borrow_mut() = Some(GuiSender::new(
+            move |(what, clear, open, result): GitResult| {
                 if let Some(ide) = weak.upgrade() {
-                    ide.git_finished(&what, clear, result);
+                    ide.git_finished(&what, clear, open, result);
                 }
-            }));
+            },
+        ));
         let weak = Rc::downgrade(&ide);
         *ide.askpass_questions.borrow_mut() =
             Some(GuiSender::new(move |(question, reply): Question| {
@@ -552,9 +565,10 @@ impl Ide {
         {
             return repo.clone();
         }
-        let repo = Git::open(&dir)
-            .ok()
-            .map(|git| git.with_askpass(self.askpass()));
+        let repo = Git::open(&dir).ok().map(|git| {
+            git.with_askpass(self.askpass())
+                .with_output(Some(self.git_output.clone()))
+        });
         *self.repo.borrow_mut() = Some((dir, repo.clone()));
         repo
     }
@@ -606,16 +620,28 @@ impl Ide {
             Some(s) => format!("⎇ {}", s.branch_label()),
             None => String::new(),
         });
+        let refs = self.graph_refs.borrow().clone();
+        // Neu laden, wenn sich HEAD, Upstream oder die Zweige bewegt haben.
         let key = status
             .as_ref()
-            .map(|s| format!("{:?} {:?} {} {}", s.head, s.upstream, s.ahead, s.behind))
+            .map(|s| {
+                let branches = repo
+                    .as_ref()
+                    .and_then(|r| r.branches().ok())
+                    .map(|b| format!("{b:?}"))
+                    .unwrap_or_default();
+                format!(
+                    "{:?} {:?} {} {} {branches} {refs:?}",
+                    s.head, s.upstream, s.ahead, s.behind
+                )
+            })
             .unwrap_or_default();
         if log || *self.git_log_key.borrow() != key {
             let commits = repo
                 .as_ref()
-                .and_then(|r| r.log(300).ok())
+                .and_then(|r| r.log_refs(300, &refs).ok())
                 .unwrap_or_default();
-            self.git_window.show_log(commits);
+            self.git_window.show_log(commits, &refs);
             *self.git_log_key.borrow_mut() = key;
         }
         *self.git_status.borrow_mut() = status;
@@ -711,9 +737,10 @@ impl Ide {
                 then: After::Sync, ..
             } => "Commit & Sync",
             GitOp::Commit { .. } => "Commit",
-            GitOp::Fetch => "Fetch",
-            GitOp::Pull => "Pull",
+            GitOp::Fetch | GitOp::FetchAll => "Fetch",
+            GitOp::Pull | GitOp::PullRebase => "Pull",
             GitOp::Push => "Push",
+            GitOp::PushTags => "Tags pushen",
             GitOp::Sync => "Sync",
             _ => "Git",
         }
@@ -723,11 +750,17 @@ impl Ide {
         self.set_status(&format!("{what} läuft …"));
         std::thread::spawn(move || {
             let result = repo.run(&op);
-            sender.send((what, clear, result));
+            sender.send((what, clear, None, result));
         });
     }
 
-    fn git_finished(&self, what: &str, clear: bool, result: Result<String, GitError>) {
+    fn git_finished(
+        &self,
+        what: &str,
+        clear: bool,
+        open: Option<PathBuf>,
+        result: Result<String, GitError>,
+    ) {
         self.git_busy.set(false);
         match result {
             Ok(_) => {
@@ -735,6 +768,9 @@ impl Ide {
                     self.git_window.set_message("");
                 }
                 self.set_status(&format!("{what} erledigt."));
+                if let Some(dir) = open {
+                    self.open_cloned(&dir);
+                }
             }
             Err(e) => {
                 self.set_status(&format!("{what} fehlgeschlagen: {}", e.detail));
@@ -803,12 +839,12 @@ impl Ide {
         self.git_now(GitOp::Discard { paths });
     }
 
-    /// „Zweig wechseln“: local branches, then remote ones.
-    pub fn git_branch_menu(&self) -> Menu {
-        let branches = self
-            .repo()
-            .and_then(|r| r.branches().ok())
-            .unwrap_or_default();
+    /// „Auschecken nach …“: local branches, remote branches, tags.
+    pub fn git_checkout_menu(&self) -> Menu {
+        let Some(repo) = self.repo() else {
+            return Menu::new();
+        };
+        let branches = repo.branches().unwrap_or_default();
         let mut menu = Menu::new();
         for b in branches.iter().filter(|b| !b.remote) {
             let id = format!("git.checkout:{}", b.name);
@@ -822,10 +858,191 @@ impl Ide {
         for b in branches.iter().filter(|b| b.remote) {
             remote = remote.item(&format!("git.checkout:{}", b.name), &b.name, None);
         }
+        let mut tags = Menu::new();
+        for tag in repo.tags().unwrap_or_default() {
+            tags = tags.item(&format!("git.checkout:{tag}"), &tag, None);
+        }
+        if !remote.entries.is_empty() || !tags.entries.is_empty() {
+            menu = menu.separator();
+        }
         if !remote.entries.is_empty() {
-            menu = menu.separator().submenu("Remote-Zweige", remote);
+            menu = menu.submenu("Remote-Zweige", remote);
+        }
+        if !tags.entries.is_empty() {
+            menu = menu.submenu("Tags", tags);
         }
         menu
+    }
+
+    /// Branches to choose for merge, rebase or delete (`local`: only local
+    /// ones; the current branch is never offered).
+    pub fn git_branch_pick(&self, prefix: &str, local: bool) -> Menu {
+        let branches = self
+            .repo()
+            .and_then(|r| r.branches().ok())
+            .unwrap_or_default();
+        let mut menu = Menu::new();
+        for b in branches
+            .iter()
+            .filter(|b| !b.current && !(local && b.remote))
+        {
+            menu = menu.item(&format!("{prefix}{}", b.name), &b.name, None);
+        }
+        menu
+    }
+
+    /// Branches the graph shows: Auto, All, or single branches (toggled).
+    pub fn git_refs_menu(&self) -> Menu {
+        let refs = self.graph_refs.borrow().clone();
+        let check = |on: bool, label: &str| {
+            if on {
+                format!("✓ {label}")
+            } else {
+                label.to_owned()
+            }
+        };
+        let mut menu = Menu::new()
+            .item(
+                &format!("git.refs:{REFS_AUTO}"),
+                &check(refs == LogRefs::Auto, "Auto – aktueller Zweig und Upstream"),
+                None,
+            )
+            .item(
+                &format!("git.refs:{REFS_ALL}"),
+                &check(refs == LogRefs::All, "Alle Zweige und Tags"),
+                None,
+            )
+            .separator();
+        let chosen = match &refs {
+            LogRefs::Some(names) => names.clone(),
+            _ => Vec::new(),
+        };
+        for b in self
+            .repo()
+            .and_then(|r| r.branches().ok())
+            .unwrap_or_default()
+        {
+            menu = menu.item(
+                &format!("git.refs:{}", b.name),
+                &check(chosen.contains(&b.name), &b.name),
+                None,
+            );
+        }
+        menu
+    }
+
+    /// Chooses Auto / All or toggles a branch in the graph.
+    pub fn git_toggle_refs(&self, choice: &str) {
+        let refs = match choice {
+            REFS_AUTO => LogRefs::Auto,
+            REFS_ALL => LogRefs::All,
+            name => {
+                let mut names = match self.graph_refs.borrow().clone() {
+                    LogRefs::Some(names) => names,
+                    _ => Vec::new(),
+                };
+                match names.iter().position(|n| n == name) {
+                    Some(i) => {
+                        names.remove(i);
+                    }
+                    None => names.push(name.to_owned()),
+                }
+                if names.is_empty() {
+                    LogRefs::Auto
+                } else {
+                    LogRefs::Some(names)
+                }
+            }
+        };
+        self.set_graph_refs(refs);
+    }
+
+    /// Which branches the graph shows.
+    pub fn set_graph_refs(&self, refs: LogRefs) {
+        *self.graph_refs.borrow_mut() = refs;
+        self.git_refresh(true);
+    }
+
+    /// The commands of the Git operations so far with their output.
+    pub fn git_output(&self) -> String {
+        self.git_output
+            .lock()
+            .map(|o| o.clone())
+            .unwrap_or_default()
+    }
+
+    /// Shows the Git output in the code editor.
+    pub fn git_show_output(&self) {
+        let text = self.git_output();
+        let text = if text.is_empty() {
+            "(noch keine Git-Befehle)".to_owned()
+        } else {
+            text
+        };
+        self.code.open_text("git-output", "Git-Ausgabe", &text, "");
+    }
+
+    /// Clones a repository (in the background) into a chosen folder and
+    /// opens its project afterwards (if it has exactly one `.ptdr`).
+    pub fn git_clone(&self, url: &str) {
+        let parent = Some(self.git_window.window.widget());
+        let Some(folder) = dialog::choose_folder(parent, "Ordner für den Klon wählen") else {
+            return;
+        };
+        let name = url
+            .trim_end_matches('/')
+            .rsplit(['/', ':'])
+            .next()
+            .unwrap_or_default()
+            .trim_end_matches(".git")
+            .to_owned();
+        let target = folder.join(if name.is_empty() { "repo" } else { &name });
+        if target.exists() {
+            dialog::error(
+                parent,
+                "Klonen",
+                &format!("{} gibt es schon.", target.display()),
+            );
+            return;
+        }
+        let Some(sender) = self.git_results.borrow().clone() else {
+            return;
+        };
+        if self.git_busy.replace(true) {
+            self.set_status("Git arbeitet noch …");
+            return;
+        }
+        self.set_status(&format!("Klone {url} …"));
+        let askpass = self.askpass();
+        let url = url.to_owned();
+        std::thread::spawn(move || {
+            let result = Git::clone(&url, &target, askpass).map(|_| String::new());
+            let open = result.is_ok().then_some(target);
+            sender.send(("Klonen".to_owned(), false, open, result));
+        });
+    }
+
+    /// After a clone: open its project if there is exactly one `.ptdr`.
+    fn open_cloned(&self, dir: &Path) {
+        let projects: Vec<PathBuf> = std::fs::read_dir(dir)
+            .map(|r| {
+                r.filter_map(Result::ok)
+                    .map(|e| e.path())
+                    .filter(|p| p.extension().is_some_and(|e| e == "ptdr"))
+                    .collect()
+            })
+            .unwrap_or_default();
+        match projects.as_slice() {
+            [project] => {
+                if self.confirm_discard() {
+                    self.open_path(project);
+                }
+            }
+            _ => self.set_status(&format!(
+                "Geklont nach {} (kein einzelnes Freya-TD-Projekt darin).",
+                dir.display()
+            )),
+        }
     }
 
     /// `git init` in the project folder.

@@ -12,6 +12,7 @@
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 use tdr_core::Severity;
@@ -377,8 +378,8 @@ pub enum GitOp {
         #[serde(default)]
         paths: Vec<String>,
     },
-    /// Throw away changes in the working tree (empty = all); untracked
-    /// files go to the trash.
+    /// Throw away changes in the working tree (empty = all; a path can be
+    /// a folder); untracked files go to the trash.
     Discard {
         #[serde(default)]
         paths: Vec<String>,
@@ -391,13 +392,20 @@ pub enum GitOp {
         #[serde(default)]
         then: After,
     },
+    /// Take back the last commit; its changes stay staged.
+    UndoLastCommit,
     Fetch,
+    /// Fetch from all remotes.
+    FetchAll,
     Pull,
+    /// Pull with rebase instead of a merge.
+    PullRebase,
     /// Push; without an upstream the branch is published (`-u`).
     Push,
     /// Pull, then push.
     Sync,
-    /// Switch to a branch (a remote one gets a local tracking branch).
+    /// Switch to a branch (a remote one gets a local tracking branch) or
+    /// to a tag (detached HEAD).
     Checkout {
         branch: String,
     },
@@ -406,6 +414,80 @@ pub enum GitOp {
         #[serde(default = "yes")]
         checkout: bool,
     },
+    /// Rename the current branch.
+    RenameBranch {
+        name: String,
+    },
+    DeleteBranch {
+        name: String,
+        /// Also when it is not merged.
+        #[serde(default)]
+        force: bool,
+    },
+    /// Merge a branch into the current one.
+    Merge {
+        branch: String,
+    },
+    /// Rebase the current branch onto another.
+    Rebase {
+        branch: String,
+    },
+    AddRemote {
+        name: String,
+        url: String,
+    },
+    RemoveRemote {
+        name: String,
+    },
+    /// Put the changes aside.
+    Stash {
+        #[serde(default)]
+        message: String,
+        #[serde(default)]
+        include_untracked: bool,
+    },
+    /// Bring back a stash (0 = newest); `pop` also removes it.
+    StashApply {
+        #[serde(default)]
+        index: usize,
+        #[serde(default)]
+        pop: bool,
+    },
+    StashDrop {
+        #[serde(default)]
+        index: usize,
+    },
+    /// A tag at HEAD; with a message an annotated tag.
+    CreateTag {
+        name: String,
+        #[serde(default)]
+        message: String,
+    },
+    DeleteTag {
+        name: String,
+    },
+    /// Push all tags.
+    PushTags,
+}
+
+/// Which branches the log (graph) shows.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "refs", content = "names", rename_all = "snake_case")]
+pub enum LogRefs {
+    /// HEAD and its upstream (VS Code's „Auto“).
+    #[default]
+    Auto,
+    /// All branches, remote branches and tags.
+    All,
+    /// These branches or tags.
+    Some(Vec<String>),
+}
+
+/// A stash entry (0 = newest).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StashEntry {
+    pub index: usize,
+    pub message: String,
 }
 
 fn yes() -> bool {
@@ -416,7 +498,10 @@ fn yes() -> bool {
 /// `nothing_staged`, `conflicts`, `amend_pushed` (warning), `no_remote`,
 /// `no_upstream` (warning: push publishes the branch), `detached_head`,
 /// `invalid_branch_name`, `branch_exists`, `unknown_branch`,
-/// `nothing_to_discard`, `untracked_deleted` (warning), `no_commit`.
+/// `nothing_to_discard`, `untracked_deleted` (warning), `no_commit`,
+/// `undo_pushed` (warning), `current_branch`, `remote_exists`,
+/// `unknown_remote`, `invalid_remote`, `nothing_to_stash`, `unknown_stash`,
+/// `invalid_tag_name`, `tag_exists`, `unknown_tag`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct GitIssue {
     pub severity: Severity,
@@ -443,7 +528,7 @@ impl Preview {
 /// A failure. Codes are stable: `git_missing`, `not_a_repository`,
 /// `refused` (the preview has errors), `auth_required`, `rejected` (push
 /// refused, pull first), `diverged`, `merge_conflict`, `local_changes`,
-/// `network`, `failed`.
+/// `not_merged`, `signing_failed`, `network`, `failed`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct GitError {
     pub code: &'static str,
@@ -495,6 +580,16 @@ impl GitError {
                 "diverged",
                 "Lokaler und entfernter Zweig sind auseinandergelaufen (pull.rebase einstellen oder von Hand zusammenführen).",
             )
+        } else if has("gpg failed to sign") || has("failed to write commit object") {
+            (
+                "signing_failed",
+                "Signieren fehlgeschlagen (GPG-Passphrase abgebrochen oder gpg-agent nicht erreichbar).",
+            )
+        } else if has("not fully merged") {
+            (
+                "not_merged",
+                "Der Zweig ist noch nicht zusammengeführt – „Löschen (erzwingen)“ verwirft seine Commits.",
+            )
         } else if has("would be overwritten") {
             (
                 "local_changes",
@@ -542,6 +637,8 @@ impl std::error::Error for GitError {}
 pub struct Git {
     root: PathBuf,
     askpass: Option<askpass::Askpass>,
+    /// Commands of [`Git::run`] with their output (VS Code's „Git Output“).
+    output: Option<Arc<Mutex<String>>>,
 }
 
 impl Git {
@@ -558,6 +655,7 @@ impl Git {
         Ok(Self {
             root: root.canonicalize().unwrap_or(root),
             askpass: None,
+            output: None,
         })
     }
 
@@ -566,6 +664,33 @@ impl Git {
         std::fs::create_dir_all(dir).map_err(|e| GitError::new("failed", e.to_string()))?;
         run_git(dir, &["init", "-q"], None, None)?.check()?;
         Self::open(dir)
+    }
+
+    /// Clones `url` into `dir` (which must not exist or be empty).
+    pub fn clone(
+        url: &str,
+        dir: &Path,
+        askpass: Option<askpass::Askpass>,
+    ) -> Result<Self, GitError> {
+        let parent = dir.parent().unwrap_or(Path::new("."));
+        std::fs::create_dir_all(parent).map_err(|e| GitError::new("failed", e.to_string()))?;
+        let target = dir.to_string_lossy();
+        let output = run_git(
+            parent,
+            &["clone", "--progress", "--", url, &target],
+            None,
+            askpass.as_ref(),
+        )?;
+        if !output.success {
+            return Err(GitError::from_output(output.stderr));
+        }
+        Ok(Self::open(dir)?.with_askpass(askpass))
+    }
+
+    /// Collects the commands of [`Git::run`] with their output in `sink`.
+    pub fn with_output(mut self, sink: Option<Arc<Mutex<String>>>) -> Self {
+        self.output = sink;
+        self
     }
 
     /// Lets `git`/`ssh` ask for passwords and passphrases.
@@ -614,6 +739,11 @@ impl Git {
 
     /// The last `limit` commits of HEAD and its upstream, newest first.
     pub fn log(&self, limit: usize) -> Result<Vec<Commit>, GitError> {
+        self.log_refs(limit, &LogRefs::Auto)
+    }
+
+    /// The last `limit` commits of the chosen branches, newest first.
+    pub fn log_refs(&self, limit: usize, refs: &LogRefs) -> Result<Vec<Commit>, GitError> {
         let status = self.status()?;
         if status.head.is_none() {
             return Ok(Vec::new());
@@ -624,10 +754,17 @@ impl Git {
             "--topo-order",
             "--format=%H%x1f%P%x1f%an%x1f%ae%x1f%at%x1f%D%x1f%s%x1e",
             &limit,
-            "HEAD",
         ];
-        if let Some(upstream) = &status.upstream {
-            args.push(upstream);
+        match refs {
+            LogRefs::Auto => {
+                args.push("HEAD");
+                if let Some(upstream) = &status.upstream {
+                    args.push(upstream);
+                }
+            }
+            LogRefs::All => args.extend(["HEAD", "--branches", "--remotes", "--tags"]),
+            LogRefs::Some(names) if names.is_empty() => args.push("HEAD"),
+            LogRefs::Some(names) => args.extend(names.iter().map(String::as_str)),
         }
         args.push("--");
         let text = self.git(&args, None)?.check()?;
@@ -726,6 +863,27 @@ impl Git {
                 })
             })
             .collect())
+    }
+
+    /// The stashes, newest first.
+    pub fn stashes(&self) -> Result<Vec<StashEntry>, GitError> {
+        let text = self
+            .git(&["stash", "list", "--format=%gs"], None)?
+            .check()?;
+        Ok(text
+            .lines()
+            .enumerate()
+            .map(|(index, message)| StashEntry {
+                index,
+                message: message.to_owned(),
+            })
+            .collect())
+    }
+
+    /// The tags, newest first.
+    pub fn tags(&self) -> Result<Vec<String>, GitError> {
+        let text = self.git(&["tag", "--sort=-creatordate"], None)?.check()?;
+        Ok(text.lines().map(str::to_owned).collect())
     }
 
     /// Names of the remotes (`origin` …).
@@ -864,7 +1022,13 @@ impl Git {
                 }
             }
             GitOp::Discard { paths } => {
-                let selected = |f: &FileStatus| paths.is_empty() || paths.contains(&f.path);
+                // Ein Pfad kann auch ein Ordner sein.
+                let selected = |f: &FileStatus| {
+                    paths.is_empty()
+                        || paths
+                            .iter()
+                            .any(|p| f.path == *p || f.path.starts_with(&format!("{p}/")))
+                };
                 let mut restore = Vec::new();
                 for (file, change) in status.unstaged().filter(|(f, _)| selected(f)) {
                     match change {
@@ -958,6 +1122,9 @@ impl Git {
             GitOp::Checkout { branch } => {
                 let branches = self.branches()?;
                 match branches.iter().find(|b| &b.name == branch) {
+                    None if self.tags()?.contains(branch) => {
+                        commands.push(cmd(&["switch", "--detach", branch], &[]));
+                    }
                     None => issues.push(error(
                         "unknown_branch",
                         format!("Den Zweig {branch} gibt es nicht."),
@@ -975,30 +1142,203 @@ impl Git {
                 }
             }
             GitOp::CreateBranch { name, checkout } => {
-                let valid = self
-                    .git(&["check-ref-format", "--branch", name], None)
-                    .is_ok_and(|o| o.success);
-                if !valid || name.starts_with('-') {
-                    issues.push(error(
-                        "invalid_branch_name",
-                        format!("„{name}“ ist kein gültiger Zweigname."),
-                    ));
-                } else if self
-                    .branches()?
-                    .iter()
-                    .any(|b| !b.remote && &b.name == name)
-                {
-                    issues.push(error(
-                        "branch_exists",
-                        format!("Den Zweig {name} gibt es schon."),
-                    ));
-                }
+                self.check_branch_name(name, &mut issues)?;
                 if *checkout {
                     commands.push(cmd(&["switch", "-c", name], &[]));
                 } else {
                     commands.push(cmd(&["branch", name], &[]));
                 }
             }
+            GitOp::UndoLastCommit => {
+                if status.head.is_none() {
+                    issues.push(error("no_commit", "Es gibt noch keinen Commit.".into()));
+                } else {
+                    if status.upstream.is_some() && status.ahead == 0 {
+                        issues.push(warning(
+                            "undo_pushed",
+                            "Der letzte Commit ist schon gepusht; danach ist ein erzwungener Push nötig."
+                                .into(),
+                        ));
+                    }
+                    let has_parent = self
+                        .git(&["rev-parse", "--verify", "-q", "HEAD~1"], None)
+                        .is_ok_and(|o| o.success);
+                    if has_parent {
+                        commands.push(cmd(&["reset", "--soft", "HEAD~1"], &[]));
+                    } else {
+                        // Der erste Commit: HEAD löschen, der Index bleibt.
+                        commands.push(cmd(&["update-ref", "-d", "HEAD"], &[]));
+                    }
+                }
+            }
+            GitOp::FetchAll => {
+                if remote()?.is_none() {
+                    issues.push(error("no_remote", "Das Repository hat kein Remote.".into()));
+                }
+                commands.push(cmd(&["fetch", "--all", "--prune"], &[]));
+            }
+            GitOp::PullRebase => {
+                pull(&mut commands, &mut issues);
+                if let Some(c) = commands.last_mut() {
+                    c.push("--rebase".to_owned());
+                }
+            }
+            GitOp::RenameBranch { name } => {
+                if status.branch.is_none() {
+                    issues.push(error(
+                        "detached_head",
+                        "Kein Zweig ausgecheckt (losgelöster HEAD).".into(),
+                    ));
+                }
+                self.check_branch_name(name, &mut issues)?;
+                commands.push(cmd(&["branch", "-m", name], &[]));
+            }
+            GitOp::DeleteBranch { name, force } => {
+                match self
+                    .branches()?
+                    .iter()
+                    .find(|b| !b.remote && &b.name == name)
+                {
+                    None => issues.push(error(
+                        "unknown_branch",
+                        format!("Den Zweig {name} gibt es nicht."),
+                    )),
+                    Some(b) if b.current => issues.push(error(
+                        "current_branch",
+                        format!("{name} ist ausgecheckt – erst einen anderen Zweig wählen."),
+                    )),
+                    Some(_) => {}
+                }
+                commands.push(cmd(
+                    &["branch", if *force { "-D" } else { "-d" }, name],
+                    &[],
+                ));
+            }
+            GitOp::Merge { branch } | GitOp::Rebase { branch } => {
+                let known = self.branches()?.iter().any(|b| &b.name == branch)
+                    || self.tags()?.contains(branch);
+                if !known {
+                    issues.push(error(
+                        "unknown_branch",
+                        format!("Den Zweig {branch} gibt es nicht."),
+                    ));
+                }
+                if status.has_conflicts() {
+                    issues.push(error(
+                        "conflicts",
+                        "Es gibt noch ungelöste Konflikte.".into(),
+                    ));
+                }
+                if matches!(op, GitOp::Merge { .. }) {
+                    commands.push(cmd(&["merge", "--no-edit", branch], &[]));
+                } else {
+                    commands.push(cmd(&["rebase", branch], &[]));
+                }
+            }
+            GitOp::AddRemote { name, url } => {
+                let valid = !name.is_empty()
+                    && !name.starts_with('-')
+                    && self
+                        .git(
+                            &["check-ref-format", &format!("refs/remotes/{name}/x")],
+                            None,
+                        )
+                        .is_ok_and(|o| o.success);
+                if !valid || url.trim().is_empty() {
+                    issues.push(error(
+                        "invalid_remote",
+                        format!("„{name}“ mit „{url}“ ist kein gültiges Remote."),
+                    ));
+                } else if self.remotes()?.contains(name) {
+                    issues.push(error(
+                        "remote_exists",
+                        format!("Das Remote {name} gibt es schon."),
+                    ));
+                }
+                commands.push(cmd(&["remote", "add", name, url.trim()], &[]));
+            }
+            GitOp::RemoveRemote { name } => {
+                if !self.remotes()?.contains(name) {
+                    issues.push(error(
+                        "unknown_remote",
+                        format!("Das Remote {name} gibt es nicht."),
+                    ));
+                }
+                commands.push(cmd(&["remote", "remove", name], &[]));
+            }
+            GitOp::Stash {
+                message,
+                include_untracked,
+            } => {
+                let changes = status
+                    .files
+                    .iter()
+                    .any(|f| *include_untracked || f.unstaged != Some(Change::Untracked));
+                if !changes {
+                    issues.push(error(
+                        "nothing_to_stash",
+                        "Keine Änderungen zum Zurücklegen.".into(),
+                    ));
+                }
+                let mut stash = vec!["stash", "push"];
+                if *include_untracked {
+                    stash.push("--include-untracked");
+                }
+                if !message.trim().is_empty() {
+                    stash.extend(["-m", message.trim()]);
+                }
+                commands.push(cmd(&stash, &[]));
+            }
+            GitOp::StashApply { index, pop } => {
+                self.check_stash(*index, &mut issues)?;
+                let name = format!("stash@{{{index}}}");
+                commands.push(cmd(
+                    &["stash", if *pop { "pop" } else { "apply" }, &name],
+                    &[],
+                ));
+            }
+            GitOp::StashDrop { index } => {
+                self.check_stash(*index, &mut issues)?;
+                commands.push(cmd(&["stash", "drop", &format!("stash@{{{index}}}")], &[]));
+            }
+            GitOp::CreateTag { name, message } => {
+                let valid = !name.starts_with('-')
+                    && self
+                        .git(&["check-ref-format", &format!("refs/tags/{name}")], None)
+                        .is_ok_and(|o| o.success);
+                if !valid {
+                    issues.push(error(
+                        "invalid_tag_name",
+                        format!("„{name}“ ist kein gültiger Tag-Name."),
+                    ));
+                } else if self.tags()?.contains(name) {
+                    issues.push(error(
+                        "tag_exists",
+                        format!("Den Tag {name} gibt es schon."),
+                    ));
+                }
+                if status.head.is_none() {
+                    issues.push(error("no_commit", "Es gibt noch keinen Commit.".into()));
+                }
+                if message.trim().is_empty() {
+                    commands.push(cmd(&["tag", name], &[]));
+                } else {
+                    commands.push(cmd(&["tag", "-a", name, "-F", "-"], &[]));
+                }
+            }
+            GitOp::DeleteTag { name } => {
+                if !self.tags()?.contains(name) {
+                    issues.push(error(
+                        "unknown_tag",
+                        format!("Den Tag {name} gibt es nicht."),
+                    ));
+                }
+                commands.push(cmd(&["tag", "-d", name], &[]));
+            }
+            GitOp::PushTags => match remote()? {
+                Some(remote) => commands.push(cmd(&["push", &remote, "--tags"], &[])),
+                None => issues.push(error("no_remote", "Das Repository hat kein Remote.".into())),
+            },
         }
         Ok(Preview {
             commands,
@@ -1024,7 +1364,9 @@ impl Git {
             });
         }
         let stdin = match op {
-            GitOp::Commit { message, .. } => Some(message.as_str()),
+            GitOp::Commit { message, .. } | GitOp::CreateTag { message, .. } => {
+                Some(message.as_str())
+            }
             _ => None,
         };
         let mut log = String::new();
@@ -1034,10 +1376,28 @@ impl Git {
         }
         for command in &preview.commands {
             let args: Vec<&str> = command.iter().map(String::as_str).collect();
-            let input = (args.first() == Some(&"commit")).then_some(stdin).flatten();
+            // Nachrichten kommen über stdin (`-F -`).
+            let input = args
+                .windows(2)
+                .any(|w| w == ["-F", "-"])
+                .then_some(stdin)
+                .flatten();
             let output = self.git(&args, input)?;
             log.push_str(&output.stdout);
             log.push_str(&output.stderr);
+            if let Some(sink) = &self.output
+                && let Ok(mut sink) = sink.lock()
+            {
+                sink.push_str(&format!(
+                    "> git {}\n{}{}",
+                    args.join(" "),
+                    output.stdout,
+                    output.stderr
+                ));
+                if !sink.ends_with('\n') {
+                    sink.push('\n');
+                }
+            }
             if !output.success {
                 return Err(GitError::from_output(format!(
                     "{}{}",
@@ -1046,6 +1406,40 @@ impl Git {
             }
         }
         Ok(log)
+    }
+}
+
+impl Git {
+    fn check_branch_name(&self, name: &str, issues: &mut Vec<GitIssue>) -> Result<(), GitError> {
+        let valid = !name.starts_with('-')
+            && self
+                .git(&["check-ref-format", "--branch", name], None)
+                .is_ok_and(|o| o.success);
+        if !valid {
+            issues.push(GitIssue {
+                severity: Severity::Error,
+                code: "invalid_branch_name",
+                detail: format!("„{name}“ ist kein gültiger Zweigname."),
+            });
+        } else if self.branches()?.iter().any(|b| !b.remote && b.name == name) {
+            issues.push(GitIssue {
+                severity: Severity::Error,
+                code: "branch_exists",
+                detail: format!("Den Zweig {name} gibt es schon."),
+            });
+        }
+        Ok(())
+    }
+
+    fn check_stash(&self, index: usize, issues: &mut Vec<GitIssue>) -> Result<(), GitError> {
+        if index >= self.stashes()?.len() {
+            issues.push(GitIssue {
+                severity: Severity::Error,
+                code: "unknown_stash",
+                detail: format!("Den Stash {index} gibt es nicht."),
+            });
+        }
+        Ok(())
     }
 }
 
