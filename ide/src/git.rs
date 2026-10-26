@@ -659,10 +659,17 @@ impl Git {
         })
     }
 
-    /// Creates a repository in `dir` (`git init`).
+    /// Creates a repository in `dir` (`git init`). Like `cargo init`, a
+    /// missing `.gitignore` is written with `/target` (build output never
+    /// belongs into the repository).
     pub fn init(dir: &Path) -> Result<Self, GitError> {
         std::fs::create_dir_all(dir).map_err(|e| GitError::new("failed", e.to_string()))?;
         run_git(dir, &["init", "-q"], None, None)?.check()?;
+        let ignore = dir.join(".gitignore");
+        if !ignore.exists() {
+            std::fs::write(&ignore, "/target\n")
+                .map_err(|e| GitError::new("failed", e.to_string()))?;
+        }
         Self::open(dir)
     }
 
@@ -1371,7 +1378,7 @@ impl Git {
         };
         let mut log = String::new();
         for path in &preview.delete {
-            trash::delete(self.root.join(path))
+            crate::files::move_to_trash(&self.root.join(path))
                 .map_err(|e| GitError::new("failed", format!("{path}: {e}")))?;
         }
         for command in &preview.commands {

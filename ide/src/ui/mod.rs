@@ -256,6 +256,12 @@ impl Ide {
         code::connect(&ide);
         project::connect(&ide);
         git_window::connect(&ide);
+        // Wie bei Delphi: Strg+G, F9, Strg+Umschalt+G … aus jedem Fenster.
+        for (name, window) in ide.windows() {
+            if name != window::MAIN {
+                window.inherit_menu_shortcuts(&ide.main.window);
+            }
+        }
         if let Some(path) = project {
             ide.open_path(path);
         }

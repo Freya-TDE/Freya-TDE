@@ -24,6 +24,13 @@ const DROPDOWN: i32 = 30;
 /// Height of a line in the commit message; it shows 2 to 12 lines.
 const MESSAGE_LINE: i32 = 18;
 
+/// The commit shortcut as the user presses it (RUF maps Ctrl to Cmd on macOS).
+const COMMIT_KEY: &str = if cfg!(target_os = "macos") {
+    "⌘+Enter"
+} else {
+    "Strg+Enter"
+};
+
 /// Height of a graph row and width of a lane.
 const ROW: i32 = 22;
 const LANE: i32 = 12;
@@ -394,7 +401,7 @@ impl GitWindow {
         let sync = icon_button(&window, "⟳", "Änderungen synchronisieren");
         let more = icon_button(&window, "⋯", "Weitere Aktionen …");
         let message = RnclTextArea::new(&window);
-        message.set_placeholder("Nachricht (Strg+Enter für Commit)");
+        message.set_placeholder(&format!("Nachricht ({COMMIT_KEY} für Commit)"));
         message.set_word_wrap(true);
         let commit = RnclButton::new(&window, "✓ Commit");
         let variants = icon_button(&window, "▾", "Commit (Amend), Commit & Push, Commit & Sync");
@@ -402,7 +409,8 @@ impl GitWindow {
         let graph_title = RnclLabel::new(&window, "<b>Graph</b>");
         let graph_refs = icon_button(&window, "⎇ Auto", "Angezeigte Zweige wählen");
         let graph_tools = [
-            ("◎", "Zum aktuellen Commit", "git.goto_head"),
+            // ⊙ statt ◎: ◎ fehlt in den macOS-Schriften.
+            ("⊙", "Zum aktuellen Commit", "git.goto_head"),
             ("⤓", "Fetch (alle Remotes)", "git.fetch_all"),
             ("↓", "Pull", "git.pull"),
             ("↑", "Push", "git.push"),
@@ -563,8 +571,9 @@ impl GitWindow {
         } else {
             "Quellcodeverwaltung".to_owned()
         });
-        self.message
-            .set_placeholder(&format!("Nachricht (Strg+Enter für Commit auf „{branch}“)"));
+        self.message.set_placeholder(&format!(
+            "Nachricht ({COMMIT_KEY} für Commit auf „{branch}“)"
+        ));
     }
 
     pub fn show_log(&self, commits: Vec<Commit>, refs: &LogRefs) {

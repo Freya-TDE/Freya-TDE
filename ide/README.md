@@ -18,6 +18,10 @@ is saved per user and restored on start.*
 | Quellcodeverwaltung | Git wie in VS Code (Strg+Umschalt+G): Repository-Zeile mit Zweig (`main+` = etwas gestaged; Klick = Zweig/Tag auschecken), Sync (↓/↑ zum Upstream) und ⋯ (Pull, Push, Klonen, Auschecken, Fetch; Commit, Änderungen, Pull/Push, Zweig, Remote, Stash, Tags; Git-Ausgabe). Commit-Nachricht (Strg+Enter, wächst mit dem Text) mit Commit, Commit (Amend), Commit & Push, Commit & Sync – ohne Änderungen, aber mit ausstehenden Commits wird der Knopf zu „Sync“. „Gestaged“ und „Änderungen“ mit Statusbuchstaben, als Liste oder Baum (Doppelklick = Diff, Kontextmenü: stagen, unstagen, verwerfen, öffnen). Graph mit Leiste: angezeigte Zweige (Auto, Alle, Auswahl), zum aktuellen Commit, Fetch (alle Remotes), Pull, Push, Aktualisieren. Der Zweig steht auch in der Statuszeile des Hauptfensters. Signierte Commits (GPG) fragt `gpg-agent` mit seinem eigenen Dialog ab |
 
 Projekt-Menü: Code erzeugen (Strg+G), Bauen (Strg+F9, im Hintergrund), Starten (F9).
+Die Kürzel des Hauptmenüs gelten in jedem Fenster; hat ein Fenster dasselbe Kürzel im
+eigenen Menü (z. B. Strg+S im Code-Fenster), gilt dort seines. Unter macOS ist Strg die
+Befehlstaste (⌘).
+*Main menu shortcuts work in every window (a window's own menu wins); on macOS Ctrl is ⌘.*
 
 rust-analyzer läuft als eigener Prozess (LSP über stdio, Modul `lsp` ohne Oberfläche),
 sobald der Projektordner eine `Cargo.toml` hat. Er bekommt Änderungen nach einer kurzen

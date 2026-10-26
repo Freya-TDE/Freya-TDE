@@ -477,6 +477,22 @@ pub fn plan(root: &Path, op: &FileOp, protected: &[String]) -> Plan {
     Plan { changes, issues }
 }
 
+/// Moves a file or folder into the system's trash. On macOS without asking
+/// for permission to control the Finder (`NSFileManager`; „Zurücklegen“ in
+/// the Finder is then not offered).
+pub fn move_to_trash(path: &Path) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    let result = {
+        use trash::macos::{DeleteMethod, TrashContextExtMacos};
+        let mut context = trash::TrashContext::default();
+        context.set_delete_method(DeleteMethod::NsFileManager);
+        context.delete(path)
+    };
+    #[cfg(not(target_os = "macos"))]
+    let result = trash::delete(path);
+    result.map_err(|e| e.to_string())
+}
+
 fn copy_all(from: &Path, to: &Path) -> std::io::Result<()> {
     if from.is_dir() {
         std::fs::create_dir_all(to)?;
@@ -549,9 +565,9 @@ pub fn apply(root: &Path, op: &FileOp, protected: &[String]) -> Result<Plan, Fil
                 }
                 .map_err(io(path))?;
             } else {
-                trash::delete(&target).map_err(|e| FileError::Io {
+                move_to_trash(&target).map_err(|detail| FileError::Io {
                     path: path.clone(),
-                    detail: e.to_string(),
+                    detail,
                 })?;
             }
         }

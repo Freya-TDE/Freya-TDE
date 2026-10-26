@@ -60,6 +60,10 @@ fn git_round_trip() {
     let dir = base.join("work");
     let git = Git::init(&dir).unwrap();
     assert_eq!(git.root(), dir.canonicalize().unwrap());
+    assert_eq!(
+        std::fs::read_to_string(dir.join(".gitignore")).unwrap(),
+        "/target\n"
+    );
     let status = git.status().unwrap();
     assert_eq!(status.head, None);
     assert_eq!(status.branch.as_deref(), Some("main"));
