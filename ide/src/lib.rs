@@ -6,6 +6,7 @@
 //! `tdr-designer`; the windows in `ui` only forward input and draw.
 
 pub mod desktop;
+pub mod lsp;
 pub mod session;
 pub mod ui;
 

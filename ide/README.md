@@ -10,12 +10,20 @@ is saved per user and restored on start.*
 |---|---|
 | Hauptfenster | Menü, Komponentenpalette (ein Reiter je Kategorie), Statuszeile |
 | Designer | das Formular auf einer Zeichenfläche: klicken wählt (Strg/Umschalt ergänzt), mit gewählter Palette klicken platziert, ziehen ordnet um bzw. verschiebt in einen anderen Container, Doppelklick springt zum Handler (legt ihn an), Entf löscht, Esc bricht ab, Rechtsklick-Menü, F12 = Code |
-| Code | ein Reiter je Datei (GtkSourceView): Hervorhebung, Zeilennummern, Fehlermarken vom Build; `.gen.rs` schreibgeschützt; Strg+S speichert, Strg+W schließt, F12 = Designer; der Designer folgt dem Reiter |
+| Code | ein Reiter je Datei (GtkSourceView): Hervorhebung, Zeilennummern, Fehlermarken vom Build und von rust-analyzer; Strg+Leertaste (und `.`/`::`) vervollständigt, Strg+Klick oder Strg+F12 springt zur Definition; `.gen.rs` schreibgeschützt; Strg+S speichert, Strg+W schließt, F12 = Designer; der Designer folgt dem Reiter |
 | Objektinspektor | Eigenschaften (Editor passend zum Typ, ↺ = Standardwert) und Ereignisse (… schlägt einen Handler vor) |
 | Struktur | Formulare und Elemente als Baum |
 | Meldungen | Prüfergebnisse, Code- und Compilermeldungen; Auswahl springt zum Element bzw. zur Quellzeile |
 
 Projekt-Menü: Code erzeugen (Strg+G), Bauen (Strg+F9, im Hintergrund), Starten (F9).
+
+rust-analyzer läuft als eigener Prozess (LSP über stdio, Modul `lsp` ohne Oberfläche),
+sobald der Projektordner eine `Cargo.toml` hat. Er bekommt Änderungen nach einer kurzen
+Tipppause und prüft beim Speichern mit `cargo check`. Gesucht wird `rust-analyzer` im
+`PATH` oder in `RUST_ANALYZER` (z. B. `rustup component add rust-analyzer`); fehlt er,
+arbeitet der Editor ohne diese Funktionen.
+*rust-analyzer runs as a separate process (LSP over stdio, module `lsp` without UI) once the
+project folder has a `Cargo.toml`: live errors, completion, go to definition.*
 
 ```bash
 cargo run -p freya-td                          # neues, ungespeichertes Projekt
@@ -29,8 +37,10 @@ xvfb-run -a cargo test -p freya-td             # Tests (Linux ohne Bildschirm)
 Die Logik hinter den Fenstern liegt ohne Oberfläche in `session` (Auswahl, Platzieren,
 Ziehen) und in `tdr-designer`; die Fenster leiten nur Eingaben weiter und zeichnen.
 Für Automatisierung (Tests, KI): `Ide::run_commands` (JSON-Befehle),
-`Ide::design_surface` (Maus/Tastatur simulieren), `Ide::screenshots`.
-*Automation (tests, AI): `Ide::run_commands`, `Ide::design_surface`, `Ide::screenshots`.*
+`Ide::design_surface` (Maus/Tastatur simulieren), `Ide::screenshots`, `Ide::code_text`,
+`Ide::set_code_text`, `Ide::code_marks`, `lsp::LspClient` (Ereignisse serialisierbar).
+*Automation (tests, AI): `Ide::run_commands`, `Ide::design_surface`, `Ide::screenshots`,
+`Ide::code_text`/`set_code_text`/`code_marks`, `lsp::LspClient`.*
 
 Unter Linux startet Freya-TD über X11/XWayland (`GDK_BACKEND=x11`), weil Wayland
 Programmen das Positionieren ihrer Fenster verbietet. Packs werden in `components/`

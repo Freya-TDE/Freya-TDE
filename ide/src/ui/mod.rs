@@ -22,6 +22,7 @@ use tdr_core::{ComponentName, TypeRef, TypeRegistry};
 use tdr_designer::{Command, CommandError};
 
 use crate::desktop::{Desktop, Place, window};
+use crate::lsp::{DiagnosticSeverity, LspClient, LspEvent};
 use crate::session::{Changes, Session};
 
 use code::CodeWindow;
@@ -33,6 +34,9 @@ use structure::StructureWindow;
 
 /// Backend of new projects until real backend packs exist.
 const DEFAULT_BACKEND: &str = "none";
+
+/// At most this many completion proposals are shown.
+const MAX_COMPLETIONS: usize = 100;
 
 /// Directories searched for component and backend packs.
 fn pack_dirs() -> Vec<PathBuf> {
@@ -103,6 +107,17 @@ pub struct Ide {
     run_after_build: Cell<bool>,
     /// Delivers build reports from the build thread.
     build_results: RefCell<Option<GuiSender<tdr_core::preview::BuildReport>>>,
+    /// rust-analyzer for the project directory (if it has a `Cargo.toml`).
+    lsp: RefCell<Option<LspClient>>,
+    /// Counts started servers; events of an older one are dropped.
+    lsp_generation: Cell<u64>,
+    lsp_ready: Cell<bool>,
+    lsp_indexed: Cell<bool>,
+    /// Delivers rust-analyzer events (with their generation) to the GUI thread.
+    lsp_events: RefCell<Option<GuiSender<(u64, LspEvent)>>>,
+    /// Open requests; only the latest answer counts.
+    completion_request: Cell<Option<u64>>,
+    definition_request: Cell<Option<u64>>,
 }
 
 /// A callback that runs `f` with the IDE while it exists.
@@ -145,11 +160,26 @@ impl Ide {
             building: Cell::new(false),
             run_after_build: Cell::new(false),
             build_results: RefCell::new(None),
+            lsp: RefCell::new(None),
+            lsp_generation: Cell::new(0),
+            lsp_ready: Cell::new(false),
+            lsp_indexed: Cell::new(false),
+            lsp_events: RefCell::new(None),
+            completion_request: Cell::new(None),
+            definition_request: Cell::new(None),
         });
         let weak = Rc::downgrade(&ide);
         *ide.build_results.borrow_mut() = Some(GuiSender::new(move |report| {
             if let Some(ide) = weak.upgrade() {
                 ide.build_finished(report);
+            }
+        }));
+        let weak = Rc::downgrade(&ide);
+        *ide.lsp_events.borrow_mut() = Some(GuiSender::new(move |(generation, event)| {
+            if let Some(ide) = weak.upgrade()
+                && generation == ide.lsp_generation.get()
+            {
+                ide.lsp_event(event);
             }
         }));
         main_window::connect(&ide);
@@ -260,6 +290,22 @@ impl Ide {
     }
 
     /// The element the object inspector currently shows.
+    /// Text of a file open in the code editor.
+    pub fn code_text(&self, path: &Path) -> Option<String> {
+        self.code.text(path)
+    }
+
+    /// Replaces the text of a file open in the code editor (unsaved, like
+    /// typing); `false` if it is not open.
+    pub fn set_code_text(&self, path: &Path, text: &str) -> bool {
+        self.code.set_text(self, path, text)
+    }
+
+    /// Gutter marks of a file open in the code editor.
+    pub fn code_marks(&self, path: &Path) -> Vec<LineMark> {
+        self.code.marks(path)
+    }
+
     pub fn inspected(&self) -> Option<tdr_core::ComponentPath> {
         self.inspector.shown()
     }
@@ -419,6 +465,7 @@ impl Ide {
                     model: true,
                     selection: true,
                 });
+                self.ensure_lsp();
             }
             Err(e) => self.main.set_status(&e),
         }
@@ -452,6 +499,7 @@ impl Ide {
                     model: true,
                     selection: true,
                 });
+                self.ensure_lsp();
             }
             Err(e) => dialog::error(
                 Some(self.main.window.widget()),
@@ -504,14 +552,22 @@ impl Ide {
         }
         // Ungespeicherte Änderungen im Code zuerst sichern (der Generator
         // hängt Handler-Stubs an die Nutzerdateien an).
-        if let Err(e) = self.code.save_all() {
-            self.main.set_status(&e);
-            return None;
+        match self.code.save_all() {
+            Ok(saved) => self.lsp_saved(&saved),
+            Err(e) => {
+                self.main.set_status(&e);
+                return None;
+            }
         }
         let result = self.session.borrow_mut().write_code();
         match result {
             Ok((generation, written)) => {
-                self.code.reload_from_disk();
+                // Jetzt gibt es eine Cargo.toml: rust-analyzer starten.
+                self.ensure_lsp();
+                for (path, text) in self.code.reload_from_disk() {
+                    self.lsp_changed(&path, &text);
+                    self.lsp_saved(&[path]);
+                }
                 self.messages.show_codegen(&generation);
                 self.main.set_status(&if written.is_empty() {
                     "Code ist aktuell.".to_owned()
@@ -595,7 +651,7 @@ impl Ide {
                 }
             }
         }
-        self.code.set_marks(marks);
+        self.code.set_build_marks(marks);
         let errors = report.errors().count();
         if report.success {
             *self.executable.borrow_mut() = report.executable.clone();
@@ -684,12 +740,218 @@ impl Ide {
         }
     }
 
+    // --- rust-analyzer ------------------------------------------------------------
+
+    /// Starts rust-analyzer for the project directory if it has a
+    /// `Cargo.toml` (and stops one for another directory).
+    pub fn ensure_lsp(&self) {
+        let root = self
+            .session()
+            .project_dir()
+            .filter(|dir| dir.join("Cargo.toml").is_file())
+            .and_then(|dir| dir.canonicalize().ok());
+        let running = self.lsp.borrow().as_ref().map(|l| l.root().to_path_buf());
+        if running == root {
+            return;
+        }
+        self.stop_lsp();
+        let Some(root) = root else {
+            return;
+        };
+        let Some(sender) = self.lsp_events.borrow().clone() else {
+            return;
+        };
+        let generation = self.lsp_generation.get() + 1;
+        self.lsp_generation.set(generation);
+        match LspClient::start(&root, move |event| {
+            sender.send((generation, event));
+        }) {
+            Ok(client) => {
+                *self.lsp.borrow_mut() = Some(client);
+                self.main.set_status("rust-analyzer startet …");
+            }
+            Err(e) => self.main.set_status(&format!(
+                "rust-analyzer nicht verfügbar ({}): {e}",
+                crate::lsp::program().display()
+            )),
+        }
+    }
+
+    /// Stops rust-analyzer (project closed, Freya-TD ends).
+    pub fn stop_lsp(&self) {
+        // Ereignisse des alten Servers ab hier verwerfen.
+        self.lsp_generation.set(self.lsp_generation.get() + 1);
+        self.lsp_ready.set(false);
+        self.lsp_indexed.set(false);
+        self.completion_request.set(None);
+        self.definition_request.set(None);
+        let client = self.lsp.borrow_mut().take();
+        drop(client);
+    }
+
+    /// Is rust-analyzer running and initialised?
+    pub fn lsp_ready(&self) -> bool {
+        self.lsp_ready.get() && self.lsp.borrow().is_some()
+    }
+
+    /// Runs `f` with the server once it is ready.
+    fn with_lsp<R>(&self, f: impl FnOnce(&LspClient) -> R) -> Option<R> {
+        if !self.lsp_ready.get() {
+            return None;
+        }
+        self.lsp.borrow().as_ref().map(f)
+    }
+
+    /// A Rust file was opened in the code editor.
+    pub fn lsp_opened(&self, path: &Path, text: &str) {
+        self.with_lsp(|lsp| lsp.open(path, text));
+    }
+
+    /// New text of an open file (after the typing pause).
+    pub fn lsp_changed(&self, path: &Path, text: &str) {
+        if code::is_rust(path) {
+            self.with_lsp(|lsp| lsp.change(path, text));
+        }
+    }
+
+    /// Files were saved (rust-analyzer runs `cargo check`).
+    pub fn lsp_saved(&self, paths: &[PathBuf]) {
+        self.code.flush_change(self);
+        for path in paths.iter().filter(|p| code::is_rust(p)) {
+            self.with_lsp(|lsp| lsp.save(path));
+        }
+    }
+
+    pub fn lsp_closed(&self, path: &Path) {
+        if code::is_rust(path) {
+            self.with_lsp(|lsp| lsp.close(path));
+        }
+    }
+
+    /// Asks rust-analyzer for completions at the cursor (Ctrl+Space).
+    pub fn complete_at_cursor(&self) {
+        self.code.flush_change(self);
+        let Some((path, _, (line, column))) = self.code.current_state() else {
+            return;
+        };
+        if !code::is_rust(&path) {
+            return;
+        }
+        match self.with_lsp(|lsp| lsp.completion(&path, line, column)) {
+            Some(id) => self.completion_request.set(Some(id)),
+            None => self
+                .main
+                .set_status("rust-analyzer ist (noch) nicht bereit."),
+        }
+    }
+
+    /// Jumps to the definition of the symbol at the cursor (Ctrl+Click,
+    /// Ctrl+F12).
+    pub fn goto_definition(&self) {
+        self.code.flush_change(self);
+        let Some((path, _, (line, column))) = self.code.current_state() else {
+            return;
+        };
+        if !code::is_rust(&path) {
+            return;
+        }
+        match self.with_lsp(|lsp| lsp.definition(&path, line, column)) {
+            Some(id) => self.definition_request.set(Some(id)),
+            None => self
+                .main
+                .set_status("rust-analyzer ist (noch) nicht bereit."),
+        }
+    }
+
+    fn lsp_event(&self, event: LspEvent) {
+        match event {
+            LspEvent::Ready => {
+                self.lsp_ready.set(true);
+                for (path, text) in self.code.open_rust_files() {
+                    self.lsp_opened(&path, &text);
+                }
+                self.main
+                    .set_status("rust-analyzer indiziert das Projekt …");
+            }
+            LspEvent::Status { quiescent, .. } => {
+                if quiescent && !self.lsp_indexed.replace(true) {
+                    self.main.set_status("rust-analyzer bereit.");
+                }
+            }
+            LspEvent::Diagnostics { path, items } => {
+                let marks = items
+                    .iter()
+                    .filter_map(|d| {
+                        let kind = match d.severity {
+                            DiagnosticSeverity::Error => MarkKind::Error,
+                            DiagnosticSeverity::Warning => MarkKind::Warning,
+                            DiagnosticSeverity::Information => MarkKind::Info,
+                            // Hinweise (z. B. „unnötig“) nicht am Rand zeigen.
+                            DiagnosticSeverity::Hint => return None,
+                        };
+                        let code = d
+                            .code
+                            .as_ref()
+                            .map(|c| format!(" [{c}]"))
+                            .unwrap_or_default();
+                        Some(LineMark::new(d.line, kind, &format!("{}{code}", d.message)))
+                    })
+                    .collect();
+                self.code.set_lsp_marks(&path, marks);
+            }
+            LspEvent::Completion { request, items } => {
+                if self.completion_request.get() != Some(request) {
+                    return;
+                }
+                self.completion_request.set(None);
+                let items: Vec<Completion> = items
+                    .into_iter()
+                    .take(MAX_COMPLETIONS)
+                    .map(|i| Completion {
+                        label: i.label,
+                        detail: i.detail,
+                        insert: i.insert,
+                    })
+                    .collect();
+                self.code.show_completions(&items);
+            }
+            LspEvent::Definition { request, locations } => {
+                if self.definition_request.get() != Some(request) {
+                    return;
+                }
+                self.definition_request.set(None);
+                match locations.first() {
+                    Some(at) if at.path.is_file() => {
+                        self.open_source(&at.path, at.line);
+                        self.code.set_cursor(&at.path, at.line, at.column);
+                    }
+                    _ => self.main.set_status("Keine Definition gefunden."),
+                }
+            }
+            LspEvent::Error { request, message } => {
+                if request.is_some() && request == self.definition_request.get() {
+                    self.definition_request.set(None);
+                    self.main
+                        .set_status(&format!("Gehe zu Definition: {message}"));
+                } else if request.is_some() && request == self.completion_request.get() {
+                    self.completion_request.set(None);
+                }
+            }
+            LspEvent::Exited => {
+                *self.lsp.borrow_mut() = None;
+                self.lsp_ready.set(false);
+                self.main.set_status("rust-analyzer wurde beendet.");
+            }
+        }
+    }
+
     /// Ends Freya-TD (asks about unsaved changes).
     pub fn quit(&self) -> bool {
         if !self.confirm_discard() {
             return false;
         }
         self.save_desktop();
+        self.stop_lsp();
         Application::quit();
         true
     }

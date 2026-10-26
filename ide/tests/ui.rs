@@ -21,6 +21,19 @@ fn mouse(surface: &Widget, action: MouseAction, at: tdr_designer::Point) {
     });
 }
 
+/// Runs the event loop until `done` holds or `seconds` have passed.
+fn pump_until(seconds: u64, mut done: impl FnMut() -> bool) -> bool {
+    let end = std::time::Instant::now() + std::time::Duration::from_secs(seconds);
+    while std::time::Instant::now() < end {
+        Application::process_events();
+        if done() {
+            return true;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    false
+}
+
 fn main() {
     // Eigene Konfiguration, damit die Fensteranordnung des Nutzers unberührt bleibt.
     let home = std::env::temp_dir().join(format!("freya-ui-{}", std::process::id()));
@@ -129,14 +142,40 @@ fn main() {
     mouse(&surface, MouseAction::DoubleClicked, button.center());
     assert_eq!(
         ide.code_file(),
-        Some(project_dir.join("src/main_form.rs")),
+        Some(project_dir.join("src/main_form.rs").canonicalize().unwrap()),
         "Code-Editor zeigt die Formulardatei"
     );
     let source = std::fs::read_to_string(project_dir.join("src/main_form.rs")).unwrap();
     assert!(source.contains("pub fn button1_click(&mut self)"));
     println!("test double_click_opens_handler ... ok");
 
+    // rust-analyzer: ein Fehler im Editor erscheint als Marke am Rand.
+    let mut passed = 5;
+    if std::process::Command::new(freya_td::lsp::program())
+        .arg("--version")
+        .output()
+        .is_ok()
+    {
+        let file = ide.code_file().unwrap();
+        assert!(pump_until(120, || ide.lsp_ready()), "rust-analyzer startet");
+        let text = ide.code_text(&file).unwrap();
+        let broken = format!("{text}\nfn broken() {{\n    let _x = ;\n}}\n");
+        let line = broken.lines().count() - 1;
+        assert!(ide.set_code_text(&file, &broken));
+        assert!(
+            pump_until(180, || ide
+                .code_marks(&file)
+                .iter()
+                .any(|m| m.line == line && m.kind == MarkKind::Error)),
+            "Fehlermarke in Zeile {line}"
+        );
+        println!("test lsp_marks ... ok");
+        passed += 1;
+    } else {
+        println!("test lsp_marks ... übersprungen (kein rust-analyzer)");
+    }
+
     Application::process_events();
     let _ = std::fs::remove_dir_all(&home);
-    println!("\ntest result: ok. 5 passed");
+    println!("\ntest result: ok. {passed} passed");
 }
