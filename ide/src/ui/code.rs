@@ -70,7 +70,7 @@ fn is_generated(path: &Path) -> bool {
 
 /// The same file always under the same name (rust-analyzer reports
 /// canonical paths).
-fn key(path: &Path) -> PathBuf {
+pub(super) fn key(path: &Path) -> PathBuf {
     path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
 }
 
@@ -358,6 +358,48 @@ impl CodeWindow {
         }
         self.update_titles();
         Ok(saved)
+    }
+
+    /// Saves the open files at or below `path` (canonical, see [`key`]).
+    pub fn save_below(&self, path: &Path) -> Result<Vec<PathBuf>, String> {
+        let mut saved = Vec::new();
+        for file in self.files.borrow().iter() {
+            if file.path.starts_with(path) && self.save_file(file)? {
+                saved.push(file.path.clone());
+            }
+        }
+        self.update_titles();
+        Ok(saved)
+    }
+
+    /// Unsaved changes in an open file at or below `path` (canonical)?
+    pub fn has_unsaved_below(&self, path: &Path) -> bool {
+        self.files
+            .borrow()
+            .iter()
+            .any(|f| f.path.starts_with(path) && f.is_dirty())
+    }
+
+    /// Closes the files at or below `path` (canonical) without asking –
+    /// they were renamed or deleted. Returns their paths and cursor lines.
+    pub fn close_below(&self, path: &Path) -> Vec<(PathBuf, usize)> {
+        let mut closed = Vec::new();
+        let mut index = 0;
+        loop {
+            let file = self.files.borrow().get(index).cloned();
+            let Some(file) = file else {
+                break;
+            };
+            if file.path.starts_with(path) {
+                closed.push((file.path.clone(), file.editor.cursor().0));
+                self.files.borrow_mut().remove(index);
+                self.tabs.remove_tab(index as i32);
+            } else {
+                index += 1;
+            }
+        }
+        self.update_titles();
+        closed
     }
 
     pub fn has_unsaved(&self) -> bool {

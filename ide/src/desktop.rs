@@ -10,6 +10,8 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+use crate::files::ScanOptions;
+
 /// Where a window sits.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Place {
@@ -41,6 +43,7 @@ pub mod window {
     pub const STRUCTURE: &str = "structure";
     pub const MESSAGES: &str = "messages";
     pub const CODE: &str = "code";
+    pub const PROJECT: &str = "project";
 }
 
 /// All window places.
@@ -48,6 +51,9 @@ pub mod window {
 pub struct Desktop {
     #[serde(default)]
     pub windows: BTreeMap<String, Place>,
+    /// What the project window shows.
+    #[serde(default)]
+    pub files: ScanOptions,
 }
 
 /// The configuration directory of Freya-TD for this user.
@@ -69,7 +75,8 @@ pub fn config_dir() -> Option<PathBuf> {
 
 impl Desktop {
     /// The arrangement on a first start: main window across the top, object
-    /// inspector and structure left, designer in the middle, messages below.
+    /// inspector and structure left, designer in the middle, messages below,
+    /// project right.
     pub fn standard() -> Self {
         let windows = [
             (window::MAIN, Place::at(40, 40, 1100, 150)),
@@ -78,12 +85,14 @@ impl Desktop {
             (window::DESIGNER, Place::at(340, 200, 800, 560)),
             (window::MESSAGES, Place::at(340, 790, 800, 120)),
             (window::CODE, Place::at(370, 230, 820, 600)),
+            (window::PROJECT, Place::at(1160, 200, 280, 710)),
         ];
         Self {
             windows: windows
                 .into_iter()
                 .map(|(n, p)| (n.to_owned(), p))
                 .collect(),
+            files: ScanOptions::default(),
         }
     }
 

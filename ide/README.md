@@ -14,6 +14,7 @@ is saved per user and restored on start.*
 | Objektinspektor | Eigenschaften (Editor passend zum Typ, ↺ = Standardwert) und Ereignisse (… schlägt einen Handler vor) |
 | Struktur | Formulare und Elemente als Baum |
 | Meldungen | Prüfergebnisse, Code- und Compilermeldungen; Auswahl springt zum Element bzw. zur Quellzeile |
+| Projekt | der Projektordner als Baum (ohne `target/` und `.git/`; erzeugte und versteckte Dateien zuschaltbar). Doppelklick öffnet: `.ftdr` als Formular samt `.rs`, sonst im Code-Editor. Kontextmenü: neue Datei/neuer Ordner, Datei einbinden (von außen kopieren), Kopieren/Einfügen, Umbenennen, Löschen (in den Papierkorb), `Cargo.toml` mit dem CT-Editor öffnen. Projektdatei und Formulare sind geschützt. Änderungen von außen erscheinen nach spätestens 2 s; offene Dateien ohne ungespeicherte Änderungen werden neu geladen |
 
 Projekt-Menü: Code erzeugen (Strg+G), Bauen (Strg+F9, im Hintergrund), Starten (F9).
 
@@ -38,12 +39,17 @@ Die Logik hinter den Fenstern liegt ohne Oberfläche in `session` (Auswahl, Plat
 Ziehen) und in `tdr-designer`; die Fenster leiten nur Eingaben weiter und zeichnen.
 Für Automatisierung (Tests, KI): `Ide::run_commands` (JSON-Befehle),
 `Ide::design_surface` (Maus/Tastatur simulieren), `Ide::screenshots`, `Ide::code_text`,
-`Ide::set_code_text`, `Ide::code_marks`, `lsp::LspClient` (Ereignisse serialisierbar).
+`Ide::set_code_text`, `Ide::code_marks`, `lsp::LspClient` (Ereignisse serialisierbar),
+`files` (Dateibaum und Dateioperationen als JSON-Befehle mit Probelauf: `files::plan`,
+`files::apply`), `Ide::project_files`, `Ide::plan_file_op`, `Ide::file_op`,
+`Ide::open_project_file`.
 *Automation (tests, AI): `Ide::run_commands`, `Ide::design_surface`, `Ide::screenshots`,
-`Ide::code_text`/`set_code_text`/`code_marks`, `lsp::LspClient`.*
+`Ide::code_text`/`set_code_text`/`code_marks`, `lsp::LspClient`, `files` (file tree and file
+operations with dry run), `Ide::project_files`/`plan_file_op`/`file_op`/`open_project_file`.*
 
 Unter Linux startet Freya-TD über X11/XWayland (`GDK_BACKEND=x11`), weil Wayland
-Programmen das Positionieren ihrer Fenster verbietet. Packs werden in `components/`
+Programmen das Positionieren ihrer Fenster verbietet. Den CT-Editor sucht Freya-TD in
+`FREYA_TD_CT_EDITOR`, neben dem Programm, im Repository (`CT-Editor/target/…`) und im `PATH`. Packs werden in `components/`
 und `widgets/` neben dem Programm bzw. im Repository gesucht, zusätzlich in
 `FREYA_TD_PACKS` (Pfadliste).
 

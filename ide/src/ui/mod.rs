@@ -8,6 +8,7 @@ mod designer;
 mod inspector;
 mod main_window;
 mod messages;
+mod project;
 mod structure;
 
 use std::cell::{Cell, RefCell};
@@ -22,6 +23,7 @@ use tdr_core::{ComponentName, TypeRef, TypeRegistry};
 use tdr_designer::{Command, CommandError};
 
 use crate::desktop::{Desktop, Place, window};
+use crate::files::{self, Entry, FileError, FileIssue, FileOp, Plan};
 use crate::lsp::{DiagnosticSeverity, LspClient, LspEvent};
 use crate::session::{Changes, Session};
 
@@ -30,6 +32,7 @@ use designer::DesignerWindow;
 use inspector::InspectorWindow;
 use main_window::MainWindow;
 use messages::MessagesWindow;
+use project::ProjectWindow;
 use structure::StructureWindow;
 
 /// Backend of new projects until real backend packs exist.
@@ -100,6 +103,7 @@ pub struct Ide {
     structure: StructureWindow,
     messages: MessagesWindow,
     code: CodeWindow,
+    project: ProjectWindow,
     /// Debug binary of the last successful build.
     executable: RefCell<Option<PathBuf>>,
     /// A build is running; start the program when it succeeds.
@@ -156,6 +160,7 @@ impl Ide {
             structure: StructureWindow::build(),
             messages: MessagesWindow::build(),
             code: CodeWindow::build(),
+            project: ProjectWindow::build(),
             executable: RefCell::new(None),
             building: Cell::new(false),
             run_after_build: Cell::new(false),
@@ -188,6 +193,7 @@ impl Ide {
         structure::connect(&ide);
         messages::connect(&ide);
         code::connect(&ide);
+        project::connect(&ide);
         if let Some(path) = project {
             ide.open_path(path);
         }
@@ -203,7 +209,7 @@ impl Ide {
         self.session.borrow()
     }
 
-    fn windows(&self) -> [(&'static str, &RnclWindow); 6] {
+    fn windows(&self) -> [(&'static str, &RnclWindow); 7] {
         [
             (window::MAIN, &self.main.window),
             (window::STRUCTURE, &self.structure.window),
@@ -211,11 +217,16 @@ impl Ide {
             (window::DESIGNER, &self.designer.window),
             (window::MESSAGES, &self.messages.window),
             (window::CODE, &self.code.window),
+            (window::PROJECT, &self.project.window),
         ]
     }
 
     fn restore_desktop(&self) {
         let desktop = self.desktop.borrow().clone();
+        self.refreshing.set(true);
+        self.project.set_options(desktop.files);
+        self.refreshing.set(false);
+        self.project.refresh(self);
         for (name, window) in self.windows() {
             let place = desktop.place(name);
             window.set_size(place.width, place.height);
@@ -230,6 +241,7 @@ impl Ide {
 
     fn save_desktop(&self) {
         let mut desktop = self.desktop.borrow_mut();
+        desktop.files = self.project.options();
         for (name, window) in self.windows() {
             let size = window.size();
             let position = window.screen_position();
@@ -306,6 +318,146 @@ impl Ide {
         self.code.marks(path)
     }
 
+    pub fn set_status(&self, text: &str) {
+        self.main.set_status(text);
+    }
+
+    // --- Project files ---------------------------------------------------------------
+
+    /// The project folder as the project window shows it (automation).
+    pub fn project_files(&self) -> Vec<Entry> {
+        self.project.entries()
+    }
+
+    /// Project files that must not be renamed or deleted in the file
+    /// manager: the project file and the forms.
+    fn protected_files(&self) -> Vec<String> {
+        let session = self.session();
+        let doc = session.document();
+        let mut protected = vec![format!("{}.ptdr", doc.project().name)];
+        protected.extend(
+            doc.forms()
+                .iter()
+                .map(|f| tdr_designer::document::form_path(&f.name)),
+        );
+        protected
+    }
+
+    /// The dry run of a file operation; `None` while the project is unsaved.
+    pub fn plan_file_op(&self, op: &FileOp) -> Option<Plan> {
+        let root = self.session().project_dir()?;
+        Some(files::plan(&root, op, &self.protected_files()))
+    }
+
+    /// Performs a file operation in the project folder (no questions):
+    /// open files are saved before a rename and reopened at the new place;
+    /// deleted ones are closed (unsaved changes are lost).
+    pub fn file_op(&self, op: &FileOp) -> Result<Plan, FileError> {
+        let Some(root) = self.session().project_dir() else {
+            return Err(FileError::Refused {
+                issues: vec![FileIssue {
+                    severity: tdr_core::Severity::Error,
+                    code: "no_project",
+                    path: String::new(),
+                    detail: "Das Projekt ist noch nicht gespeichert.".to_owned(),
+                }],
+            });
+        };
+        let (old, new) = match op {
+            FileOp::Rename { from, to } => (Some(from), Some(root.join(to))),
+            FileOp::Delete { path, .. } => (Some(path), None),
+            _ => (None, None),
+        };
+        // Vorher kanonisch auflösen: danach gibt es den Pfad nicht mehr.
+        let old = old.map(|p| code::key(&root.join(p)));
+        if let (Some(old), Some(_)) = (&old, &new) {
+            match self.code.save_below(old) {
+                Ok(saved) => self.lsp_saved(&saved),
+                Err(detail) => {
+                    return Err(FileError::Io {
+                        path: old.display().to_string(),
+                        detail,
+                    });
+                }
+            }
+        }
+        let plan = files::apply(&root, op, &self.protected_files())?;
+        if let Some(old) = &old {
+            for (path, line) in self.code.close_below(old) {
+                self.lsp_closed(&path);
+                if let (Some(new), Ok(rest)) = (&new, path.strip_prefix(old)) {
+                    let moved = if rest.as_os_str().is_empty() {
+                        new.clone()
+                    } else {
+                        new.join(rest)
+                    };
+                    self.open_source(&moved, line);
+                }
+            }
+        }
+        self.project.refresh(self);
+        Ok(plan)
+    }
+
+    /// Unsaved changes in the code editor at or below a project path?
+    fn has_unsaved_below(&self, relative: &str) -> bool {
+        self.session().project_dir().is_some_and(|root| {
+            self.code
+                .has_unsaved_below(&code::key(&root.join(relative)))
+        })
+    }
+
+    /// Opens a project file (relative path): a form in the designer together
+    /// with its `.rs`, another project file as a project, anything else in
+    /// the code editor.
+    pub fn open_project_file(&self, relative: &str) {
+        let Some(root) = self.session().project_dir() else {
+            return;
+        };
+        let path = root.join(relative);
+        if relative.ends_with(".ftdr") {
+            let form = self
+                .session()
+                .document()
+                .forms()
+                .iter()
+                .find(|f| tdr_designer::document::form_path(&f.name) == relative)
+                .map(|f| f.name.clone());
+            match form {
+                Some(form) => {
+                    self.select_form(&form);
+                    if let Some(source) = self.session().form_source().filter(|s| s.is_file()) {
+                        self.open_source(&source, 1);
+                    }
+                    self.show_window(window::DESIGNER);
+                }
+                None => self.set_status(&format!(
+                    "{relative} gehört nicht zum Projekt (kein Eintrag in der Projektdatei)."
+                )),
+            }
+        } else if relative.ends_with(".ptdr") {
+            if self.path.borrow().as_deref() == Some(path.as_path()) {
+                self.set_status("Das ist die geöffnete Projektdatei.");
+            } else if self.confirm_discard() {
+                self.open_path(&path);
+            }
+        } else {
+            self.open_source(&path, 1);
+        }
+    }
+
+    /// Timer tick: rescan the project folder and reload open files that
+    /// changed on disk (and have no unsaved changes).
+    fn files_changed_outside(&self) {
+        if self.project.window.widget().is_visible() {
+            self.project.refresh(self);
+        }
+        for (path, text) in self.code.reload_from_disk() {
+            self.lsp_changed(&path, &text);
+            self.lsp_saved(&[path]);
+        }
+    }
+
     pub fn inspected(&self) -> Option<tdr_core::ComponentPath> {
         self.inspector.shown()
     }
@@ -335,6 +487,7 @@ impl Ide {
         self.structure.refresh(self);
         if changes.model {
             self.messages.refresh(self);
+            self.project.refresh(self);
         }
         if let Some(me) = self.me.upgrade() {
             self.inspector.refresh(&me, changes.model);
@@ -484,6 +637,9 @@ impl Ide {
     }
 
     fn open_path(&self, path: &Path) {
+        // Relativ angegeben (`freya-td app.ptdr`): der Projektordner wäre leer.
+        let path = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
+        let path = path.as_path();
         match Session::open(path, &self.pack_dirs) {
             Ok((session, report)) => {
                 *self.session.borrow_mut() = session;
@@ -533,6 +689,7 @@ impl Ide {
                 *self.path.borrow_mut() = Some(dir.join(format!("{name}.ptdr")));
                 self.main.set_status("Gespeichert.");
                 self.main.refresh(self);
+                self.project.refresh(self);
                 true
             }
             Err(e) => {

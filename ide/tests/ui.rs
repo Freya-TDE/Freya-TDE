@@ -149,8 +149,71 @@ fn main() {
     assert!(source.contains("pub fn button1_click(&mut self)"));
     println!("test double_click_opens_handler ... ok");
 
+    // Projektfenster: Dateibaum und Dateioperationen (wie über das Kontextmenü).
+    use freya_td::files::{Entry, FileOp};
+    fn paths(entries: &[Entry]) -> Vec<String> {
+        entries
+            .iter()
+            .flat_map(|e| std::iter::once(e.path.clone()).chain(paths(&e.children)))
+            .collect()
+    }
+    let tree = paths(&ide.project_files());
+    for path in [
+        "src",
+        "src/main_form.rs",
+        "src/main_form.ftdr",
+        "Cargo.toml",
+        "shop.ptdr",
+    ] {
+        assert!(tree.contains(&path.to_owned()), "{path} fehlt in {tree:?}");
+    }
+    assert!(
+        !tree
+            .iter()
+            .any(|p| p.ends_with(".gen.rs") || p.starts_with("target"))
+    );
+    ide.file_op(&FileOp::NewFile {
+        path: "src/util.rs".into(),
+        text: "pub fn util() {}\n".into(),
+    })
+    .unwrap();
+    assert!(paths(&ide.project_files()).contains(&"src/util.rs".to_owned()));
+    ide.open_project_file("src/util.rs");
+    let util = project_dir.join("src/util.rs").canonicalize().unwrap();
+    assert_eq!(ide.code_file().as_ref(), Some(&util));
+    // Umbenennen: der offene Reiter zieht mit.
+    ide.file_op(&FileOp::Rename {
+        from: "src/util.rs".into(),
+        to: "src/helpers.rs".into(),
+    })
+    .unwrap();
+    let helpers = project_dir.join("src/helpers.rs").canonicalize().unwrap();
+    assert_eq!(ide.code_file().as_ref(), Some(&helpers));
+    assert_eq!(ide.code_text(&helpers).unwrap(), "pub fn util() {}\n");
+    // Projektdatei und Formulare sind geschützt.
+    let refused = ide.file_op(&FileOp::Delete {
+        path: "shop.ptdr".into(),
+        permanent: true,
+    });
+    assert!(refused.is_err());
+    assert!(project_dir.join("shop.ptdr").is_file());
+    ide.file_op(&FileOp::Delete {
+        path: "src/helpers.rs".into(),
+        permanent: true,
+    })
+    .unwrap();
+    assert_ne!(ide.code_file().as_ref(), Some(&helpers));
+    assert!(!project_dir.join("src/helpers.rs").exists());
+    // Eine .ftdr öffnet das Formular samt seiner .rs.
+    ide.open_project_file("src/main_form.ftdr");
+    assert_eq!(
+        ide.code_file(),
+        Some(project_dir.join("src/main_form.rs").canonicalize().unwrap())
+    );
+    println!("test project_files ... ok");
+
     // rust-analyzer: ein Fehler im Editor erscheint als Marke am Rand.
-    let mut passed = 5;
+    let mut passed = 6;
     if std::process::Command::new(freya_td::lsp::program())
         .arg("--version")
         .output()

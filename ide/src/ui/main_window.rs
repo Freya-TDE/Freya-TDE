@@ -63,6 +63,7 @@ fn menu_bar() -> MenuBar {
                 .item("window.structure", "Struktur", None)
                 .item("window.messages", "Meldungen", None)
                 .item("window.code", "Code", None)
+                .item("window.project", "Projekt", None)
                 .separator()
                 .item("window.reset", "Standardanordnung", None),
         ),
@@ -219,6 +220,7 @@ pub fn connect(ide: &Rc<Ide>) {
             "window.structure" => ide.show_window(window::STRUCTURE),
             "window.messages" => ide.show_window(window::MESSAGES),
             "window.code" => ide.show_code(),
+            "window.project" => ide.show_window(window::PROJECT),
             "window.reset" => ide.reset_desktop(),
             _ => {}
         }));
