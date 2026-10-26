@@ -14,7 +14,7 @@ use tdr_core::{
     Color, ComponentName, ComponentPath, HandlerName, Point, PropertyType, PropertyValue, Size,
     Value,
 };
-use tdr_designer::{Command, EventRow, PropertyRow, events, properties, suggest_handler};
+use tdr_designer::{Command, EventRow, PropertyRow, events, properties};
 
 use super::{Ide, with, with0};
 
@@ -554,7 +554,7 @@ impl InspectorWindow {
         label.widget().set_tool_tip(tip.trim());
         let field = RnclTextField::new(page);
         field.set_text(row.handler.as_ref().map(HandlerName::as_str).unwrap_or(""));
-        field.set_placeholder("Handler (… schlägt einen vor)");
+        field.set_placeholder("Handler (… legt ihn an und springt hin)");
         let (form, element, event) = (
             target.form.clone().expect("qualified"),
             target.name.clone(),
@@ -583,14 +583,15 @@ impl InspectorWindow {
         let suggest = RnclButton::new(page, "…");
         suggest
             .widget()
-            .set_tool_tip("Handler-Namen vorschlagen und eintragen");
+            .set_tool_tip("Zum Handler im Code springen (legt ihn bei Bedarf an)");
         let (s, f, element, event) = (set, field.clone(), target.name.clone(), row.name.clone());
         suggest.on_clicked(with0(ide, move |ide| {
-            if f.text().trim().is_empty() {
-                let name = suggest_handler(&element, &event);
-                f.set_text(name.as_str());
-                s(ide, name.as_str());
+            // Eingetippten, noch nicht übernommenen Namen zuerst setzen.
+            let typed = f.text().trim().to_owned();
+            if !typed.is_empty() {
+                s(ide, &typed);
             }
+            ide.open_handler(&element, Some(&event));
         }));
         Line {
             label: label.widget().clone(),

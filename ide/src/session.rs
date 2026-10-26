@@ -7,14 +7,20 @@
 
 use std::path::{Path, PathBuf};
 
+use tdr_core::codegen::{self, Generation};
 use tdr_core::{
-    ComponentName, Form, LayoutKind, Placement, Platform, ProjectFile, Size, TypeRef, TypeRegistry,
+    ComponentName, Form, HandlerName, LayoutKind, Placement, Platform, ProjectFile, Size, TypeRef,
+    TypeRegistry,
 };
 use tdr_designer::layout::drop_target;
 use tdr_designer::{
     Command, CommandError, Document, DocumentError, FormLayout, ItemKind, OpenReport, Point,
-    Primitive, Theme, hit_test, layout, render, render_selection,
+    Primitive, Theme, hit_test, layout, render, render_selection, suggest_handler,
 };
+
+/// Name of the first form of new projects (`main` and `app` are reserved
+/// for `src/main.rs` and `src/app.gen.rs`).
+pub const FIRST_FORM: &str = "main_form";
 
 /// Distance the mouse must travel before a press becomes a drag.
 const DRAG_THRESHOLD: i32 = 4;
@@ -86,7 +92,13 @@ pub fn host_platform() -> Platform {
 
 impl Session {
     pub fn new(doc: Document) -> Self {
-        let platform = host_platform();
+        // Zielsystem des Projekts, sonst das System des Entwicklers.
+        let platform = doc
+            .project()
+            .platforms
+            .first()
+            .cloned()
+            .unwrap_or_else(host_platform);
         let form = doc.forms().first().map(|f| f.name.clone());
         Self {
             theme: Theme::for_platform(&platform),
@@ -111,7 +123,7 @@ impl Session {
         project.packs = packs;
         let mut doc = Document::new(project, registry);
         doc.apply(Command::AddForm {
-            name: ComponentName::new("main").expect("valid name"),
+            name: ComponentName::new(FIRST_FORM).expect("valid name"),
             data_module: false,
         })
         .map_err(|e| e.to_string())?;
@@ -445,4 +457,96 @@ impl Session {
     pub fn is_root(&self, name: &ComponentName) -> bool {
         self.root() == Some(name)
     }
+
+    // --- Code ------------------------------------------------------------------------
+
+    /// The project directory (`None` while the project is unsaved).
+    pub fn project_dir(&self) -> Option<PathBuf> {
+        self.doc.dir().map(Path::to_path_buf)
+    }
+
+    /// What code generation would write (dry run).
+    pub fn generation(&self) -> Option<Generation> {
+        let dir = self.project_dir()?;
+        Some(codegen::generate(
+            self.doc.project(),
+            self.doc.forms(),
+            self.doc.registry(),
+            &dir,
+        ))
+    }
+
+    /// Saves the project and writes the generated code. Returns the
+    /// generation (with its diagnostics) and the written files.
+    pub fn write_code(&mut self) -> Result<(Generation, Vec<String>), String> {
+        let dir = self
+            .project_dir()
+            .ok_or("Das Projekt ist noch nicht gespeichert.")?;
+        self.doc.save(Some(&dir)).map_err(|e| e.to_string())?;
+        let generation = self.generation().expect("saved project");
+        let written = codegen::write(&dir, &generation).map_err(|e| e.to_string())?;
+        Ok((generation, written))
+    }
+
+    /// The handler of `event` on `element` (default: its first event); a
+    /// missing one is connected with a suggested name (like Delphi's
+    /// double-click on an event).
+    pub fn ensure_handler(
+        &mut self,
+        element: &ComponentName,
+        event: Option<&str>,
+    ) -> Result<HandlerName, String> {
+        let form = self.form.clone().ok_or("Kein Formular geöffnet.")?;
+        let (event, existing) = {
+            let f = self.form().ok_or("Kein Formular geöffnet.")?;
+            let component = f
+                .element(element)
+                .ok_or_else(|| format!("{element} gibt es nicht."))?
+                .component();
+            let ty = self
+                .doc
+                .registry()
+                .get(&component.type_ref)
+                .ok_or_else(|| format!("Unbekannter Typ {}", component.type_ref))?;
+            let event = match event {
+                Some(e) => e.to_owned(),
+                None => ty
+                    .events
+                    .first()
+                    .map(|e| e.name.clone())
+                    .ok_or_else(|| format!("{} hat keine Ereignisse.", component.type_ref))?,
+            };
+            let existing = component.events.get(&event).cloned();
+            (event, existing)
+        };
+        if let Some(handler) = existing {
+            return Ok(handler);
+        }
+        let handler = suggest_handler(element, &event);
+        self.apply(Command::SetEvent {
+            form,
+            element: element.clone(),
+            event,
+            handler: Some(handler.clone()),
+        })
+        .map_err(|e| e.to_string())?;
+        Ok(handler)
+    }
+
+    /// The user file of the current form.
+    pub fn form_source(&self) -> Option<PathBuf> {
+        Some(
+            self.project_dir()?
+                .join(format!("src/{}.rs", self.form_name()?)),
+        )
+    }
+}
+
+/// Line (1-based) of `fn <handler>(` in a source text.
+pub fn handler_line(source: &str, handler: &HandlerName) -> Option<usize> {
+    let pattern = format!("fn {handler}(");
+    source
+        .lines()
+        .position(|line| line.contains(&pattern))
+        .map(|i| i + 1)
 }

@@ -14,6 +14,7 @@ use std::path::{Path, PathBuf};
 use std::rc::{Rc, Weak};
 
 use rncl::prelude::*;
+use ruf::GuiSender;
 use ruf::dialog::{self, FileFilter};
 use tdr_core::pack::load_all;
 use tdr_core::{ComponentName, TypeRef, TypeRegistry};
@@ -92,6 +93,13 @@ pub struct Ide {
     inspector: InspectorWindow,
     structure: StructureWindow,
     messages: MessagesWindow,
+    /// Debug binary of the last successful build.
+    executable: RefCell<Option<PathBuf>>,
+    /// A build is running; start the program when it succeeds.
+    building: Cell<bool>,
+    run_after_build: Cell<bool>,
+    /// Delivers build reports from the build thread.
+    build_results: RefCell<Option<GuiSender<tdr_core::preview::BuildReport>>>,
 }
 
 /// A callback that runs `f` with the IDE while it exists.
@@ -129,7 +137,17 @@ impl Ide {
             inspector: InspectorWindow::build(),
             structure: StructureWindow::build(),
             messages: MessagesWindow::build(),
+            executable: RefCell::new(None),
+            building: Cell::new(false),
+            run_after_build: Cell::new(false),
+            build_results: RefCell::new(None),
         });
+        let weak = Rc::downgrade(&ide);
+        *ide.build_results.borrow_mut() = Some(GuiSender::new(move |report| {
+            if let Some(ide) = weak.upgrade() {
+                ide.build_finished(report);
+            }
+        }));
         main_window::connect(&ide);
         designer::connect(&ide);
         inspector::connect(&ide);
@@ -463,6 +481,156 @@ impl Ide {
                 false
             }
         }
+    }
+
+    // --- Code, build, run ----------------------------------------------------------
+
+    /// Saves (asking for a folder the first time) and writes the generated
+    /// code. Code generation findings go to the messages window.
+    pub fn generate_code(&self) -> Option<tdr_core::codegen::Generation> {
+        if self.path.borrow().is_none() && !self.save() {
+            return None;
+        }
+        let result = self.session.borrow_mut().write_code();
+        match result {
+            Ok((generation, written)) => {
+                self.messages.show_codegen(&generation);
+                self.main.set_status(&if written.is_empty() {
+                    "Code ist aktuell.".to_owned()
+                } else {
+                    format!("Code erzeugt: {}", written.join(", "))
+                });
+                self.refresh(Changes {
+                    model: true,
+                    selection: false,
+                });
+                Some(generation)
+            }
+            Err(e) => {
+                // Bei Fehlern zeigt der Probelauf, was nicht stimmt.
+                if let Some(generation) = self.session().generation() {
+                    self.messages.show_codegen(&generation);
+                }
+                self.main.set_status(&format!("Code nicht erzeugt: {e}"));
+                self.show_window(window::MESSAGES);
+                None
+            }
+        }
+    }
+
+    /// Generates the code and builds the project in debug mode (in the
+    /// background); `then_run` starts it when the build succeeds.
+    pub fn build(&self, then_run: bool) {
+        if self.building.get() {
+            self.main.set_status("Es läuft bereits ein Build.");
+            return;
+        }
+        let Some(generation) = self.generate_code() else {
+            return;
+        };
+        let Some(dir) = self.session().project_dir() else {
+            return;
+        };
+        let Some(sender) = self.build_results.borrow().clone() else {
+            return;
+        };
+        self.building.set(true);
+        self.run_after_build.set(then_run);
+        self.main.set_status("Baue …");
+        std::thread::spawn(move || {
+            let report = tdr_core::preview::build(&dir, Some(&generation)).unwrap_or_else(|e| {
+                tdr_core::preview::BuildReport {
+                    success: false,
+                    messages: vec![tdr_core::preview::BuildMessage {
+                        severity: tdr_core::Severity::Error,
+                        message: format!("cargo konnte nicht gestartet werden: {e}"),
+                        code: None,
+                        file: None,
+                        line: None,
+                        column: None,
+                        element: None,
+                        rendered: None,
+                    }],
+                    executable: None,
+                }
+            });
+            sender.send(report);
+        });
+    }
+
+    fn build_finished(&self, report: tdr_core::preview::BuildReport) {
+        self.building.set(false);
+        let dir = self.session().project_dir();
+        self.messages.show_build(&report, dir.as_deref());
+        let errors = report.errors().count();
+        if report.success {
+            *self.executable.borrow_mut() = report.executable.clone();
+            self.main.set_status("Build erfolgreich.");
+            if self.run_after_build.replace(false) {
+                self.run_executable();
+            }
+        } else {
+            self.run_after_build.set(false);
+            self.main
+                .set_status(&format!("Build fehlgeschlagen ({errors} Fehler)."));
+            self.show_window(window::MESSAGES);
+        }
+    }
+
+    /// Builds (if needed) and starts the program as its own process.
+    pub fn run(&self) {
+        self.build(true);
+    }
+
+    fn run_executable(&self) {
+        let Some(exe) = self.executable.borrow().clone() else {
+            return;
+        };
+        let dir = self.session().project_dir();
+        let mut command = std::process::Command::new(&exe);
+        if let Some(dir) = dir {
+            command.current_dir(dir);
+        }
+        match command.spawn() {
+            Ok(_) => self
+                .main
+                .set_status(&format!("Gestartet: {}", exe.display())),
+            Err(e) => self.main.set_status(&format!("Start fehlgeschlagen: {e}")),
+        }
+    }
+
+    /// Jumps to the handler of `event` (default: first event) of `element`,
+    /// creating it if needed – like Delphi's double click.
+    pub fn open_handler(&self, element: &ComponentName, event: Option<&str>) {
+        let handler = self.session.borrow_mut().ensure_handler(element, event);
+        let handler = match handler {
+            Ok(h) => h,
+            Err(e) => {
+                self.main.set_status(&e);
+                return;
+            }
+        };
+        self.refresh(Changes {
+            model: true,
+            selection: true,
+        });
+        if self.generate_code().is_none() {
+            return;
+        }
+        let Some(path) = self.session().form_source() else {
+            return;
+        };
+        let line = std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|source| crate::session::handler_line(&source, &handler))
+            .unwrap_or(1);
+        self.open_source(&path, line);
+    }
+
+    /// Opens a source file at a line (1-based) in the code editor.
+    pub fn open_source(&self, path: &Path, line: usize) {
+        // Der Code-Editor (GtkSourceView) folgt; bis dahin der Fundort.
+        self.main.set_status(&format!("{}:{line}", path.display()));
     }
 
     /// Ends Freya-TD (asks about unsaved changes).

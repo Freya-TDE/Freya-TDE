@@ -49,7 +49,11 @@ fn menu_bar() -> MenuBar {
             "Projekt".into(),
             Menu::new()
                 .item("project.add_form", "Formular hinzufügen", None)
-                .item("project.add_data", "Datenmodul hinzufügen", None),
+                .item("project.add_data", "Datenmodul hinzufügen", None)
+                .separator()
+                .item("project.generate", "Code erzeugen", Some("Ctrl+G"))
+                .item("project.build", "Bauen", Some("Ctrl+F9"))
+                .item("project.run", "Starten", Some("F9")),
         ),
         (
             "Fenster".into(),
@@ -204,6 +208,11 @@ pub fn connect(ide: &Rc<Ide>) {
             "edit.delete" => ide.delete_selection(),
             "project.add_form" => ide.add_form(false),
             "project.add_data" => ide.add_form(true),
+            "project.generate" => {
+                ide.generate_code();
+            }
+            "project.build" => ide.build(false),
+            "project.run" => ide.run(),
             "window.designer" => ide.show_window(window::DESIGNER),
             "window.inspector" => ide.show_window(window::INSPECTOR),
             "window.structure" => ide.show_window(window::STRUCTURE),

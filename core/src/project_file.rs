@@ -7,6 +7,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::error::ModelError;
+use crate::platform::Platform;
 
 /// A Freya-TD project.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -21,6 +22,10 @@ pub struct ProjectFile {
     pub rust_version: String,
     /// The project's UI backend (e.g. `"egui"`); exactly one per project.
     pub backend: String,
+    /// Target systems; the designer shows the first. Empty = the system
+    /// the developer works on.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub platforms: Vec<Platform>,
     /// Names of the component packs in use (e.g. `["tokio", "sqlx"]`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub packs: Vec<String>,
@@ -62,6 +67,7 @@ impl ProjectFile {
             name,
             rust_version: rust_version.into(),
             backend: backend.into(),
+            platforms: Vec::new(),
             packs: Vec::new(),
             forms: Vec::new(),
         })
@@ -95,6 +101,7 @@ mod tests {
         let mut project = ProjectFile::new("crm-app", "1.99", "egui").unwrap();
         project.packs = vec!["tokio".into(), "sqlx".into()];
         project.forms = vec!["src/services.ftdr".into()];
+        project.platforms = vec![Platform::Linux, Platform::Windows];
         let text = project.to_ron().unwrap();
         assert_eq!(ProjectFile::from_ron(&text).unwrap(), project);
         assert!(ProjectFile::new("2fast", "1.99", "egui").is_err());

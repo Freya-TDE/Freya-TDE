@@ -46,7 +46,7 @@ fn main() {
     assert_eq!(ide.session().selection(), [name("button1")]);
     assert_eq!(
         ide.inspected().map(|p| p.to_string()).as_deref(),
-        Some("main::button1"),
+        Some("main_form::button1"),
         "Objektinspektor folgt der Auswahl"
     );
     println!("test place_from_palette ... ok");
@@ -88,7 +88,7 @@ fn main() {
     // Befehle als JSON (Skripte, KI).
     let count = ide
         .run_commands(
-            r#"[{"command": "add_widget", "form": "main", "parent": "window", "type": "core/Label", "name": "hint"}]"#,
+            r#"[{"command": "add_widget", "form": "main_form", "parent": "window", "type": "core/Label", "name": "hint"}]"#,
         )
         .unwrap();
     assert_eq!(count, 1);

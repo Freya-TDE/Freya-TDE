@@ -5,6 +5,7 @@ use tdr_core::{ComponentName, ProjectFile, TypeRef, TypeRegistry, builtin};
 use tdr_designer::{Command, Document, Point};
 
 use freya_td::Session;
+use freya_td::session::handler_line;
 
 fn name(n: &str) -> ComponentName {
     ComponentName::new(n).unwrap()
@@ -126,10 +127,48 @@ fn new_project_is_saved() {
     let dir = std::env::temp_dir().join(format!("freya-new-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let s = Session::create(&dir, "shop", "plain", TypeRegistry::with_builtins()).unwrap();
-    assert_eq!(s.form_name(), Some(&name("main")));
+    assert_eq!(s.form_name(), Some(&name("main_form")));
     assert!(dir.join("shop.ptdr").exists());
-    assert!(dir.join("src/main.ftdr").exists());
+    assert!(dir.join("src/main_form.ftdr").exists());
     let (opened, _) = Session::open(&dir.join("shop.ptdr"), &[]).unwrap();
     assert_eq!(opened.document().forms(), s.document().forms());
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn handlers_and_generated_code() {
+    let dir = std::env::temp_dir().join(format!("freya-code-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let mut s = Session::create(&dir, "shop", "none", TypeRegistry::with_builtins()).unwrap();
+    s.arm(Some(builtin::button()));
+    let window = s
+        .layout()
+        .unwrap()
+        .item(&name("window"))
+        .unwrap()
+        .content
+        .unwrap();
+    s.press(Point::new(window.center().x, window.bottom() - 5), false)
+        .unwrap();
+
+    // Doppelklick-Logik: Standard-Ereignis bekommt einen vorgeschlagenen Handler.
+    let handler = s.ensure_handler(&name("button1"), None).unwrap();
+    assert_eq!(handler.as_str(), "button1_click");
+    // Ein zweites Mal: derselbe Handler, keine Änderung.
+    assert_eq!(s.ensure_handler(&name("button1"), None).unwrap(), handler);
+
+    // Code erzeugen: Nutzerdatei mit Stub, Zeile wird gefunden.
+    let (generation, written) = s.write_code().unwrap();
+    assert!(!generation.has_errors(), "{:#?}", generation.diagnostics);
+    assert!(written.contains(&"src/main_form.rs".to_owned()));
+    let source = std::fs::read_to_string(s.form_source().unwrap()).unwrap();
+    let line = handler_line(&source, &handler).unwrap();
+    assert!(
+        source
+            .lines()
+            .nth(line - 1)
+            .unwrap()
+            .contains("fn button1_click(")
+    );
     std::fs::remove_dir_all(&dir).unwrap();
 }

@@ -1,31 +1,22 @@
 //! Designer window: the form on a canvas. Click selects (Ctrl/Shift adds),
 //! a click with an armed palette type places it, dragging reorders or moves
-//! into another container, Delete removes, Esc cancels.
+//! into another container, a double click opens the element's event
+//! handler, Delete removes, Esc cancels.
+//!
+//! No form or platform selector: a form is opened together with its `.rs`
+//! file, and the look is the project's target system.
 
 use std::rc::Rc;
 
 use rncl::prelude::*;
 use ruf::{Color, Key};
-use tdr_core::{ComponentName, Platform};
+use tdr_core::ComponentName;
 use tdr_designer::{ItemKind, Point};
 
 use super::{Ide, convert, with};
 
-const MARGIN: i32 = 6;
-const ROW: i32 = 28;
-
-const PLATFORMS: [(&str, Platform); 3] = [
-    ("Linux", Platform::Linux),
-    ("Windows", Platform::Windows),
-    ("macOS", Platform::MacOs),
-];
-
 pub struct DesignerWindow {
     pub window: RnclWindow,
-    form_label: RnclLabel,
-    form: RnclComboBox,
-    look_label: RnclLabel,
-    look: RnclComboBox,
     scroll: RnclScrollView,
     canvas: RnclCanvas,
 }
@@ -33,32 +24,17 @@ pub struct DesignerWindow {
 impl DesignerWindow {
     pub fn build() -> Self {
         let window = RnclWindow::new("Designer");
-        let form_label = RnclLabel::new(&window, "Formular:");
-        let form = RnclComboBox::new(&window);
-        let look_label = RnclLabel::new(&window, "Aussehen:");
-        let look = RnclComboBox::new(&window);
-        look.set_items(&PLATFORMS.map(|(n, _)| n));
         let scroll = RnclScrollView::new(&window);
         let canvas = RnclCanvas::new(scroll.content());
         Self {
             window,
-            form_label,
-            form,
-            look_label,
-            look,
             scroll,
             canvas,
         }
     }
 
     fn layout(&self, width: i32, height: i32) {
-        self.form_label.set_geometry(MARGIN, MARGIN, 80, ROW);
-        self.form.set_geometry(MARGIN + 80, MARGIN, 180, ROW);
-        self.look_label.set_geometry(MARGIN + 280, MARGIN, 80, ROW);
-        self.look.set_geometry(MARGIN + 360, MARGIN, 140, ROW);
-        let top = MARGIN + ROW + MARGIN;
-        self.scroll
-            .set_geometry(0, top, width, (height - top).max(0));
+        self.scroll.set_geometry(0, 0, width, height);
     }
 
     pub fn canvas_widget(&self) -> Widget {
@@ -106,26 +82,11 @@ impl DesignerWindow {
 
     pub fn refresh(&self, ide: &Ide) {
         let session = ide.session();
-        let names: Vec<String> = session
-            .document()
-            .forms()
-            .iter()
-            .map(|f| f.name.to_string())
-            .collect();
-        if self.form.items() != names {
-            self.form.set_items(&names);
-        }
-        let current = session
-            .form_name()
-            .map(ToString::to_string)
-            .unwrap_or_default();
-        self.form.set_current_text(&current);
-        let look = PLATFORMS
-            .iter()
-            .position(|(_, p)| p == session.platform())
-            .unwrap_or(0);
-        self.look.set_current_index(look as i32);
-        self.window.set_title(&format!("Designer – {current}"));
+        let title = match session.form_name() {
+            Some(form) => format!("Designer – {form}.rs ({})", session.platform()),
+            None => "Designer".to_owned(),
+        };
+        self.window.set_title(&title);
         drop(session);
         self.draw(ide, None);
     }
@@ -195,32 +156,19 @@ pub fn connect(ide: &Rc<Ide>) {
         }
     });
 
-    designer
-        .form
-        .on_current_index_changed(with(ide, |ide, _: i32| {
-            if ide.is_refreshing() {
-                return;
-            }
-            if let Ok(name) = ComponentName::new(ide.designer.form.current_text()) {
-                ide.select_form(&name);
-            }
-        }));
-    designer
-        .look
-        .on_current_index_changed(with(ide, |ide, index: i32| {
-            if ide.is_refreshing() {
-                return;
-            }
-            if let Some((_, platform)) = usize::try_from(index).ok().and_then(|i| PLATFORMS.get(i))
-            {
-                ide.session.borrow_mut().set_platform(platform.clone());
-                ide.designer.draw(ide, None);
-            }
-        }));
-
     designer.canvas.on_mouse(with(ide, |ide, e: MouseEvent| {
         let at = Point::new(e.x, e.y);
         match (e.action, e.button) {
+            (MouseAction::DoubleClicked, 1) => {
+                // Wie Delphi: Doppelklick legt den Handler des Standard-Ereignisses
+                // an (falls nötig) und springt in den Code.
+                let element = ide.session().single_selection().map(|(n, _)| n.clone());
+                if let Some(element) = element
+                    && !ide.session().is_root(&element)
+                {
+                    ide.open_handler(&element, None);
+                }
+            }
             (MouseAction::Pressed, 1) => {
                 let add = e.modifiers.ctrl || e.modifiers.shift;
                 let result = ide.session.borrow_mut().press(at, add);
