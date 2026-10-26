@@ -6,7 +6,8 @@
 //! rust-analyzer (see [`crate::lsp`]) gets every change after a short
 //! typing pause and checks on save; its findings and those of the last
 //! build appear as gutter marks. Ctrl+Space (and typing `.` or `::`)
-//! completes, Ctrl+Click or Ctrl+F12 jumps to the definition.
+//! completes, Ctrl+Click or Ctrl+F12 jumps to the definition. Brace blocks
+//! fold with the arrows in the gutter.
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -119,7 +120,10 @@ fn menu_bar() -> MenuBar {
             "Code".into(),
             Menu::new()
                 .item("code.complete", "Vervollständigen", Some("Ctrl+Space"))
-                .item("code.definition", "Gehe zu Definition", Some("Ctrl+F12")),
+                .item("code.definition", "Gehe zu Definition", Some("Ctrl+F12"))
+                .separator()
+                .item("code.fold_all", "Alles falten", None)
+                .item("code.unfold_all", "Alles aufklappen", None),
         ),
         (
             "Ansicht".into(),
@@ -314,6 +318,13 @@ impl CodeWindow {
         }
     }
 
+    /// Folds (or unfolds) every region of the front file.
+    pub fn set_all_folded(&self, folded: bool) {
+        if let Some(file) = self.current() {
+            file.editor.set_all_folded(folded);
+        }
+    }
+
     /// Writes a file to disk if it has unsaved changes; `true` if written.
     fn save_file(&self, file: &OpenFile) -> Result<bool, String> {
         if !file.is_dirty() {
@@ -484,6 +495,10 @@ pub fn connect(ide: &Rc<Ide>) {
             }
             "code.definition" => {
                 ide.goto_definition();
+                Ok(())
+            }
+            "code.fold_all" | "code.unfold_all" => {
+                ide.code.set_all_folded(id == "code.fold_all");
                 Ok(())
             }
             "code.designer" => {

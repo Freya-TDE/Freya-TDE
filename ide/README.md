@@ -10,7 +10,7 @@ is saved per user and restored on start.*
 |---|---|
 | Hauptfenster | Menü, Komponentenpalette (ein Reiter je Kategorie), Statuszeile |
 | Designer | das Formular auf einer Zeichenfläche: klicken wählt (Strg/Umschalt ergänzt), mit gewählter Palette klicken platziert, ziehen ordnet um bzw. verschiebt in einen anderen Container, Doppelklick springt zum Handler (legt ihn an), Entf löscht, Esc bricht ab, Rechtsklick-Menü, F12 = Code |
-| Code | ein Reiter je Datei (GtkSourceView): Hervorhebung, Zeilennummern, Fehlermarken vom Build und von rust-analyzer; Strg+Leertaste (und `.`/`::`) vervollständigt, Strg+Klick oder Strg+F12 springt zur Definition; `.gen.rs` schreibgeschützt; Strg+S speichert, Strg+W schließt, F12 = Designer; der Designer folgt dem Reiter |
+| Code | ein Reiter je Datei (GtkSourceView): Hervorhebung, Zeilennummern, Fehlermarken vom Build und von rust-analyzer; Strg+Leertaste (und `.`/`::`) vervollständigt, Strg+Klick oder Strg+F12 springt zur Definition; Klammerblöcke falten per Pfeil am Rand (Code → Alles falten/aufklappen); `.gen.rs` schreibgeschützt; Strg+S speichert, Strg+W schließt, F12 = Designer; der Designer folgt dem Reiter |
 | Objektinspektor | Eigenschaften (Editor passend zum Typ, ↺ = Standardwert) und Ereignisse (… schlägt einen Handler vor) |
 | Struktur | Formulare und Elemente als Baum |
 | Meldungen | Prüfergebnisse, Code- und Compilermeldungen; Auswahl springt zum Element bzw. zur Quellzeile |
