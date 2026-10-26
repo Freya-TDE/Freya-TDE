@@ -5,6 +5,7 @@
 mod code;
 mod convert;
 mod designer;
+mod git_window;
 mod inspector;
 mod main_window;
 mod messages;
@@ -24,11 +25,14 @@ use tdr_designer::{Command, CommandError};
 
 use crate::desktop::{Desktop, Place, window};
 use crate::files::{self, Entry, FileError, FileIssue, FileOp, Plan};
+use crate::git::askpass::Askpass;
+use crate::git::{After, Git, GitError, GitOp, Preview, Status};
 use crate::lsp::{DiagnosticSeverity, LspClient, LspEvent};
 use crate::session::{Changes, Session};
 
 use code::CodeWindow;
 use designer::DesignerWindow;
+use git_window::GitWindow;
 use inspector::InspectorWindow;
 use main_window::MainWindow;
 use messages::MessagesWindow;
@@ -86,6 +90,12 @@ fn full_registry(dirs: &[PathBuf]) -> (TypeRegistry, Vec<String>) {
     (registry, names)
 }
 
+/// Result of a background Git operation: what, clear the commit message, result.
+type GitResult = (String, bool, Result<String, GitError>);
+
+/// A question of git/ssh and where the answer goes.
+type Question = (String, std::sync::mpsc::Sender<Option<String>>);
+
 /// The IDE: session, windows and actions.
 pub struct Ide {
     /// Weak self reference (windows connect callbacks while refreshing).
@@ -104,6 +114,21 @@ pub struct Ide {
     messages: MessagesWindow,
     code: CodeWindow,
     project: ProjectWindow,
+    git_window: GitWindow,
+    /// The repository of the project folder, checked again when the folder
+    /// changes: (project folder, repository).
+    repo: RefCell<Option<(PathBuf, Option<Git>)>>,
+    git_status: RefCell<Option<Status>>,
+    /// HEAD, upstream and ahead/behind of the shown log (reloaded on change).
+    git_log_key: RefCell<String>,
+    /// A background Git operation (push, pull …) is running.
+    git_busy: Cell<bool>,
+    /// Delivers results of background Git operations: (what, clear the
+    /// commit message, result).
+    git_results: RefCell<Option<GuiSender<GitResult>>>,
+    /// Questions of git/ssh (password, passphrase) with the answer channel.
+    askpass_questions: RefCell<Option<GuiSender<Question>>>,
+    askpass: RefCell<Option<Askpass>>,
     /// Debug binary of the last successful build.
     executable: RefCell<Option<PathBuf>>,
     /// A build is running; start the program when it succeeds.
@@ -161,6 +186,14 @@ impl Ide {
             messages: MessagesWindow::build(),
             code: CodeWindow::build(),
             project: ProjectWindow::build(),
+            git_window: GitWindow::build(),
+            repo: RefCell::new(None),
+            git_status: RefCell::new(None),
+            git_log_key: RefCell::new(String::new()),
+            git_busy: Cell::new(false),
+            git_results: RefCell::new(None),
+            askpass_questions: RefCell::new(None),
+            askpass: RefCell::new(None),
             executable: RefCell::new(None),
             building: Cell::new(false),
             run_after_build: Cell::new(false),
@@ -187,6 +220,21 @@ impl Ide {
                 ide.lsp_event(event);
             }
         }));
+        let weak = Rc::downgrade(&ide);
+        *ide.git_results.borrow_mut() =
+            Some(GuiSender::new(move |(what, clear, result): GitResult| {
+                if let Some(ide) = weak.upgrade() {
+                    ide.git_finished(&what, clear, result);
+                }
+            }));
+        let weak = Rc::downgrade(&ide);
+        *ide.askpass_questions.borrow_mut() =
+            Some(GuiSender::new(move |(question, reply): Question| {
+                let answer = weak
+                    .upgrade()
+                    .and_then(|ide| ide.ask_credentials(&question));
+                let _ = reply.send(answer);
+            }));
         main_window::connect(&ide);
         designer::connect(&ide);
         inspector::connect(&ide);
@@ -194,6 +242,7 @@ impl Ide {
         messages::connect(&ide);
         code::connect(&ide);
         project::connect(&ide);
+        git_window::connect(&ide);
         if let Some(path) = project {
             ide.open_path(path);
         }
@@ -209,7 +258,7 @@ impl Ide {
         self.session.borrow()
     }
 
-    fn windows(&self) -> [(&'static str, &RnclWindow); 7] {
+    fn windows(&self) -> [(&'static str, &RnclWindow); 8] {
         [
             (window::MAIN, &self.main.window),
             (window::STRUCTURE, &self.structure.window),
@@ -218,6 +267,7 @@ impl Ide {
             (window::MESSAGES, &self.messages.window),
             (window::CODE, &self.code.window),
             (window::PROJECT, &self.project.window),
+            (window::GIT, &self.git_window.window),
         ]
     }
 
@@ -226,6 +276,7 @@ impl Ide {
         self.refreshing.set(true);
         self.project.set_options(desktop.files);
         self.refreshing.set(false);
+        self.git_refresh(true);
         self.project.refresh(self);
         for (name, window) in self.windows() {
             let place = desktop.place(name);
@@ -449,12 +500,384 @@ impl Ide {
     /// Timer tick: rescan the project folder and reload open files that
     /// changed on disk (and have no unsaved changes).
     fn files_changed_outside(&self) {
+        self.git_refresh(false);
         if self.project.window.widget().is_visible() {
             self.project.refresh(self);
         }
         for (path, text) in self.code.reload_from_disk() {
             self.lsp_changed(&path, &text);
             self.lsp_saved(&[path]);
+        }
+    }
+
+    // --- Git ------------------------------------------------------------------------
+
+    /// Answers git/ssh questions with a dialog (only in the real program:
+    /// the helper is `freya-td` itself).
+    fn askpass(&self) -> Option<Askpass> {
+        if let Some(askpass) = self.askpass.borrow().clone() {
+            return Some(askpass);
+        }
+        let exe = std::env::current_exe().ok()?;
+        if exe.file_stem().and_then(|s| s.to_str()) != Some("freya-td") {
+            return None;
+        }
+        let sender = self.askpass_questions.borrow().clone()?;
+        let askpass = Askpass::start(exe, move |question| {
+            let (reply, answer) = std::sync::mpsc::channel();
+            sender.send((question.to_owned(), reply));
+            answer.recv().ok().flatten()
+        })
+        .ok()?;
+        *self.askpass.borrow_mut() = Some(askpass.clone());
+        Some(askpass)
+    }
+
+    fn ask_credentials(&self, question: &str) -> Option<String> {
+        let parent = Some(self.git_window.window.widget());
+        let question = question.trim();
+        if question.starts_with("Username") {
+            dialog::input(parent, "Git-Anmeldung", question, "")
+        } else {
+            dialog::password(parent, "Git-Anmeldung", question)
+        }
+    }
+
+    /// The Git repository of the project folder (`None`: unsaved project,
+    /// no repository or no `git`).
+    pub fn repo(&self) -> Option<Git> {
+        let dir = self.session().project_dir()?;
+        if let Some((cached, repo)) = self.repo.borrow().as_ref()
+            && *cached == dir
+        {
+            return repo.clone();
+        }
+        let repo = Git::open(&dir)
+            .ok()
+            .map(|git| git.with_askpass(self.askpass()));
+        *self.repo.borrow_mut() = Some((dir, repo.clone()));
+        repo
+    }
+
+    /// Git status of the project's repository (as last read).
+    pub fn git_status(&self) -> Option<Status> {
+        self.git_status.borrow().clone()
+    }
+
+    /// Git changes by project path (for the marks in the project tree).
+    pub fn git_changes(&self) -> project::Changes {
+        let (Some(status), Some(repo), Some(dir)) = (
+            self.git_status.borrow().clone(),
+            self.repo(),
+            self.session().project_dir(),
+        ) else {
+            return Default::default();
+        };
+        let prefix = repo
+            .relative(&dir)
+            .filter(|p| !p.is_empty())
+            .map(|p| format!("{p}/"))
+            .unwrap_or_default();
+        status
+            .files
+            .iter()
+            .filter_map(|f| {
+                let path = f.path.strip_prefix(&prefix)?;
+                Some((path.to_owned(), f.unstaged.or(f.staged)?))
+            })
+            .collect()
+    }
+
+    /// Reads the Git state and shows it (window, status line, project
+    /// tree); the log only when HEAD or the upstream moved, or with `log`.
+    pub fn git_refresh(&self, log: bool) {
+        let repo = self.repo();
+        let status = repo.as_ref().and_then(|r| r.status().ok());
+        let name = repo
+            .as_ref()
+            .and_then(|r| r.root().file_name())
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        self.git_window.show_status(&name, status.as_ref());
+        self.main.set_branch(&match &status {
+            Some(s) if s.ahead + s.behind > 0 => {
+                format!("⎇ {}  {}↓ {}↑", s.branch_label(), s.behind, s.ahead)
+            }
+            Some(s) => format!("⎇ {}", s.branch_label()),
+            None => String::new(),
+        });
+        let key = status
+            .as_ref()
+            .map(|s| format!("{:?} {:?} {} {}", s.head, s.upstream, s.ahead, s.behind))
+            .unwrap_or_default();
+        if log || *self.git_log_key.borrow() != key {
+            let commits = repo
+                .as_ref()
+                .and_then(|r| r.log(300).ok())
+                .unwrap_or_default();
+            self.git_window.show_log(commits);
+            *self.git_log_key.borrow_mut() = key;
+        }
+        *self.git_status.borrow_mut() = status;
+    }
+
+    /// The dry run of a Git operation.
+    pub fn git_preview(&self, op: &GitOp) -> Result<Preview, GitError> {
+        self.repo()
+            .ok_or_else(|| GitError {
+                code: "not_a_repository",
+                detail: "Das Projekt liegt in keinem Git-Repository.".to_owned(),
+                output: String::new(),
+                issues: Vec::new(),
+            })?
+            .preview(op)
+    }
+
+    /// Runs a Git operation now (no questions; for automation). Open files
+    /// changed by it are reloaded.
+    pub fn git_run(&self, op: &GitOp) -> Result<String, GitError> {
+        self.git_preview(op)?;
+        let repo = self.repo().expect("checked by the preview");
+        let result = repo.run(op);
+        self.after_git();
+        result
+    }
+
+    fn after_git(&self) {
+        for (path, text) in self.code.reload_from_disk() {
+            self.lsp_changed(&path, &text);
+            self.lsp_saved(&[path]);
+        }
+        self.git_refresh(false);
+        self.project.refresh(self);
+    }
+
+    /// Shows the findings of a preview: errors stop, warnings ask.
+    fn git_confirm(&self, title: &str, op: &GitOp) -> bool {
+        let parent = Some(self.git_window.window.widget());
+        let preview = match self.git_preview(op) {
+            Ok(p) => p,
+            Err(e) => {
+                dialog::error(parent, title, &e.to_string());
+                return false;
+            }
+        };
+        if preview.has_errors() {
+            let details: Vec<&str> = preview
+                .issues
+                .iter()
+                .filter(|i| i.severity == tdr_core::Severity::Error)
+                .map(|i| i.detail.as_str())
+                .collect();
+            dialog::error(parent, title, &details.join("\n"));
+            return false;
+        }
+        let warnings: Vec<&str> = preview.issues.iter().map(|i| i.detail.as_str()).collect();
+        warnings.is_empty()
+            || dialog::confirm(
+                parent,
+                title,
+                &format!("{}\n\nFortfahren?", warnings.join("\n")),
+            )
+    }
+
+    /// Runs a quick Git operation (stage, checkout …) after the preview.
+    pub fn git_now(&self, op: GitOp) {
+        if !self.git_confirm("Git", &op) {
+            return;
+        }
+        if let Err(e) = self.git_run(&op) {
+            dialog::error(Some(self.git_window.window.widget()), "Git", &e.to_string());
+        }
+    }
+
+    /// Runs a Git operation in the background (push, pull, commit …).
+    pub fn git_start(&self, op: GitOp) {
+        if self.git_busy.get() {
+            self.set_status("Git arbeitet noch …");
+            return;
+        }
+        if !self.git_confirm("Git", &op) {
+            return;
+        }
+        let (Some(repo), Some(sender)) = (self.repo(), self.git_results.borrow().clone()) else {
+            return;
+        };
+        let what = match &op {
+            GitOp::Commit {
+                then: After::Push, ..
+            } => "Commit & Push",
+            GitOp::Commit {
+                then: After::Sync, ..
+            } => "Commit & Sync",
+            GitOp::Commit { .. } => "Commit",
+            GitOp::Fetch => "Fetch",
+            GitOp::Pull => "Pull",
+            GitOp::Push => "Push",
+            GitOp::Sync => "Sync",
+            _ => "Git",
+        }
+        .to_owned();
+        let clear = matches!(op, GitOp::Commit { .. });
+        self.git_busy.set(true);
+        self.set_status(&format!("{what} läuft …"));
+        std::thread::spawn(move || {
+            let result = repo.run(&op);
+            sender.send((what, clear, result));
+        });
+    }
+
+    fn git_finished(&self, what: &str, clear: bool, result: Result<String, GitError>) {
+        self.git_busy.set(false);
+        match result {
+            Ok(_) => {
+                if clear {
+                    self.git_window.set_message("");
+                }
+                self.set_status(&format!("{what} erledigt."));
+            }
+            Err(e) => {
+                self.set_status(&format!("{what} fehlgeschlagen: {}", e.detail));
+                dialog::error(Some(self.git_window.window.widget()), what, &e.to_string());
+            }
+        }
+        self.after_git();
+        self.git_refresh(true);
+    }
+
+    /// Commit from the window: offers to stage everything when nothing is
+    /// staged and to save open files first (like VS Code).
+    pub fn git_commit(&self, message: &str, amend: bool, then: After) {
+        let parent = Some(self.git_window.window.widget());
+        if self.code.has_unsaved()
+            && dialog::confirm(
+                parent,
+                "Commit",
+                "Es gibt ungespeicherte Dateien im Code-Editor. Vor dem Commit speichern?",
+            )
+        {
+            match self.code.save_all() {
+                Ok(saved) => self.lsp_saved(&saved),
+                Err(e) => {
+                    dialog::error(parent, "Commit", &e);
+                    return;
+                }
+            }
+            self.git_refresh(false);
+        }
+        let status = self.git_status().unwrap_or_default();
+        if !amend && !status.has_staged() && !status.files.is_empty() {
+            if !dialog::confirm(
+                parent,
+                "Commit",
+                "Es sind keine Änderungen gestaged. Alle Änderungen stagen und committen?",
+            ) {
+                return;
+            }
+            if let Err(e) = self.git_run(&GitOp::Stage { paths: vec![] }) {
+                dialog::error(parent, "Commit", &e.to_string());
+                return;
+            }
+        }
+        self.git_start(GitOp::Commit {
+            message: message.to_owned(),
+            amend,
+            then,
+        });
+    }
+
+    /// Discards changes after asking (cannot be undone).
+    pub fn git_discard(&self, paths: Vec<String>) {
+        let what = if paths.is_empty() {
+            "alle Änderungen".to_owned()
+        } else {
+            paths.join(", ")
+        };
+        if !dialog::confirm(
+            Some(self.git_window.window.widget()),
+            "Verwerfen",
+            &format!("Änderungen an {what} verwerfen? Das lässt sich nicht rückgängig machen."),
+        ) {
+            return;
+        }
+        self.git_now(GitOp::Discard { paths });
+    }
+
+    /// „Zweig wechseln“: local branches, then remote ones.
+    pub fn git_branch_menu(&self) -> Menu {
+        let branches = self
+            .repo()
+            .and_then(|r| r.branches().ok())
+            .unwrap_or_default();
+        let mut menu = Menu::new();
+        for b in branches.iter().filter(|b| !b.remote) {
+            let id = format!("git.checkout:{}", b.name);
+            menu = if b.current {
+                menu.disabled_item(&id, &format!("✓ {}", b.name))
+            } else {
+                menu.item(&id, &b.name, None)
+            };
+        }
+        let mut remote = Menu::new();
+        for b in branches.iter().filter(|b| b.remote) {
+            remote = remote.item(&format!("git.checkout:{}", b.name), &b.name, None);
+        }
+        if !remote.entries.is_empty() {
+            menu = menu.separator().submenu("Remote-Zweige", remote);
+        }
+        menu
+    }
+
+    /// `git init` in the project folder.
+    pub fn git_init(&self) {
+        let Some(dir) = self.session().project_dir() else {
+            self.set_status("Das Projekt ist noch nicht gespeichert.");
+            return;
+        };
+        if self.repo().is_some() {
+            self.set_status("Das Projekt liegt schon in einem Git-Repository.");
+            return;
+        }
+        match Git::init(&dir) {
+            Ok(_) => {
+                *self.repo.borrow_mut() = None;
+                self.after_git();
+                self.git_refresh(true);
+                self.set_status("Git-Repository angelegt.");
+            }
+            Err(e) => dialog::error(Some(self.git_window.window.widget()), "Git", &e.to_string()),
+        }
+    }
+
+    /// Shows the diff of a file in the code editor (read-only tab).
+    pub fn git_show_diff(&self, path: &str, staged: bool) {
+        let Some(repo) = self.repo() else {
+            return;
+        };
+        match repo.diff(path, staged) {
+            Ok(diff) => {
+                let name = path.rsplit_once('/').map_or(path, |(_, n)| n);
+                let label = if staged {
+                    format!("{name} (gestaged)")
+                } else {
+                    format!("{name} (Änderungen)")
+                };
+                let text = if diff.text.is_empty() {
+                    "(keine Unterschiede)".to_owned()
+                } else {
+                    diff.text
+                };
+                let key = format!("diff:{}:{path}", if staged { "s" } else { "u" });
+                self.code.open_text(&key, &label, &text, "diff");
+            }
+            Err(e) => self.set_status(&e.to_string()),
+        }
+    }
+
+    /// Opens a file of the repository (path relative to its root).
+    pub fn git_open_file(&self, path: &str) {
+        if let Some(repo) = self.repo() {
+            self.open_source(&repo.root().join(path), 1);
         }
     }
 
@@ -487,6 +910,7 @@ impl Ide {
         self.structure.refresh(self);
         if changes.model {
             self.messages.refresh(self);
+            self.git_refresh(false);
             self.project.refresh(self);
         }
         if let Some(me) = self.me.upgrade() {

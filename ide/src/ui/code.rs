@@ -32,6 +32,8 @@ struct OpenFile {
     /// Text as last loaded or saved.
     saved: RefCell<String>,
     read_only: bool,
+    /// Tab title of a text without a file (e.g. a diff); `None` for files.
+    label: Option<String>,
 }
 
 impl OpenFile {
@@ -40,6 +42,9 @@ impl OpenFile {
     }
 
     fn title(&self) -> String {
+        if let Some(label) = &self.label {
+            return label.clone();
+        }
         let name = self
             .path
             .file_name()
@@ -162,7 +167,7 @@ impl CodeWindow {
 
     /// Path, text and cursor of the front tab.
     pub fn current_state(&self) -> Option<(PathBuf, String, (usize, usize))> {
-        let file = self.current()?;
+        let file = self.current().filter(|f| f.label.is_none())?;
         Some((file.path.clone(), file.editor.text(), file.editor.cursor()))
     }
 
@@ -177,7 +182,7 @@ impl CodeWindow {
         self.files
             .borrow()
             .iter()
-            .filter(|f| is_rust(&f.path))
+            .filter(|f| f.label.is_none() && is_rust(&f.path))
             .map(|f| (f.path.clone(), f.editor.text()))
             .collect()
     }
@@ -187,6 +192,7 @@ impl CodeWindow {
             self.tabs.set_tab_title(i as i32, &file.title());
         }
         let title = match self.current() {
+            Some(file) if file.label.is_some() => format!("Code – {}", file.title()),
             Some(file) => format!("Code – {}", file.path.display()),
             None => "Code".to_owned(),
         };
@@ -231,6 +237,7 @@ impl CodeWindow {
                     editor,
                     saved: RefCell::new(text.clone()),
                     read_only,
+                    label: None,
                 }));
                 self.refresh_marks(path);
                 if is_rust(path) {
@@ -246,6 +253,45 @@ impl CodeWindow {
         self.update_titles();
         self.window.show();
         Ok(())
+    }
+
+    /// Shows a text without a file in a read-only tab (e.g. a diff);
+    /// `key` identifies it, a second call with the same key replaces the text.
+    pub fn open_text(&self, key: &str, label: &str, text: &str, language: &str) {
+        let path = PathBuf::from(format!("freya-td:{key}"));
+        let existing = self.files.borrow().iter().position(|f| f.path == path);
+        let index = match existing {
+            Some(i) => {
+                if let Some(file) = self.files.borrow().get(i) {
+                    file.editor.set_read_only(false);
+                    file.editor.set_text(text);
+                    file.editor.set_read_only(true);
+                }
+                i
+            }
+            None => {
+                let page = self.tabs.add_tab("");
+                let editor = RnclCodeEditor::new(&page);
+                editor.set_language(language);
+                editor.set_text(text);
+                editor.set_read_only(true);
+                let e = editor.clone();
+                page.widget()
+                    .on_resized(move |w, h| e.set_geometry(0, 0, w, h));
+                self.files.borrow_mut().push(Rc::new(OpenFile {
+                    path,
+                    page,
+                    editor,
+                    saved: RefCell::new(text.to_owned()),
+                    read_only: true,
+                    label: Some(label.to_owned()),
+                }));
+                self.files.borrow().len() - 1
+            }
+        };
+        self.tabs.set_current_index(index as i32);
+        self.update_titles();
+        self.window.show();
     }
 
     /// Text of an open file.
@@ -411,7 +457,7 @@ impl CodeWindow {
     pub fn reload_from_disk(&self) -> Vec<(PathBuf, String)> {
         let mut reloaded = Vec::new();
         for file in self.files.borrow().iter() {
-            if file.is_dirty() {
+            if file.is_dirty() || file.label.is_some() {
                 continue;
             }
             let Ok(text) = std::fs::read_to_string(&file.path) else {
@@ -447,7 +493,8 @@ impl CodeWindow {
         self.tabs.remove_tab(index as i32);
         let _ = &file.page;
         self.update_titles();
-        Some(file.path.clone())
+        // Texte ohne Datei kennt rust-analyzer nicht.
+        file.label.is_none().then(|| file.path.clone())
     }
 
     /// Shows build and rust-analyzer marks of `path` together.

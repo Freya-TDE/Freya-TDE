@@ -43,6 +43,11 @@ fn args() -> Args {
 }
 
 fn main() {
+    // Als GIT_ASKPASS/SSH_ASKPASS gestartet: Frage weiterreichen, sonst nichts.
+    if let Some(code) = freya_td::git::askpass::helper_main() {
+        std::process::exit(code);
+    }
+
     // Freya-TD stellt seine Fensteranordnung wieder her. Unter Wayland dürfen
     // Programme Fenster nicht positionieren – deshalb unter Linux über
     // X11/XWayland (Entscheidung vom 23.10.2026), wenn nichts anderes gesetzt ist.

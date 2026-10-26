@@ -14,7 +14,8 @@ is saved per user and restored on start.*
 | Objektinspektor | Eigenschaften (Editor passend zum Typ, ↺ = Standardwert) und Ereignisse (… schlägt einen Handler vor) |
 | Struktur | Formulare und Elemente als Baum |
 | Meldungen | Prüfergebnisse, Code- und Compilermeldungen; Auswahl springt zum Element bzw. zur Quellzeile |
-| Projekt | der Projektordner als Baum (ohne `target/` und `.git/`; erzeugte und versteckte Dateien zuschaltbar). Doppelklick öffnet: `.ftdr` als Formular samt `.rs`, sonst im Code-Editor. Kontextmenü: neue Datei/neuer Ordner, Datei einbinden (von außen kopieren), Kopieren/Einfügen, Umbenennen, Löschen (in den Papierkorb), `Cargo.toml` mit dem CT-Editor öffnen. Projektdatei und Formulare sind geschützt. Änderungen von außen erscheinen nach spätestens 2 s; offene Dateien ohne ungespeicherte Änderungen werden neu geladen |
+| Projekt | der Projektordner als Baum (ohne `target/` und `.git/`; erzeugte und versteckte Dateien zuschaltbar). Doppelklick öffnet: `.ftdr` als Formular samt `.rs`, sonst im Code-Editor. Kontextmenü: neue Datei/neuer Ordner, Datei einbinden (von außen kopieren), Kopieren/Einfügen, Umbenennen, Löschen (in den Papierkorb), `Cargo.toml` mit dem CT-Editor öffnen. Projektdatei und Formulare sind geschützt. Änderungen von außen erscheinen nach spätestens 2 s; offene Dateien ohne ungespeicherte Änderungen werden neu geladen. Git-Status als farbiger Buchstabe (M, A, D, R, U, C = Konflikt), Ordner mit Änderungen bekommen einen Punkt |
+| Quellcodeverwaltung | Git wie in VS Code (Strg+Umschalt+G): Repository mit Zweig (`main+` = etwas gestaged) und ↓/↑ zum Upstream; Commit-Nachricht (Strg+Enter) mit Commit, Commit (Amend), Commit & Push, Commit & Sync – ohne Änderungen, aber mit ausstehenden Commits wird der Knopf zu „Sync“; „Gestaged“ und „Änderungen“ mit Statusbuchstaben (Doppelklick = Diff, Kontextmenü: stagen, unstagen, verwerfen, öffnen); Graph mit Zweigen. Menü Git: Fetch, Pull, Push, Sync, Zweig wechseln/anlegen, Repository anlegen. Der Zweig steht auch in der Statuszeile des Hauptfensters |
 
 Projekt-Menü: Code erzeugen (Strg+G), Bauen (Strg+F9, im Hintergrund), Starten (F9).
 
@@ -42,13 +43,23 @@ Für Automatisierung (Tests, KI): `Ide::run_commands` (JSON-Befehle),
 `Ide::set_code_text`, `Ide::code_marks`, `lsp::LspClient` (Ereignisse serialisierbar),
 `files` (Dateibaum und Dateioperationen als JSON-Befehle mit Probelauf: `files::plan`,
 `files::apply`), `Ide::project_files`, `Ide::plan_file_op`, `Ide::file_op`,
-`Ide::open_project_file`.
+`Ide::open_project_file`, `git` (Status, Log, Diff, Graph als Daten; Git-Befehle als JSON
+mit Vorschau: `Git::preview`, `Git::run`), `Ide::repo`, `Ide::git_status`, `Ide::git_changes`,
+`Ide::git_preview`, `Ide::git_run`.
 *Automation (tests, AI): `Ide::run_commands`, `Ide::design_surface`, `Ide::screenshots`,
 `Ide::code_text`/`set_code_text`/`code_marks`, `lsp::LspClient`, `files` (file tree and file
-operations with dry run), `Ide::project_files`/`plan_file_op`/`file_op`/`open_project_file`.*
+operations with dry run), `Ide::project_files`/`plan_file_op`/`file_op`/`open_project_file`,
+`git` (status, log, diff, graph as data; Git operations as JSON with preview),
+`Ide::repo`/`git_status`/`git_changes`/`git_preview`/`git_run`.*
 
 Unter Linux startet Freya-TD über X11/XWayland (`GDK_BACKEND=x11`), weil Wayland
-Programmen das Positionieren ihrer Fenster verbietet. Den CT-Editor sucht Freya-TD in
+Programmen das Positionieren ihrer Fenster verbietet. Git läuft über die `git`-Kommandozeile (`PATH` oder `FREYA_TD_GIT`) mit den Zugangsdaten,
+SSH-Schlüsseln und Einstellungen des Nutzers. Fragt `git` oder `ssh` nach Passwort oder
+Passphrase, startet es `freya-td` als `GIT_ASKPASS`/`SSH_ASKPASS`; die Frage erscheint als
+Dialog im laufenden Freya-TD, gespeichert wird nichts.
+*Git uses the `git` command line; password/passphrase questions appear as a dialog in the
+running Freya-TD (askpass helper), nothing is stored.*
+Den CT-Editor sucht Freya-TD in
 `FREYA_TD_CT_EDITOR`, neben dem Programm, im Repository (`CT-Editor/target/…`) und im `PATH`. Packs werden in `components/`
 und `widgets/` neben dem Programm bzw. im Repository gesucht, zusätzlich in
 `FREYA_TD_PACKS` (Pfadliste).

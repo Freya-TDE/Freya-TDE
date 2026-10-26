@@ -14,12 +14,15 @@ use crate::desktop::window;
 const MARGIN: i32 = 6;
 const ROW: i32 = 30;
 const STATUS: i32 = 24;
+const BRANCH: i32 = 200;
 
 pub struct MainWindow {
     pub window: RnclWindow,
     pointer: RnclButton,
     tabs: RnclTabView,
     status: RnclLabel,
+    /// Git branch (right of the status line).
+    branch: RnclLabel,
     /// Palette buttons with their type, per tab; rebuilt when the types change.
     buttons: RefCell<Vec<(RnclButton, TypeRef)>>,
     /// Types the palette was built from (rebuilt only when they change).
@@ -64,6 +67,7 @@ fn menu_bar() -> MenuBar {
                 .item("window.messages", "Meldungen", None)
                 .item("window.code", "Code", None)
                 .item("window.project", "Projekt", None)
+                .item("window.git", "Quellcodeverwaltung", Some("Ctrl+Shift+G"))
                 .separator()
                 .item("window.reset", "Standardanordnung", None),
         ),
@@ -80,11 +84,13 @@ impl MainWindow {
             .set_tool_tip("Auswählen statt platzieren (Esc)");
         let tabs = RnclTabView::new(&window);
         let status = RnclLabel::new(&window, "");
+        let branch = RnclLabel::new(&window, "");
         Self {
             window,
             pointer,
             tabs,
             status,
+            branch,
             buttons: RefCell::new(Vec::new()),
             built_for: RefCell::new(Vec::new()),
         }
@@ -98,8 +104,23 @@ impl MainWindow {
             width - 2 * MARGIN - 86,
             height - 2 * MARGIN - STATUS,
         );
-        self.status
-            .set_geometry(MARGIN, height - MARGIN - STATUS, width - 2 * MARGIN, STATUS);
+        self.status.set_geometry(
+            MARGIN,
+            height - MARGIN - STATUS,
+            width - 2 * MARGIN - BRANCH,
+            STATUS,
+        );
+        self.branch.set_geometry(
+            width - MARGIN - BRANCH,
+            height - MARGIN - STATUS,
+            BRANCH,
+            STATUS,
+        );
+    }
+
+    /// Git branch in the status line (empty = no repository).
+    pub fn set_branch(&self, text: &str) {
+        self.branch.set_text(text);
     }
 
     pub fn set_status(&self, text: &str) {
@@ -221,6 +242,10 @@ pub fn connect(ide: &Rc<Ide>) {
             "window.messages" => ide.show_window(window::MESSAGES),
             "window.code" => ide.show_code(),
             "window.project" => ide.show_window(window::PROJECT),
+            "window.git" => {
+                ide.git_refresh(true);
+                ide.show_window(window::GIT);
+            }
             "window.reset" => ide.reset_desktop(),
             _ => {}
         }));

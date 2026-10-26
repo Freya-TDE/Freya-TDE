@@ -41,6 +41,13 @@ fn main() {
     unsafe {
         std::env::set_var("HOME", &home);
         std::env::set_var("XDG_CONFIG_HOME", home.join("config"));
+        // Git ohne die Konfiguration des Nutzers.
+        std::env::set_var("GIT_CONFIG_NOSYSTEM", "1");
+        std::env::set_var("GIT_CONFIG_GLOBAL", home.join("gitconfig"));
+        std::env::set_var("GIT_AUTHOR_NAME", "Test");
+        std::env::set_var("GIT_AUTHOR_EMAIL", "test@example.com");
+        std::env::set_var("GIT_COMMITTER_NAME", "Test");
+        std::env::set_var("GIT_COMMITTER_EMAIL", "test@example.com");
         // Ohne Bildschirm (Xvfb) ist Software-Vulkan unzuverlässig.
         if std::env::var_os("GSK_RENDERER").is_none() {
             std::env::set_var("GSK_RENDERER", "cairo");
@@ -149,6 +156,8 @@ fn main() {
     assert!(source.contains("pub fn button1_click(&mut self)"));
     println!("test double_click_opens_handler ... ok");
 
+    let mut passed = 6;
+
     // Projektfenster: Dateibaum und Dateioperationen (wie über das Kontextmenü).
     use freya_td::files::{Entry, FileOp};
     fn paths(entries: &[Entry]) -> Vec<String> {
@@ -212,8 +221,47 @@ fn main() {
     );
     println!("test project_files ... ok");
 
+    // Git: Repository anlegen, Status mit Markierungen, stagen, Commit.
+    use freya_td::git::{After, Change, GitOp};
+    if std::process::Command::new("git")
+        .arg("--version")
+        .output()
+        .is_ok()
+    {
+        assert!(ide.repo().is_none());
+        ide.git_init();
+        assert!(ide.repo().is_some());
+        let changes = ide.git_changes();
+        assert_eq!(changes.get("src/main_form.rs"), Some(&Change::Untracked));
+        assert!(!changes.contains_key("target"));
+        ide.git_run(&GitOp::Stage { paths: vec![] }).unwrap();
+        ide.git_run(&GitOp::Commit {
+            message: "Initial commit".into(),
+            amend: false,
+            then: After::Nothing,
+        })
+        .unwrap();
+        let status = ide.git_status().unwrap();
+        assert!(status.files.is_empty(), "{:?}", status.files);
+        assert!(status.head.is_some());
+        let log = ide.repo().unwrap().log(10).unwrap();
+        assert_eq!(log[0].subject, "Initial commit");
+        std::fs::write(project_dir.join("README.md"), "# Shop\n").unwrap();
+        ide.git_refresh(false);
+        assert_eq!(ide.git_changes().get("README.md"), Some(&Change::Untracked));
+        ide.git_show_diff("README.md", false);
+        assert!(
+            ide.code_file()
+                .is_some_and(|p| p.to_string_lossy().contains("diff:u:README.md"))
+        );
+        ide.open_project_file("src/main_form.ftdr");
+        println!("test git ... ok");
+        passed += 1;
+    } else {
+        println!("test git ... übersprungen (kein git)");
+    }
+
     // rust-analyzer: ein Fehler im Editor erscheint als Marke am Rand.
-    let mut passed = 6;
     if std::process::Command::new(freya_td::lsp::program())
         .arg("--version")
         .output()

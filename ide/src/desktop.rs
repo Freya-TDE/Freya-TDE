@@ -44,6 +44,7 @@ pub mod window {
     pub const MESSAGES: &str = "messages";
     pub const CODE: &str = "code";
     pub const PROJECT: &str = "project";
+    pub const GIT: &str = "git";
 }
 
 /// All window places.
@@ -85,7 +86,15 @@ impl Desktop {
             (window::DESIGNER, Place::at(340, 200, 800, 560)),
             (window::MESSAGES, Place::at(340, 790, 800, 120)),
             (window::CODE, Place::at(370, 230, 820, 600)),
-            (window::PROJECT, Place::at(1160, 200, 280, 710)),
+            (window::PROJECT, Place::at(1160, 200, 300, 330)),
+            // Erst auf Wunsch sichtbar (Fenster → Quellcodeverwaltung).
+            (
+                window::GIT,
+                Place {
+                    visible: false,
+                    ..Place::at(760, 160, 420, 720)
+                },
+            ),
         ];
         Self {
             windows: windows

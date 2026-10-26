@@ -5,6 +5,7 @@
 //! made outside Freya-TD show up as well.
 
 use std::cell::RefCell;
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
@@ -14,6 +15,10 @@ use ruf::dialog;
 
 use super::{Ide, with, with0};
 use crate::files::{self, Entry, EntryKind, FileError, FileOp, Plan, ScanOptions};
+use crate::git::Change;
+
+/// Git changes per project path (relative, `/`).
+pub type Changes = BTreeMap<String, Change>;
 
 /// Id of the project folder itself in the tree.
 pub const ROOT: &str = ".";
@@ -23,7 +28,9 @@ const RESCAN: i32 = 2000;
 
 const BOTTOM: i32 = 30;
 
-fn items(entries: &[Entry]) -> Vec<TreeItem> {
+/// The tree with Git marks: a status letter on changed files, a dot on
+/// folders that contain changes (like VS Code).
+fn items(entries: &[Entry], changes: &Changes) -> Vec<TreeItem> {
     entries
         .iter()
         .map(|e| {
@@ -33,9 +40,28 @@ fn items(entries: &[Entry]) -> Vec<TreeItem> {
                 e.name.clone()
             };
             let mut item = TreeItem::new(&e.path, &text);
-            item.children = items(&e.children);
+            item.children = items(&e.children, changes);
             // Neue Ordner zugeklappt, nur `src` offen.
             item.expanded = e.path == "src";
+            let change = match e.kind {
+                EntryKind::File => changes.get(&e.path).copied(),
+                EntryKind::Folder => {
+                    let prefix = format!("{}/", e.path);
+                    changes
+                        .range(prefix.clone()..)
+                        .take_while(|(p, _)| p.starts_with(&prefix))
+                        .map(|(_, c)| *c)
+                        .max_by_key(|c| *c == Change::Conflict)
+                }
+            };
+            if let Some(change) = change {
+                item.color = Some(super::git_window::change_color(change));
+                item.badge = Some(if e.kind == EntryKind::File {
+                    change.letter().to_string()
+                } else {
+                    "•".to_owned()
+                });
+            }
             item
         })
         .collect()
@@ -180,7 +206,7 @@ impl ProjectWindow {
                     .map(|n| n.to_string_lossy().into_owned())
                     .unwrap_or_else(|| dir.display().to_string());
                 let mut root = TreeItem::new(ROOT, &format!("{title}/"));
-                root.children = items(&entries);
+                root.children = items(&entries, &ide.git_changes());
                 *self.entries.borrow_mut() = entries;
                 root
             }

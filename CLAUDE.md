@@ -118,6 +118,12 @@ Generierter Code gehört dem Nutzer. Jedes Plugin deklariert die Lizenz seines e
 - IDE-Logik ohne Oberfläche in `ide/src/session.rs` (Auswahl, Platzieren, Ziehen); die Fenster leiten nur weiter. Automatisierung: `--commands` (JSON-Befehle), `--screenshots`, `Ide::design_surface`. Fensteranordnung pro Nutzer in `<config>/freya-td/desktop.toml`. Neue Projekte nutzen vorerst das Backend `none`, bis es Backend-Packs gibt.
 - UDF-Prinzip (Unidirectional Data Flow, 26.10.2026) für Designer und Code-Editor, umgesetzt auf RUF (nicht relm4): ein Zustand (`Session`/`Document`), Änderungen nur über Aktionen/Befehle, die Fenster zeichnen den Zustand und leiten Eingaben weiter.
 - Code-Editor mit GtkSourceView 5 (Rust-Bindung `sourceview5`, MIT; Bibliothek LGPL, wird wie GTK mitgeliefert): Hervorhebung, Zeilennummern, Fehlermarken, Vervollständigung. Faltung baut RUF selbst dazu (Klammerblöcke aus `ruf::fold_regions`, Pfeile in der Markenleiste, eigene Zeilennummern). IntelliSense, Live-Fehler und „Gehe zu Definition“ über rust-analyzer als eigener Prozess (LSP über stdio, Modul `freya_td::lsp`; startet, sobald der Projektordner eine `Cargo.toml` hat).
+- Git (26.10.2026), Vorbild VS Code (Bilder `images/vsc-git*.png`, lokal):
+  - Über die `git`-Kommandozeile wie VS Code (nutzt Zugangsdaten, SSH-Schlüssel, Hooks und Einstellungen des Nutzers); kein `gix`/`git2`. Programm `git` im `PATH` oder `FREYA_TD_GIT`. Später: Releases bzw. Launcher bringen `git` mit, wenn es fehlt.
+  - Erst Bibliotheks-API ohne Oberfläche (`freya_td::git`): Status, Diffs, Log als Daten; Stagen, Commit, push/pull usw. als serialisierbare Befehle mit Vorschau und stabilen Fehlercodes (z. B. `auth_required`, `rejected`, `merge_conflict`).
+  - Passphrase/Passwort: `git` läuft mit `GIT_ASKPASS`/`SSH_ASKPASS` (`SSH_ASKPASS_REQUIRE=force`) auf `freya-td` im Hilfsmodus; die Frage geht an das laufende Freya-TD (verdeckte Eingabe), nichts wird gespeichert. `GIT_TERMINAL_PROMPT=0`. Ohne Oberfläche (KI, Tests) gibt es statt einer Frage den Fehler `auth_required`.
+  - Fenster „Quellcodeverwaltung“: oben Repository mit Zweig (`main+` bei gestagten Änderungen, ↓/↑ gegenüber Upstream, pull/push, Zweig wechseln/anlegen); Commit-Feld (Strg+Enter) mit Knopf und Auswahl Commit, Commit (Amend), Commit & Push, Commit & Sync (Pull Request später, nur mit `gh`); ohne Änderungen, aber mit ausstehenden Commits wird der Knopf zu „Sync“. Darunter „Gestaged“ und „Änderungen“ mit Zähler und Statusbuchstaben (A, M, D, R, U, C = Konflikt): stagen, unstagen, verwerfen, Doppelklick zeigt den Diff. Unten der Graph (Commits, Autor, `main`/`origin/main`, „ausgehend“).
+  - Außerdem: Markierungen im Projektbaum, Zweig in der Statuszeile, Änderungsmarken am Rand des Code-Editors.
 - Projektfenster (26.10.2026): Datei-Manager mit dem Projektordner als Wurzel (ohne `target/`, `.git/`; `.gen.rs` und versteckte Dateien zuschaltbar). Logik ohne Oberfläche in `freya_td::files` (Dateioperationen als JSON-Befehle mit Probelauf, stabile Codes). Löschen geht in den Papierkorb (Crate `trash`, MIT), Projektdatei und Formulare sind geschützt. „Einbinden“ kopiert eine Datei von außen ins Projekt; `Cargo.toml` öffnet der CT-Editor (`--path`). Der Tab „Projekt-Manager“ folgt mit Git.
 - Code-Fenster (26.10.2026): ein Reiter je Datei, `.gen.rs` schreibgeschützt, Build-Fehler als Marken, F12 wechselt Designer/Code, der Designer folgt dem Reiter. „Code erzeugen“ speichert vorher alle Editoren. Neue Projekte beginnen mit dem Formular `main_form` (`main`/`app` sind reserviert). Projektdatei hat `platforms` (Zielsysteme).
 - Designer ohne Formular- und Plattform-Auswahl (26.10.2026): Ein Formular wird immer zusammen mit seiner `.rs` geöffnet. Das Zielsystem ist das Entwicklersystem bzw. das bei Projekterstellung eingestellte; andere Systeme rechnet der Designer über die Metrik-Tabellen (Schriftgrößen, Positionen) um.
@@ -125,12 +131,7 @@ Generierter Code gehört dem Nutzer. Jedes Plugin deklariert die Lizenz seines e
 
 ## Offene Punkte
 
-- Schritt 6c.3: Projektfenster erledigt; offen sind Git und der Tab „Projekt-Manager“.
-- Git-Integration wie in VS Code (festgehalten 23.10.2026, fest eingeplant):
-  - Status sofort sichtbar: Markierungen im Projektbaum (geändert, neu, ungetrackt, Konflikt), Zweig in der Statuszeile, Änderungsmarken am Rand des Code-Editors.
-  - Eigenes Fenster „Quellcodeverwaltung“: Änderungen ansehen (Diff), einzeln oder alle stagen, committen, pull/push, Zweig wechseln/anlegen.
-  - Wie alles andere zuerst als Bibliotheks-API ohne Oberfläche (KI-tauglich: Status und Diffs als Daten, Commit als Befehl mit Vorschau).
-  - Umsetzung noch offen: `git`-Kommandozeile aufrufen (wie VS Code; nutzt vorhandene Zugangsdaten und SSH-Schlüssel des Nutzers) oder `gix` (reines Rust, MIT/Apache). `git2`/libgit2 nur nach Lizenzprüfung (GPL mit Linking-Ausnahme).
+- Schritt 6c.3: Projektfenster und Git-Fenster erledigt; offen sind Änderungsmarken am Rand des Code-Editors, „Commit & Create Pull Request“ (mit `gh`) und der Tab „Projekt-Manager“.
 - Erstes echtes UI-Backend-Pack (z. B. egui oder nativ) in `widgets/`.
 - Ideen aus `notes/gedanken.txt` (26.10.2026), noch einzuplanen:
   - Struktur und Objektinspektor per Drag-and-drop als Tabs zusammenlegen (und wieder trennen).
