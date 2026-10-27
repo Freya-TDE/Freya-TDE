@@ -13,6 +13,8 @@ use std::rc::Rc;
 use rncl::prelude::*;
 use ruf::{Application, Color, ColorScheme, Point, Rect, Shape};
 
+use rncl::SPLITTER_SIZE;
+
 use super::{Ide, with, with0};
 use crate::git::{After, Change, Commit, GitOp, GraphRow, LogRefs, RowPos, Status};
 
@@ -21,8 +23,13 @@ const BAR: i32 = 28;
 const ICON: i32 = 30;
 const BUTTON: i32 = 30;
 const DROPDOWN: i32 = 30;
-/// Height of a line in the commit message; it shows 2 to 12 lines.
-const MESSAGE_LINE: i32 = 18;
+/// The commit message shows 2 to 12 lines.
+const MESSAGE_MIN_LINES: i32 = 2;
+const MESSAGE_MAX_LINES: i32 = 12;
+/// Frame and inner margins of the commit message.
+const MESSAGE_PADDING: i32 = 10;
+/// Smallest height of the changes and of the graph when dragging the splitter.
+const MIN_PART: i32 = 60;
 
 /// The commit shortcut as the user presses it (RUF maps Ctrl to Cmd on macOS).
 const COMMIT_KEY: &str = if cfg!(target_os = "macos") {
@@ -376,6 +383,10 @@ pub struct GitWindow {
     commit: RnclButton,
     variants: RnclButton,
     changes: RnclTreeView,
+    /// Between the changes and the graph.
+    splitter: RnclSplitter,
+    /// Height of the changes set by dragging the splitter.
+    split: Cell<Option<i32>>,
     graph_title: RnclLabel,
     graph_refs: RnclButton,
     /// Graph toolbar: current commit, fetch all, pull, push, refresh, view.
@@ -406,6 +417,7 @@ impl GitWindow {
         let commit = RnclButton::new(&window, "✓ Commit");
         let variants = icon_button(&window, "▾", "Commit (Amend), Commit & Push, Commit & Sync");
         let changes = RnclTreeView::new(&window);
+        let splitter = RnclSplitter::new(&window, true);
         let graph_title = RnclLabel::new(&window, "<b>Graph</b>");
         let graph_refs = icon_button(&window, "⎇ Auto", "Angezeigte Zweige wählen");
         let graph_tools = [
@@ -432,6 +444,8 @@ impl GitWindow {
             commit,
             variants,
             changes,
+            splitter,
+            split: Cell::new(None),
             graph_title,
             graph_refs,
             graph_tools,
@@ -445,14 +459,17 @@ impl GitWindow {
     }
 
     /// Lines the commit message needs (wrapped text estimated), 2 to 12.
-    fn message_lines(&self, width: i32) -> i32 {
-        let columns = ((width - 16) / 8).max(10) as usize;
-        let text = self.message.text();
-        let lines: usize = text
-            .split('\n')
-            .map(|l| l.chars().count().div_ceil(columns).max(1))
-            .sum();
-        (lines as i32).clamp(2, 12)
+    /// Height of the commit message: the measured text (with wrapping),
+    /// 2 to 12 lines.
+    fn message_height(&self, width: i32) -> i32 {
+        let (text, line) = self
+            .message
+            .widget()
+            .text_height(width)
+            .unwrap_or((2 * 18, 18));
+        let line = line.max(1);
+        let lines = ((text + line - 1) / line).clamp(MESSAGE_MIN_LINES, MESSAGE_MAX_LINES);
+        lines * line + MESSAGE_PADDING
     }
 
     fn layout(&self, width: i32, height: i32) {
@@ -468,7 +485,7 @@ impl GitWindow {
         self.repo_name
             .set_geometry(MARGIN, y, inner - 2 * ICON - 8 - branch_width, BAR);
         y += BAR + 6;
-        let message = self.message_lines(inner) * MESSAGE_LINE + 12;
+        let message = self.message_height(inner);
         self.message.set_geometry(MARGIN, y, inner, message);
         y += message + 4;
         self.commit
@@ -476,10 +493,17 @@ impl GitWindow {
         self.variants
             .set_geometry(right - DROPDOWN, y, DROPDOWN, BUTTON);
         y += BUTTON + 6;
-        let rest = (height - y - MARGIN).max(0);
-        let changes = (rest * 45 / 100).max(60);
+        // Änderungen und Graph teilen sich den Rest; der Teiler verschiebt die Grenze.
+        let rest = (height - y - MARGIN - SPLITTER_SIZE - BAR - 2).max(0);
+        let changes = self
+            .split
+            .get()
+            .unwrap_or(rest * 45 / 100)
+            .clamp(MIN_PART.min(rest), (rest - MIN_PART).max(MIN_PART.min(rest)));
         self.changes.set_geometry(MARGIN, y, inner, changes);
-        y += changes + 4;
+        y += changes;
+        self.splitter.set_geometry(MARGIN, y, inner, SPLITTER_SIZE);
+        y += SPLITTER_SIZE;
         // Graph-Leiste: Titel, Zweigauswahl, Werkzeuge rechts.
         let tools = self.graph_tools.len() as i32;
         for (i, (button, _)) in self.graph_tools.iter().enumerate() {
@@ -903,10 +927,14 @@ pub fn connect(ide: &Rc<Ide>) {
     // Das Nachrichtenfeld wächst mit dem Text (wie in VS Code).
     git.message.on_text_changed(with(ide, |ide, _: String| {
         let w = &ide.git_window;
-        let lines = w.message_lines(w.window.size().width - 2 * MARGIN);
-        if lines * MESSAGE_LINE + 12 != w.message.size().height {
+        if w.message_height(w.window.size().width - 2 * MARGIN) != w.message.size().height {
             w.relayout();
         }
+    }));
+    git.splitter.on_dragged(with(ide, |ide, delta: i32| {
+        let w = &ide.git_window;
+        w.split.set(Some(w.changes.size().height + delta));
+        w.relayout();
     }));
     git.changes
         .on_item_activated(with(ide, |ide, id: String| match id.split_once(':') {

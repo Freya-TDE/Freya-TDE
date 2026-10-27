@@ -150,11 +150,35 @@ impl MainWindow {
         let mut buttons = Vec::new();
         let mut category = String::new();
         let mut page: Option<RnclPanel> = None;
+        let mut on_page: Rc<RefCell<Vec<RnclButton>>> = Rc::default();
         let mut x = 4;
         for item in &items {
             if item.category != category || page.is_none() {
                 category = item.category.clone();
-                page = Some(self.tabs.add_tab(&category));
+                let new_page = self.tabs.add_tab(&category);
+                // Knöpfe mittig in der Seite. Ist die Seite zu niedrig (die
+                // Reiter sind je nach System verschieden hoch), wächst das
+                // Hauptfenster um das Fehlende.
+                on_page = Rc::default();
+                let page_buttons = on_page.clone();
+                let weak = Rc::downgrade(ide);
+                new_page.widget().on_resized(move |_, height| {
+                    let y = ((height - ROW) / 2).max(2);
+                    for button in page_buttons.borrow().iter() {
+                        let g = button.geometry();
+                        if g.y != y {
+                            button.set_geometry(g.x, y, g.width, g.height);
+                        }
+                    }
+                    let missing = ROW + 8 - height;
+                    if missing > 0
+                        && let Some(ide) = weak.upgrade()
+                    {
+                        let size = ide.main.window.size();
+                        ide.main.window.set_size(size.width, size.height + missing);
+                    }
+                });
+                page = Some(new_page);
                 x = 4;
             }
             let page = page.as_ref().expect("page");
@@ -162,6 +186,7 @@ impl MainWindow {
             button.widget().adjust_size();
             let width = button.size().width.max(70);
             button.set_geometry(x, 6, width, ROW);
+            on_page.borrow_mut().push(button.clone());
             x += width + 4;
             let tip = if item.description.is_empty() {
                 item.type_ref.to_string()
