@@ -128,6 +128,7 @@ Generierter Code gehört dem Nutzer. Jedes Plugin deklariert die Lizenz seines e
   - Nachrichtenfeld wächst mit dem Text (2–12 Zeilen). Änderungen als Liste oder Baum. Graph-Leiste: angezeigte Zweige (Auto = HEAD und Upstream, Alle, Auswahl), zum aktuellen Commit, Fetch (alle), Pull, Push, Aktualisieren.
   - GPG-signierte Commits: die Passphrase fragt `gpg-agent` (pinentry) selbst ab; Fehler → `signing_failed`.
   - Außerdem: Markierungen im Projektbaum, Zweig in der Statuszeile, Änderungsmarken am Rand des Code-Editors.
+- Meldungsfenster als Panel mit Reitern wie VS Code (27.10.2026): Probleme (Modell, Codegen, Build, rust-analyzer; `freya_td::problems`), Ausgabe (Kanäle Build, Programm, Git, rust-analyzer; `freya_td::output`), Terminal, Debug-Konsole. Terminal als eigenes Terminal: Pseudo-Terminal mit `portable-pty` (MIT) und Parser `vt100` (MIT), dargestellt in RUF, auf allen Systemen. Debug-Konsole erst mit dem Debugger (DAP, z. B. `lldb-dap`).
 - Tastenkürzel (27.10.2026): Die Kürzel des Hauptmenüs gelten in allen IDE-Fenstern (RUF `inherit_menu_shortcuts`); das eigene Menü eines Fensters geht vor. Menükürzel gehen dem fokussierten Widget vor. Unter macOS ist `Ctrl` die Befehlstaste.
 - Projektfenster (26.10.2026): Datei-Manager mit dem Projektordner als Wurzel (ohne `target/`, `.git/`; `.gen.rs` und versteckte Dateien zuschaltbar). Logik ohne Oberfläche in `freya_td::files` (Dateioperationen als JSON-Befehle mit Probelauf, stabile Codes). Löschen geht in den Papierkorb (Crate `trash`, MIT; unter macOS über `NSFileManager`, damit keine Finder-Berechtigung nötig ist), Projektdatei und Formulare sind geschützt. „Einbinden“ kopiert eine Datei von außen ins Projekt; `Cargo.toml` öffnet der CT-Editor (`--path`). Der Tab „Projekt-Manager“ folgt mit Git.
 - Code-Fenster (26.10.2026): ein Reiter je Datei, `.gen.rs` schreibgeschützt, Build-Fehler als Marken, F12 wechselt Designer/Code, der Designer folgt dem Reiter. „Code erzeugen“ speichert vorher alle Editoren. Neue Projekte beginnen mit dem Formular `main_form` (`main`/`app` sind reserviert). Projektdatei hat `platforms` (Zielsysteme).
@@ -136,6 +137,7 @@ Generierter Code gehört dem Nutzer. Jedes Plugin deklariert die Lizenz seines e
 
 ## Offene Punkte
 
+- Panel: Probleme und Ausgabe erledigt; als Nächstes das Terminal, später Debugger mit Debug-Konsole.
 - Schritt 6c.3: Projektfenster und Git-Fenster erledigt; offen sind Änderungsmarken am Rand des Code-Editors, „Commit & Create Pull Request“ (mit `gh`) und der Tab „Projekt-Manager“.
 - Erstes echtes UI-Backend-Pack (z. B. egui oder nativ) in `widgets/`.
 - Ideen aus `notes/gedanken.txt` (26.10.2026), noch einzuplanen:

@@ -84,7 +84,7 @@ impl Desktop {
             (window::STRUCTURE, Place::at(40, 200, 280, 260)),
             (window::INSPECTOR, Place::at(40, 490, 280, 420)),
             (window::DESIGNER, Place::at(340, 200, 800, 560)),
-            (window::MESSAGES, Place::at(340, 790, 800, 120)),
+            (window::MESSAGES, Place::at(340, 770, 800, 200)),
             (window::CODE, Place::at(370, 230, 820, 600)),
             (window::PROJECT, Place::at(1160, 200, 300, 330)),
             // Erst auf Wunsch sichtbar (Fenster → Quellcodeverwaltung).

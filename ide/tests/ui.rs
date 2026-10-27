@@ -260,6 +260,10 @@ fn main() {
             "{}",
             ide.git_output()
         );
+        assert_eq!(
+            ide.git_output(),
+            ide.output().text(freya_td::output::channel::GIT)
+        );
         ide.git_show_output();
         ide.open_project_file("src/main_form.ftdr");
         println!("test git ... ok");
@@ -286,6 +290,19 @@ fn main() {
                 .iter()
                 .any(|m| m.line == line && m.kind == MarkKind::Error)),
             "Fehlermarke in Zeile {line}"
+        );
+        // Dieselben Fehler stehen in den Problemen (Panel „Probleme“).
+        let problems = ide.problems();
+        assert!(
+            problems.iter().any(|p| p.line == Some(line)
+                && p.source == freya_td::problems::ProblemSource::RustAnalyzer
+                && p.file.as_deref() == Some(file.as_path())),
+            "{problems:?}"
+        );
+        assert!(
+            serde_json::to_string(&problems)
+                .unwrap()
+                .contains("rust_analyzer")
         );
         println!("test lsp_marks ... ok");
         passed += 1;

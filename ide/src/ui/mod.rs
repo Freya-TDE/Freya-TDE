@@ -8,13 +8,14 @@ mod designer;
 mod git_window;
 mod inspector;
 mod main_window;
-mod messages;
+pub mod panel;
 mod project;
 mod structure;
 
 use std::cell::{Cell, RefCell};
 use std::path::{Path, PathBuf};
 use std::rc::{Rc, Weak};
+use std::sync::Arc;
 
 use rncl::prelude::*;
 use ruf::GuiSender;
@@ -28,6 +29,8 @@ use crate::files::{self, Entry, FileError, FileIssue, FileOp, Plan};
 use crate::git::askpass::Askpass;
 use crate::git::{After, Git, GitError, GitOp, LogRefs, Preview, Status};
 use crate::lsp::{DiagnosticSeverity, LspClient, LspEvent};
+use crate::output::{Output, channel};
+use crate::problems::{Problem, ProblemSeverity, ProblemSource};
 use crate::session::{Changes, Session};
 
 use code::CodeWindow;
@@ -35,7 +38,7 @@ use designer::DesignerWindow;
 use git_window::GitWindow;
 use inspector::InspectorWindow;
 use main_window::MainWindow;
-use messages::MessagesWindow;
+use panel::{PanelWindow, Tab};
 use project::ProjectWindow;
 use structure::StructureWindow;
 
@@ -117,7 +120,13 @@ pub struct Ide {
     designer: DesignerWindow,
     inspector: InspectorWindow,
     structure: StructureWindow,
-    messages: MessagesWindow,
+    panel: PanelWindow,
+    /// Output channels (build, program, Git, rust-analyzer).
+    output: Arc<Output>,
+    /// Problems of the last code generation and build, and of rust-analyzer per file.
+    codegen_problems: RefCell<Vec<Problem>>,
+    build_problems: RefCell<Vec<Problem>>,
+    lsp_problems: RefCell<std::collections::BTreeMap<PathBuf, Vec<Problem>>>,
     code: CodeWindow,
     project: ProjectWindow,
     git_window: GitWindow,
@@ -129,8 +138,6 @@ pub struct Ide {
     git_log_key: RefCell<String>,
     /// Branches the graph shows.
     graph_refs: RefCell<LogRefs>,
-    /// Commands of Git operations with their output („Git-Ausgabe“).
-    git_output: std::sync::Arc<std::sync::Mutex<String>>,
     /// A background Git operation (push, pull …) is running.
     git_busy: Cell<bool>,
     /// Delivers results of background Git operations: (what, clear the
@@ -193,7 +200,11 @@ impl Ide {
             designer: DesignerWindow::build(),
             inspector: InspectorWindow::build(),
             structure: StructureWindow::build(),
-            messages: MessagesWindow::build(),
+            panel: PanelWindow::build(),
+            output: Output::new(),
+            codegen_problems: RefCell::new(Vec::new()),
+            build_problems: RefCell::new(Vec::new()),
+            lsp_problems: RefCell::new(Default::default()),
             code: CodeWindow::build(),
             project: ProjectWindow::build(),
             git_window: GitWindow::build(),
@@ -201,7 +212,6 @@ impl Ide {
             git_status: RefCell::new(None),
             git_log_key: RefCell::new(String::new()),
             graph_refs: RefCell::new(LogRefs::Auto),
-            git_output: Default::default(),
             git_busy: Cell::new(false),
             git_results: RefCell::new(None),
             askpass_questions: RefCell::new(None),
@@ -252,7 +262,7 @@ impl Ide {
         designer::connect(&ide);
         inspector::connect(&ide);
         structure::connect(&ide);
-        messages::connect(&ide);
+        panel::connect(&ide);
         code::connect(&ide);
         project::connect(&ide);
         git_window::connect(&ide);
@@ -283,7 +293,7 @@ impl Ide {
             (window::STRUCTURE, &self.structure.window),
             (window::INSPECTOR, &self.inspector.window),
             (window::DESIGNER, &self.designer.window),
-            (window::MESSAGES, &self.messages.window),
+            (window::MESSAGES, &self.panel.window),
             (window::CODE, &self.code.window),
             (window::PROJECT, &self.project.window),
             (window::GIT, &self.git_window.window),
@@ -572,8 +582,10 @@ impl Ide {
             return repo.clone();
         }
         let repo = Git::open(&dir).ok().map(|git| {
-            git.with_askpass(self.askpass())
-                .with_output(Some(self.git_output.clone()))
+            git.with_askpass(self.askpass()).with_output(Some({
+                let output = self.output.clone();
+                Arc::new(move |text: &str| output.append(channel::GIT, text))
+            }))
         });
         *self.repo.borrow_mut() = Some((dir, repo.clone()));
         repo
@@ -971,21 +983,12 @@ impl Ide {
 
     /// The commands of the Git operations so far with their output.
     pub fn git_output(&self) -> String {
-        self.git_output
-            .lock()
-            .map(|o| o.clone())
-            .unwrap_or_default()
+        self.output.text(channel::GIT)
     }
 
-    /// Shows the Git output in the code editor.
+    /// Shows the Git output (channel „Git“ in the panel).
     pub fn git_show_output(&self) {
-        let text = self.git_output();
-        let text = if text.is_empty() {
-            "(noch keine Git-Befehle)".to_owned()
-        } else {
-            text
-        };
-        self.code.open_text("git-output", "Git-Ausgabe", &text, "");
+        self.show_output(channel::GIT);
     }
 
     /// Clones a repository (in the background) into a chosen folder and
@@ -1104,6 +1107,143 @@ impl Ide {
         }
     }
 
+    // --- Panel: problems and output -------------------------------------------------
+
+    /// The output channels (build, program, Git, rust-analyzer).
+    pub fn output(&self) -> Arc<Output> {
+        self.output.clone()
+    }
+
+    /// Shows a channel in the panel's output tab.
+    pub fn show_output(&self, name: &str) {
+        self.show_panel(Tab::Output);
+        self.panel.show_channel(self, name);
+    }
+
+    /// Shows the messages window with a tab.
+    pub fn show_panel(&self, tab: Tab) {
+        self.panel.show_tab(tab);
+        self.show_window(window::MESSAGES);
+    }
+
+    /// All problems: model findings, code generation, last build and
+    /// rust-analyzer – sorted by file and line.
+    pub fn problems(&self) -> Vec<Problem> {
+        let mut problems = self.model_problems();
+        problems.extend(self.codegen_problems.borrow().iter().cloned());
+        problems.extend(self.build_problems.borrow().iter().cloned());
+        for list in self.lsp_problems.borrow().values() {
+            problems.extend(list.iter().cloned());
+        }
+        crate::problems::sort(&mut problems);
+        problems
+    }
+
+    /// Findings of form validation and project analysis.
+    fn model_problems(&self) -> Vec<Problem> {
+        let findings = self.session().document().findings();
+        let mut problems = Vec::new();
+        for (form, diagnostics) in &findings.forms {
+            for d in diagnostics {
+                problems.push(Problem {
+                    element: d
+                        .element
+                        .clone()
+                        .map(|e| tdr_core::ComponentPath::on(form.clone(), e)),
+                    ..Problem::new(
+                        ProblemSource::Model,
+                        d.severity.into(),
+                        &d.issue.to_string(),
+                    )
+                });
+            }
+        }
+        for d in &findings.project {
+            problems.push(Problem {
+                element: d.element.clone(),
+                ..Problem::new(
+                    ProblemSource::Model,
+                    d.severity.into(),
+                    &d.issue.to_string(),
+                )
+            });
+        }
+        problems
+    }
+
+    pub fn refresh_problems(&self) {
+        let problems = self.problems();
+        let was = self.refreshing.replace(true);
+        self.panel.show_problems(self, problems);
+        self.refreshing.set(was);
+    }
+
+    /// Code generation findings (validation findings come from the model).
+    fn set_codegen_problems(&self, generation: &tdr_core::codegen::Generation) {
+        use tdr_core::codegen::CodegenIssue;
+        *self.codegen_problems.borrow_mut() = generation
+            .diagnostics
+            .iter()
+            .filter(|d| !matches!(d.issue, CodegenIssue::Form(_) | CodegenIssue::Project(_)))
+            .map(|d| Problem {
+                element: d.element.clone(),
+                ..Problem::new(
+                    ProblemSource::Codegen,
+                    d.severity.into(),
+                    &d.issue.to_string(),
+                )
+            })
+            .collect();
+        self.refresh_problems();
+    }
+
+    /// Compiler messages of a build (`dir` makes file names absolute).
+    fn set_build_problems(&self, report: &tdr_core::preview::BuildReport, dir: Option<&Path>) {
+        *self.build_problems.borrow_mut() = report
+            .messages
+            .iter()
+            .map(|m| Problem {
+                code: m.code.clone(),
+                // Fehler im erzeugten Code führen zur Komponente im Designer.
+                file: match (&m.element, &m.file, dir) {
+                    (None, Some(file), Some(dir)) => Some(dir.join(file)),
+                    _ => None,
+                },
+                line: m.element.is_none().then_some(m.line).flatten(),
+                column: m
+                    .element
+                    .is_none()
+                    .then_some(m.column.map(|c| c.saturating_sub(1)))
+                    .flatten(),
+                element: m.element.clone(),
+                ..Problem::new(ProblemSource::Build, m.severity.into(), &m.message)
+            })
+            .collect();
+        self.refresh_problems();
+    }
+
+    /// Jumps to a problem: the element in the designer or the source line.
+    pub fn goto_problem(&self, problem: &Problem) {
+        if let Some(path) = &problem.element
+            && problem.file.is_none()
+        {
+            if let Some(form) = &path.form
+                && self.session().form_name() != Some(form)
+            {
+                self.select_form(form);
+            }
+            self.select(vec![path.name.clone()]);
+            return;
+        }
+        if let Some(file) = &problem.file {
+            let line = problem.line.unwrap_or(1);
+            self.open_source(file, line);
+            if let Some(column) = problem.column {
+                self.code.set_cursor(file, line, column);
+            }
+        }
+    }
+
     pub fn inspected(&self) -> Option<tdr_core::ComponentPath> {
         self.inspector.shown()
     }
@@ -1132,7 +1272,7 @@ impl Ide {
         self.designer.refresh(self);
         self.structure.refresh(self);
         if changes.model {
-            self.messages.refresh(self);
+            self.refresh_problems();
             self.git_refresh(false);
             self.project.refresh(self);
         }
@@ -1175,8 +1315,8 @@ impl Ide {
                 self.main.refresh(self);
                 self.designer.refresh(self);
                 self.structure.refresh(self);
-                self.messages.refresh(self);
                 self.refreshing.set(false);
+                self.refresh_problems();
             }
             Err(e) => self.main.set_status(&e.to_string()),
         }
@@ -1349,7 +1489,7 @@ impl Ide {
     // --- Code, build, run ----------------------------------------------------------
 
     /// Saves (asking for a folder the first time) and writes the generated
-    /// code. Code generation findings go to the messages window.
+    /// code. Code generation findings go to the problems.
     pub fn generate_code(&self) -> Option<tdr_core::codegen::Generation> {
         if self.path.borrow().is_none() && !self.save() {
             return None;
@@ -1372,7 +1512,7 @@ impl Ide {
                     self.lsp_changed(&path, &text);
                     self.lsp_saved(&[path]);
                 }
-                self.messages.show_codegen(&generation);
+                self.set_codegen_problems(&generation);
                 self.main.set_status(&if written.is_empty() {
                     "Code ist aktuell.".to_owned()
                 } else {
@@ -1387,10 +1527,10 @@ impl Ide {
             Err(e) => {
                 // Bei Fehlern zeigt der Probelauf, was nicht stimmt.
                 if let Some(generation) = self.session().generation() {
-                    self.messages.show_codegen(&generation);
+                    self.set_codegen_problems(&generation);
                 }
                 self.main.set_status(&format!("Code nicht erzeugt: {e}"));
-                self.show_window(window::MESSAGES);
+                self.show_panel(Tab::Problems);
                 None
             }
         }
@@ -1415,6 +1555,11 @@ impl Ide {
         self.building.set(true);
         self.run_after_build.set(then_run);
         self.main.set_status("Baue …");
+        self.output.clear(channel::BUILD);
+        self.output.line(
+            channel::BUILD,
+            &format!("> cargo build ({})", dir.display()),
+        );
         std::thread::spawn(move || {
             let report = tdr_core::preview::build(&dir, Some(&generation)).unwrap_or_else(|e| {
                 tdr_core::preview::BuildReport {
@@ -1439,7 +1584,21 @@ impl Ide {
     fn build_finished(&self, report: tdr_core::preview::BuildReport) {
         self.building.set(false);
         let dir = self.session().project_dir();
-        self.messages.show_build(&report, dir.as_deref());
+        self.set_build_problems(&report, dir.as_deref());
+        for m in &report.messages {
+            self.output.append(
+                channel::BUILD,
+                m.rendered.as_deref().unwrap_or(&format!("{}\n", m.message)),
+            );
+        }
+        self.output.line(
+            channel::BUILD,
+            if report.success {
+                "Build erfolgreich."
+            } else {
+                "Build fehlgeschlagen."
+            },
+        );
         let mut marks: std::collections::BTreeMap<PathBuf, Vec<LineMark>> = Default::default();
         if let Some(dir) = &dir {
             for m in &report.messages {
@@ -1467,7 +1626,7 @@ impl Ide {
             self.run_after_build.set(false);
             self.main
                 .set_status(&format!("Build fehlgeschlagen ({errors} Fehler)."));
-            self.show_window(window::MESSAGES);
+            self.show_panel(Tab::Problems);
         }
     }
 
@@ -1485,10 +1644,52 @@ impl Ide {
         if let Some(dir) = dir {
             command.current_dir(dir);
         }
+        // Ausgabe des Programms im Kanal „Programm“.
+        command
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
         match command.spawn() {
-            Ok(_) => self
-                .main
-                .set_status(&format!("Gestartet: {}", exe.display())),
+            Ok(mut child) => {
+                self.output.clear(channel::PROGRAM);
+                self.output
+                    .line(channel::PROGRAM, &format!("> {}", exe.display()));
+                let pipes = [
+                    child
+                        .stdout
+                        .take()
+                        .map(|p| Box::new(p) as Box<dyn std::io::Read + Send>),
+                    child
+                        .stderr
+                        .take()
+                        .map(|p| Box::new(p) as Box<dyn std::io::Read + Send>),
+                ];
+                for pipe in pipes.into_iter().flatten() {
+                    let output = self.output.clone();
+                    std::thread::spawn(move || {
+                        use std::io::BufRead;
+                        for line in std::io::BufReader::new(pipe).lines().map_while(Result::ok) {
+                            output.line(channel::PROGRAM, &line);
+                        }
+                    });
+                }
+                let output = self.output.clone();
+                std::thread::spawn(move || {
+                    let status = child.wait();
+                    let text = match status {
+                        Ok(s) => format!("Programm beendet ({s})."),
+                        Err(e) => format!("Programm: {e}"),
+                    };
+                    output.line(channel::PROGRAM, &text);
+                });
+                self.main
+                    .set_status(&format!("Gestartet: {}", exe.display()));
+                if !self.panel.window.widget().is_visible()
+                    || self.panel.current_tab() != Tab::Problems
+                {
+                    self.show_output(channel::PROGRAM);
+                }
+            }
             Err(e) => self.main.set_status(&format!("Start fehlgeschlagen: {e}")),
         }
     }
@@ -1677,7 +1878,10 @@ impl Ide {
                 self.main
                     .set_status("rust-analyzer indiziert das Projekt …");
             }
-            LspEvent::Status { quiescent, .. } => {
+            LspEvent::Status { quiescent, message } => {
+                if let Some(message) = message {
+                    self.output.line(channel::RUST_ANALYZER, &message);
+                }
                 if quiescent && !self.lsp_indexed.replace(true) {
                     self.main.set_status("rust-analyzer bereit.");
                 }
@@ -1702,6 +1906,33 @@ impl Ide {
                     })
                     .collect();
                 self.code.set_lsp_marks(&path, marks);
+                let problems: Vec<Problem> = items
+                    .iter()
+                    .filter_map(|d| {
+                        let severity = match d.severity {
+                            DiagnosticSeverity::Error => ProblemSeverity::Error,
+                            DiagnosticSeverity::Warning => ProblemSeverity::Warning,
+                            DiagnosticSeverity::Information => ProblemSeverity::Info,
+                            DiagnosticSeverity::Hint => return None,
+                        };
+                        Some(Problem {
+                            code: d.code.clone(),
+                            file: Some(path.clone()),
+                            line: Some(d.line),
+                            column: Some(d.column),
+                            ..Problem::new(ProblemSource::RustAnalyzer, severity, &d.message)
+                        })
+                    })
+                    .collect();
+                if problems.is_empty() {
+                    self.lsp_problems.borrow_mut().remove(&path);
+                } else {
+                    self.lsp_problems.borrow_mut().insert(path, problems);
+                }
+                self.refresh_problems();
+            }
+            LspEvent::Log { message } => {
+                self.output.line(channel::RUST_ANALYZER, &message);
             }
             LspEvent::Completion { request, items } => {
                 if self.completion_request.get() != Some(request) {
@@ -1742,6 +1973,10 @@ impl Ide {
                 }
             }
             LspEvent::Exited => {
+                self.output
+                    .line(channel::RUST_ANALYZER, "rust-analyzer wurde beendet.");
+                self.lsp_problems.borrow_mut().clear();
+                self.refresh_problems();
                 *self.lsp.borrow_mut() = None;
                 self.lsp_ready.set(false);
                 self.main.set_status("rust-analyzer wurde beendet.");

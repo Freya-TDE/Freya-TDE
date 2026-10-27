@@ -12,7 +12,10 @@
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+
+/// Receives the git commands of [`Git::run`] with their output.
+pub type OutputSink = Arc<dyn Fn(&str) + Send + Sync>;
 
 use serde::{Deserialize, Serialize};
 use tdr_core::Severity;
@@ -633,12 +636,22 @@ impl std::error::Error for GitError {}
 // --- Repository ---------------------------------------------------------------------
 
 /// A Git repository (its root folder).
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Git {
     root: PathBuf,
     askpass: Option<askpass::Askpass>,
-    /// Commands of [`Git::run`] with their output (VS Code's „Git Output“).
-    output: Option<Arc<Mutex<String>>>,
+    /// Gets the commands of [`Git::run`] with their output (VS Code's „Git
+    /// Output“).
+    output: Option<OutputSink>,
+}
+
+impl std::fmt::Debug for Git {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Git")
+            .field("root", &self.root)
+            .field("askpass", &self.askpass)
+            .finish_non_exhaustive()
+    }
 }
 
 impl Git {
@@ -694,8 +707,8 @@ impl Git {
         Ok(Self::open(dir)?.with_askpass(askpass))
     }
 
-    /// Collects the commands of [`Git::run`] with their output in `sink`.
-    pub fn with_output(mut self, sink: Option<Arc<Mutex<String>>>) -> Self {
+    /// Hands the commands of [`Git::run`] with their output to `sink`.
+    pub fn with_output(mut self, sink: Option<OutputSink>) -> Self {
         self.output = sink;
         self
     }
@@ -1392,18 +1405,17 @@ impl Git {
             let output = self.git(&args, input)?;
             log.push_str(&output.stdout);
             log.push_str(&output.stderr);
-            if let Some(sink) = &self.output
-                && let Ok(mut sink) = sink.lock()
-            {
-                sink.push_str(&format!(
+            if let Some(sink) = &self.output {
+                let mut text = format!(
                     "> git {}\n{}{}",
                     args.join(" "),
                     output.stdout,
                     output.stderr
-                ));
-                if !sink.ends_with('\n') {
-                    sink.push('\n');
+                );
+                if !text.ends_with('\n') {
+                    text.push('\n');
                 }
+                sink(&text);
             }
             if !output.success {
                 return Err(GitError::from_output(format!(

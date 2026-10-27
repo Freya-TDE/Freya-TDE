@@ -10,6 +10,8 @@ pub mod desktop;
 pub mod files;
 pub mod git;
 pub mod lsp;
+pub mod output;
+pub mod problems;
 pub mod session;
 pub mod ui;
 

@@ -394,7 +394,10 @@ fn git_round_trip() {
 
     // Remotes; Git-Ausgabe sammelt die Befehle.
     let sink = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
-    let git = git.with_output(Some(sink.clone()));
+    let collect = sink.clone();
+    let git = git.with_output(Some(std::sync::Arc::new(move |text: &str| {
+        collect.lock().unwrap().push_str(text);
+    })));
     git.run(&GitOp::AddRemote {
         name: "backup".into(),
         url: remote.to_string_lossy().into_owned(),

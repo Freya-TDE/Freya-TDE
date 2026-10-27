@@ -87,6 +87,9 @@ pub enum LspEvent {
         request: Option<u64>,
         message: String,
     },
+    /// A log line of the server (`window/logMessage`, `window/showMessage`
+    /// or its standard error output).
+    Log { message: String },
     /// The server process ended.
     Exited,
 }
@@ -216,14 +219,25 @@ impl LspClient {
     /// Starts rust-analyzer for the Cargo project in `root`.
     pub fn start(
         root: &Path,
-        on_event: impl Fn(LspEvent) + Send + 'static,
+        on_event: impl Fn(LspEvent) + Send + Sync + 'static,
     ) -> std::io::Result<Self> {
         let mut child = Command::new(program())
             .current_dir(root)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
+            .stderr(Stdio::piped())
             .spawn()?;
+        let on_event = Arc::new(on_event);
+        // Fehlerausgabe des Servers als Protokollzeilen.
+        if let Some(stderr) = child.stderr.take() {
+            let on_event = on_event.clone();
+            std::thread::spawn(move || {
+                use std::io::BufRead;
+                for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+                    on_event(LspEvent::Log { message: line });
+                }
+            });
+        }
         let stdin = Arc::new(Mutex::new(child.stdin.take().expect("piped stdin")));
         let stdout = child.stdout.take().expect("piped stdout");
         let shared: Arc<Mutex<Shared>> = Arc::default();
@@ -240,7 +254,7 @@ impl LspClient {
         std::thread::spawn(move || {
             let mut reader = BufReader::new(stdout);
             while let Some(message) = read_message(&mut reader) {
-                handle(&message, &shared, &reader_stdin, &on_event);
+                handle(&message, &shared, &reader_stdin, &*on_event);
             }
             on_event(LspEvent::Exited);
         });
@@ -608,6 +622,13 @@ fn handle(
                 })
                 .unwrap_or_default();
             on_event(LspEvent::Diagnostics { path, items });
+        }
+        Some("window/logMessage" | "window/showMessage") => {
+            if let Some(text) = message["params"]["message"].as_str() {
+                on_event(LspEvent::Log {
+                    message: text.to_owned(),
+                });
+            }
         }
         Some("experimental/serverStatus") => {
             let params = &message["params"];
