@@ -67,6 +67,7 @@ fn menu_bar() -> MenuBar {
                 .item("window.messages", "Meldungen", None)
                 .item("window.problems", "Probleme", Some("Ctrl+Shift+M"))
                 .item("window.output", "Ausgabe", Some("Ctrl+Shift+U"))
+                .item("window.terminal", "Terminal", Some("Ctrl+Shift+T"))
                 .item("window.code", "Code", None)
                 .item("window.project", "Projekt", None)
                 .item("window.git", "Quellcodeverwaltung", Some("Ctrl+Shift+G"))
@@ -269,6 +270,7 @@ pub fn connect(ide: &Rc<Ide>) {
             "window.messages" => ide.show_window(window::MESSAGES),
             "window.problems" => ide.show_panel(super::panel::Tab::Problems),
             "window.output" => ide.show_panel(super::panel::Tab::Output),
+            "window.terminal" => ide.show_terminal(),
             "window.code" => ide.show_code(),
             "window.project" => ide.show_window(window::PROJECT),
             "window.git" => {

@@ -1,8 +1,9 @@
 //! Messages window as a panel with tabs (like VS Code's panel): problems
 //! (model, code generation, build, rust-analyzer – grouped by file, with a
-//! filter), output (channels: build, program, Git, rust-analyzer),
-//! terminal and debug console (both still to come). The data are
-//! [`crate::problems`] and [`crate::output`]; the window shows them.
+//! filter), output (channels: build, program, Git, rust-analyzer), the
+//! terminal ([`super::terminal_view`]) and the debug console (still to
+//! come). The data are [`crate::problems`], [`crate::output`] and
+//! [`crate::terminal`]; the window shows them.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -10,14 +11,15 @@ use std::rc::Rc;
 use rncl::prelude::*;
 use ruf::{Color, Timer};
 
+use super::terminal_view::TerminalView;
 use super::{Ide, with, with0};
 use crate::problems::{Group, Problem, ProblemSeverity, counts};
 
 const ROW: i32 = 30;
 const MARGIN: i32 = 4;
 
-/// How often the output tab looks for new text.
-const OUTPUT_POLL: i32 = 300;
+/// How often the output and terminal tabs look for new text.
+const POLL: i32 = 40;
 
 /// The tabs, in order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -56,7 +58,17 @@ pub struct PanelWindow {
     output_channel: RefCell<String>,
     /// Set while the channel list is refilled (its signal must not switch).
     updating: Cell<bool>,
+    pub terminal: TerminalView,
     timer: Timer,
+}
+
+fn terminal_menu() -> Menu {
+    Menu::new()
+        .item("term.copy", "Kopieren", Some("Ctrl+Shift+C"))
+        .item("term.paste", "Einfügen", Some("Ctrl+Shift+V"))
+        .separator()
+        .item("term.clear", "Leeren", None)
+        .item("term.restart", "Neu starten", None)
 }
 
 fn placeholder(page: &RnclPanel, text: &str) -> RnclLabel {
@@ -93,7 +105,7 @@ impl PanelWindow {
         text.set_read_only(true);
         text.set_monospace(true);
 
-        placeholder(&terminal, "Das Terminal folgt im nächsten Schritt.");
+        let terminal_view = TerminalView::build(&terminal);
         placeholder(
             &debug,
             "Die Debug-Konsole folgt zusammen mit dem Debugger (Haltepunkte, Variablen).",
@@ -133,6 +145,12 @@ impl PanelWindow {
                 text.set_geometry(0, ROW + MARGIN, width, (height - ROW - MARGIN).max(0));
             });
         }
+        {
+            let canvas = terminal_view.canvas.clone();
+            terminal.widget().on_resized(move |width, height| {
+                canvas.set_geometry(0, 0, width, height);
+            });
+        }
         Self {
             window,
             tabs,
@@ -148,6 +166,7 @@ impl PanelWindow {
             output_seen: Cell::new(u64::MAX),
             output_channel: RefCell::new(String::new()),
             updating: Cell::new(false),
+            terminal: terminal_view,
             timer: Timer::new(),
         }
     }
@@ -374,9 +393,55 @@ pub fn connect(ide: &Rc<Ide>) {
         ide.panel.refresh_output(ide);
     }));
     panel.timer.on_timeout(with0(ide, |ide| {
-        if ide.panel.current_tab() == Tab::Output && ide.panel.window.widget().is_visible() {
-            ide.panel.refresh_output(ide);
+        if !ide.panel.window.widget().is_visible() {
+            return;
+        }
+        match ide.panel.current_tab() {
+            Tab::Output => ide.panel.refresh_output(ide),
+            Tab::Terminal => ide.panel.terminal.redraw(),
+            _ => {}
         }
     }));
-    panel.timer.start(OUTPUT_POLL);
+    panel.timer.start(POLL);
+    // Terminal: startet beim ersten Zeigen des Reiters im Projektordner.
+    panel
+        .tabs
+        .on_current_index_changed(with(ide, |ide, index: i32| {
+            if index == Tab::Terminal as i32 {
+                ide.start_terminal();
+            }
+        }));
+    let canvas = &panel.terminal.canvas;
+    let weak = Rc::downgrade(ide);
+    canvas.widget().on_resized(move |_, _| {
+        if let Some(ide) = weak.upgrade() {
+            ide.panel.terminal.resized();
+        }
+    });
+    canvas.on_mouse(with(ide, |ide, event: MouseEvent| {
+        if ide.panel.terminal.mouse(event) {
+            ide.panel
+                .terminal
+                .canvas
+                .widget()
+                .popup_menu(&terminal_menu(), event.x, event.y);
+        }
+    }));
+    canvas.on_key(with(ide, |ide, event: KeyEvent| {
+        match ide.panel.terminal.key(event) {
+            Some(true) => ide.terminal_paste(),
+            Some(false) => ide.restart_terminal(),
+            None => {}
+        }
+        ide.panel.terminal.redraw();
+    }));
+    panel
+        .window
+        .on_menu(with(ide, |ide, id: String| match id.as_str() {
+            "term.copy" => ide.panel.terminal.copy(),
+            "term.paste" => ide.terminal_paste(),
+            "term.clear" => ide.panel.terminal.clear(),
+            "term.restart" => ide.restart_terminal(),
+            _ => {}
+        }));
 }

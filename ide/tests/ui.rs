@@ -97,6 +97,7 @@ fn main() {
     surface.simulate_key(KeyEvent {
         key: Key::Delete,
         modifiers: Modifiers::default(),
+        text: None,
     });
     assert!(!ide.session().form().unwrap().contains(&name("button1")));
     surface.simulate_key(KeyEvent {
@@ -105,6 +106,7 @@ fn main() {
             ctrl: true,
             ..Modifiers::default()
         },
+        text: None,
     });
     assert!(ide.session().form().unwrap().contains(&name("button1")));
     println!("test delete_and_undo ... ok");
@@ -308,6 +310,18 @@ fn main() {
         passed += 1;
     } else {
         println!("test lsp_marks ... übersprungen (kein rust-analyzer)");
+    }
+
+    // Terminal im Panel: Befehl schicken, Ergebnis lesen.
+    if cfg!(unix) {
+        ide.terminal_run("echo freya-$((40+2))");
+        assert!(
+            pump_until(20, || ide.terminal_text().contains("freya-42")),
+            "{}",
+            ide.terminal_text()
+        );
+        println!("test terminal ... ok");
+        passed += 1;
     }
 
     Application::process_events();

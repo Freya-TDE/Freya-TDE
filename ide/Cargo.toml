@@ -24,6 +24,10 @@ toml.workspace = true
 serde_json.workspace = true
 # Löschen in den Papierkorb (Linux, Windows, macOS). / Delete into the trash.
 trash = "5.2.9"
+# Terminal im Panel: Pseudo-Terminal (auch Windows ConPTY) und Terminal-Parser.
+# Terminal in the panel: pseudo terminal (incl. Windows ConPTY) and terminal parser.
+portable-pty = "0.9.0"
+vt100 = "0.18.1"
 
 [[test]]
 name = "ui"

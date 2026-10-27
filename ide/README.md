@@ -13,7 +13,7 @@ is saved per user and restored on start.*
 | Code | ein Reiter je Datei (GtkSourceView): Hervorhebung, Zeilennummern, Fehlermarken vom Build und von rust-analyzer; Strg+Leertaste (und `.`/`::`) vervollständigt, Strg+Klick oder Strg+F12 springt zur Definition; Klammerblöcke falten per Pfeil am Rand (Code → Alles falten/aufklappen); `.gen.rs` schreibgeschützt; Strg+S speichert, Strg+W schließt, F12 = Designer; der Designer folgt dem Reiter |
 | Objektinspektor | Eigenschaften (Editor passend zum Typ, ↺ = Standardwert) und Ereignisse (… schlägt einen Handler vor) |
 | Struktur | Formulare und Elemente als Baum |
-| Meldungen | Reiter wie in VS Code. **Probleme** (Strg+Umschalt+M): Prüfergebnisse, Code-, Compiler- und rust-analyzer-Meldungen nach Datei gruppiert, mit Textfilter und Fehler/Warnungen/Hinweise; Auswahl springt zum Element bzw. zur Stelle. **Ausgabe** (Strg+Umschalt+U): Kanäle Build, Programm (Ausgabe des mit F9 gestarteten Programms), Git, rust-analyzer. **Terminal** und **Debug-Konsole** folgen |
+| Meldungen | Reiter wie in VS Code. **Probleme** (Strg+Umschalt+M): Prüfergebnisse, Code-, Compiler- und rust-analyzer-Meldungen nach Datei gruppiert, mit Textfilter und Fehler/Warnungen/Hinweise; Auswahl springt zum Element bzw. zur Stelle. **Ausgabe** (Strg+Umschalt+U): Kanäle Build, Programm (Ausgabe des mit F9 gestarteten Programms), Git, rust-analyzer. **Terminal** (Strg+Umschalt+T): die Shell des Nutzers im Projektordner (Login-Shell unter Linux/macOS, `%ComSpec%` unter Windows) mit Farben, Vollbildprogrammen (`less`, `htop`, `vim`), Mausauswahl, Strg+Umschalt+C/V (macOS ⌘C/⌘V), Mausrad bzw. Umschalt+Bild↑/↓ für die Rückschau, Rechtsklick: Kopieren, Einfügen, Leeren, Neu starten. **Debug-Konsole** folgt mit dem Debugger |
 | Projekt | der Projektordner als Baum (ohne `target/` und `.git/`; erzeugte und versteckte Dateien zuschaltbar). Doppelklick öffnet: `.ftdr` als Formular samt `.rs`, sonst im Code-Editor. Kontextmenü: neue Datei/neuer Ordner, Datei einbinden (von außen kopieren), Kopieren/Einfügen, Umbenennen, Löschen (in den Papierkorb), `Cargo.toml` mit dem CT-Editor öffnen. Projektdatei und Formulare sind geschützt. Änderungen von außen erscheinen nach spätestens 2 s; offene Dateien ohne ungespeicherte Änderungen werden neu geladen. Git-Status als farbiger Buchstabe (M, A, D, R, U, C = Konflikt), Ordner mit Änderungen bekommen einen Punkt |
 | Quellcodeverwaltung | Git wie in VS Code (Strg+Umschalt+G): Repository-Zeile mit Zweig (`main+` = etwas gestaged; Klick = Zweig/Tag auschecken), Sync (↓/↑ zum Upstream) und ⋯ (Pull, Push, Klonen, Auschecken, Fetch; Commit, Änderungen, Pull/Push, Zweig, Remote, Stash, Tags; Git-Ausgabe). Commit-Nachricht (Strg+Enter, wächst mit dem Text) mit Commit, Commit (Amend), Commit & Push, Commit & Sync – ohne Änderungen, aber mit ausstehenden Commits wird der Knopf zu „Sync“. „Gestaged“ und „Änderungen“ mit Statusbuchstaben, als Liste oder Baum (Doppelklick = Diff, Kontextmenü: stagen, unstagen, verwerfen, öffnen). Graph mit Leiste: angezeigte Zweige (Auto, Alle, Auswahl), zum aktuellen Commit, Fetch (alle Remotes), Pull, Push, Aktualisieren. Der Zweig steht auch in der Statuszeile des Hauptfensters. Signierte Commits (GPG) fragt `gpg-agent` mit seinem eigenen Dialog ab |
 
@@ -50,13 +50,14 @@ Für Automatisierung (Tests, KI): `Ide::run_commands` (JSON-Befehle),
 `Ide::open_project_file`, `git` (Status, Log, Diff, Graph als Daten; Git-Befehle als JSON
 mit Vorschau: `Git::preview`, `Git::run`), `Ide::repo`, `Ide::git_status`, `Ide::git_changes`,
 `Ide::git_preview`, `Ide::git_run`, `problems`/`Ide::problems` (alle Probleme als Daten),
-`output`/`Ide::output` (Ausgabekanäle).
+`output`/`Ide::output` (Ausgabekanäle), `terminal` (Shell im Pseudo-Terminal ohne
+Oberfläche), `Ide::terminal_run`, `Ide::terminal_text`.
 *Automation (tests, AI): `Ide::run_commands`, `Ide::design_surface`, `Ide::screenshots`,
 `Ide::code_text`/`set_code_text`/`code_marks`, `lsp::LspClient`, `files` (file tree and file
 operations with dry run), `Ide::project_files`/`plan_file_op`/`file_op`/`open_project_file`,
 `git` (status, log, diff, graph as data; Git operations as JSON with preview),
 `Ide::repo`/`git_status`/`git_changes`/`git_preview`/`git_run`, `problems`/`Ide::problems`,
-`output`/`Ide::output`.*
+`output`/`Ide::output`, `terminal`, `Ide::terminal_run`/`terminal_text`.*
 
 Unter Linux startet Freya-TD über X11/XWayland (`GDK_BACKEND=x11`), weil Wayland
 Programmen das Positionieren ihrer Fenster verbietet. Git läuft über die `git`-Kommandozeile (`PATH` oder `FREYA_TD_GIT`) mit den Zugangsdaten,

@@ -137,7 +137,7 @@ Generierter Code gehört dem Nutzer. Jedes Plugin deklariert die Lizenz seines e
 
 ## Offene Punkte
 
-- Panel: Probleme und Ausgabe erledigt; als Nächstes das Terminal, später Debugger mit Debug-Konsole.
+- Panel: Probleme, Ausgabe und Terminal erledigt (`freya_td::terminal`; Grenze: keine Eingabemethoden/tote Tasten, ein Terminal). Später: mehrere Terminals, Debugger mit Debug-Konsole.
 - Schritt 6c.3: Projektfenster und Git-Fenster erledigt; offen sind Änderungsmarken am Rand des Code-Editors, „Commit & Create Pull Request“ (mit `gh`) und der Tab „Projekt-Manager“.
 - Erstes echtes UI-Backend-Pack (z. B. egui oder nativ) in `widgets/`.
 - Ideen aus `notes/gedanken.txt` (26.10.2026), noch einzuplanen:

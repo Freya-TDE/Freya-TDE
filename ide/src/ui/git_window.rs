@@ -495,11 +495,10 @@ impl GitWindow {
         y += BUTTON + 6;
         // Änderungen und Graph teilen sich den Rest; der Teiler verschiebt die Grenze.
         let rest = (height - y - MARGIN - SPLITTER_SIZE - BAR - 2).max(0);
-        let changes = self
-            .split
-            .get()
-            .unwrap_or(rest * 45 / 100)
-            .clamp(MIN_PART.min(rest), (rest - MIN_PART).max(MIN_PART.min(rest)));
+        let changes = self.split.get().unwrap_or(rest * 45 / 100).clamp(
+            MIN_PART.min(rest),
+            (rest - MIN_PART).max(MIN_PART.min(rest)),
+        );
         self.changes.set_geometry(MARGIN, y, inner, changes);
         y += changes;
         self.splitter.set_geometry(MARGIN, y, inner, SPLITTER_SIZE);

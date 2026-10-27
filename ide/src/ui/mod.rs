@@ -11,6 +11,7 @@ mod main_window;
 pub mod panel;
 mod project;
 mod structure;
+mod terminal_view;
 
 use std::cell::{Cell, RefCell};
 use std::path::{Path, PathBuf};
@@ -1118,6 +1119,58 @@ impl Ide {
     pub fn show_output(&self, name: &str) {
         self.show_panel(Tab::Output);
         self.panel.show_channel(self, name);
+    }
+
+    /// The folder new terminals start in: the project folder, else home.
+    fn terminal_dir(&self) -> PathBuf {
+        self.session()
+            .project_dir()
+            .or_else(std::env::home_dir)
+            .unwrap_or_else(|| PathBuf::from("."))
+    }
+
+    /// Shows the terminal tab and starts the shell if none is running.
+    pub fn start_terminal(&self) {
+        let dir = self.terminal_dir();
+        self.panel.terminal.ensure_started(&dir);
+    }
+
+    pub fn show_terminal(&self) {
+        self.show_panel(Tab::Terminal);
+        self.start_terminal();
+    }
+
+    fn restart_terminal(&self) {
+        let dir = self.terminal_dir();
+        self.panel.terminal.restart(&dir);
+    }
+
+    fn terminal_paste(&self) {
+        let weak = self.me.clone();
+        ruf::clipboard::read_text(move |text| {
+            if let (Some(ide), Some(text)) = (weak.upgrade(), text) {
+                ide.panel.terminal.paste(&text);
+            }
+        });
+    }
+
+    /// Types `command` and Enter into the terminal (starting it if needed)
+    /// – for scripts and an AI.
+    pub fn terminal_run(&self, command: &str) {
+        self.show_terminal();
+        if let Some(t) = self.panel.terminal.terminal().as_ref() {
+            t.write_text(&format!("{command}\r"));
+        }
+    }
+
+    /// The visible text of the terminal (empty if it never ran).
+    pub fn terminal_text(&self) -> String {
+        self.panel
+            .terminal
+            .terminal()
+            .as_ref()
+            .map(|t| t.text())
+            .unwrap_or_default()
     }
 
     /// Shows the messages window with a tab.
