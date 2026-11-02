@@ -1,9 +1,9 @@
 //! Breakpoints and watch expressions of a project – plain data, kept per
-//! user in `<config>/freya-td/debug.toml` (personal like the window
+//! user in `<config>/freya-tde/debug.toml` (personal like the window
 //! layout; nothing goes into the shared `.ptdr`).
 //!
 //! ```
-//! use freya_td::debug::{Breakpoint, DebugSettings};
+//! use freya_tde::debug::{Breakpoint, DebugSettings};
 //!
 //! let mut settings = DebugSettings::default();
 //! assert!(settings.toggle("src/main.rs".as_ref(), 12));
@@ -188,7 +188,7 @@ impl DebugSettings {
 /// number of lines stayed the same.
 ///
 /// ```
-/// use freya_td::debug::line_shift;
+/// use freya_tde::debug::line_shift;
 ///
 /// // Neue Zeile nach Zeile 2.
 /// assert_eq!(line_shift("a\nb\nc", "a\nb\nneu\nc"), Some((2, 1)));

@@ -1,6 +1,6 @@
 [package]
 name = "tdr-designer"
-description = "Freya-TD designer logic without UI: document, commands with undo/redo, layout from theme tables, display list, hit testing"
+description = "Freya TDE designer logic without UI: document, commands with undo/redo, layout from theme tables, display list, hit testing"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

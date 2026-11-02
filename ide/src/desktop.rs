@@ -2,8 +2,8 @@
 //! visibility of every IDE window, saved per user and restored on start.
 //!
 //! Stored as TOML in the user's configuration directory:
-//! Linux `$XDG_CONFIG_HOME/freya-td/desktop.toml` (or `~/.config/…`),
-//! macOS `~/Library/Application Support/freya-td/…`, Windows `%APPDATA%\freya-td\…`.
+//! Linux `$XDG_CONFIG_HOME/freya-tde/desktop.toml` (or `~/.config/…`),
+//! macOS `~/Library/Application Support/freya-tde/…`, Windows `%APPDATA%\freya-tde\…`.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -59,21 +59,31 @@ pub struct Desktop {
     pub files: ScanOptions,
 }
 
-/// The configuration directory of Freya-TD for this user.
+/// The configuration directory of Freya TDE for this user. A folder of the
+/// old name (`freya-td`, before 02.11.2026) is taken over.
 pub fn config_dir() -> Option<PathBuf> {
+    let dir = config_base()?;
+    let new = dir.join("freya-tde");
+    let old = dir.join("freya-td");
+    if !new.exists() && old.is_dir() {
+        let _ = std::fs::rename(&old, &new);
+    }
+    Some(new)
+}
+
+fn config_base() -> Option<PathBuf> {
     let env = |name: &str| {
         std::env::var_os(name)
             .filter(|v| !v.is_empty())
             .map(PathBuf::from)
     };
-    let base = if cfg!(target_os = "windows") {
+    if cfg!(target_os = "windows") {
         env("APPDATA")
     } else if cfg!(target_os = "macos") {
         env("HOME").map(|h| h.join("Library/Application Support"))
     } else {
         env("XDG_CONFIG_HOME").or_else(|| env("HOME").map(|h| h.join(".config")))
-    };
-    base.map(|b| b.join("freya-td"))
+    }
 }
 
 impl Desktop {

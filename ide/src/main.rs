@@ -1,16 +1,18 @@
-//! Freya-TD – starts the development environment.
+//! Freya TDE – starts the development environment.
 //!
 //! ```bash
-//! freya-td                                  # neues, ungespeichertes Projekt
-//! freya-td pfad/zu/app.ptdr                 # Projekt öffnen
-//! freya-td --commands befehle.json          # Designer-Befehle anwenden (JSON)
-//! freya-td --generate                      # Code erzeugen (nach --commands)
-//! freya-td --show-code                     # Code des Formulars im Editor öffnen
-//! freya-td --screenshots ordner             # alle Fenster als PNG speichern, beenden
+//! freya-tde                                 # neues, ungespeichertes Projekt
+//! freya-tde pfad/zu/app.ptdr                # Projekt öffnen
+//! freya-tde --commands befehle.json         # Designer-Befehle anwenden (JSON)
+//! freya-tde --generate                      # Code erzeugen (nach --commands)
+//! freya-tde --show-code                     # Code des Formulars im Editor öffnen
+//! freya-tde --screenshots ordner            # alle Fenster als PNG speichern, beenden
+//! freya-tde --no-splash                     # ohne Startbildschirm
 //! ```
 
 use std::path::PathBuf;
 
+use freya_tde::ui::about;
 use rncl::prelude::*;
 
 struct Args {
@@ -19,6 +21,7 @@ struct Args {
     screenshots: Option<PathBuf>,
     generate: bool,
     show_code: bool,
+    splash: bool,
 }
 
 fn args() -> Args {
@@ -28,6 +31,7 @@ fn args() -> Args {
         screenshots: None,
         generate: false,
         show_code: false,
+        splash: true,
     };
     let mut it = std::env::args_os().skip(1);
     while let Some(arg) = it.next() {
@@ -36,6 +40,7 @@ fn args() -> Args {
             Some("--screenshots") => args.screenshots = it.next().map(PathBuf::from),
             Some("--generate") => args.generate = true,
             Some("--show-code") => args.show_code = true,
+            Some("--no-splash") => args.splash = false,
             _ => args.project = Some(PathBuf::from(arg)),
         }
     }
@@ -44,11 +49,11 @@ fn args() -> Args {
 
 fn main() {
     // Als GIT_ASKPASS/SSH_ASKPASS gestartet: Frage weiterreichen, sonst nichts.
-    if let Some(code) = freya_td::git::askpass::helper_main() {
+    if let Some(code) = freya_tde::git::askpass::helper_main() {
         std::process::exit(code);
     }
 
-    // Freya-TD stellt seine Fensteranordnung wieder her. Unter Wayland dürfen
+    // Freya TDE stellt seine Fensteranordnung wieder her. Unter Wayland dürfen
     // Programme Fenster nicht positionieren – deshalb unter Linux über
     // X11/XWayland (Entscheidung vom 23.10.2026), wenn nichts anderes gesetzt ist.
     #[cfg(all(unix, not(target_os = "macos")))]
@@ -59,14 +64,21 @@ fn main() {
 
     let args = args();
     let app = Application::new();
-    app.set_name("Freya-TD");
-    let ide = freya_td::Ide::start(args.project.as_deref());
+    app.set_name(about::PRODUCT);
+    about::set_program_icon();
+    // Kein Startbildschirm bei Automatisierung (Befehle, Screenshots).
+    let splash = (args.splash && args.commands.is_none() && args.screenshots.is_none())
+        .then(about::Splash::show);
+    let ide = freya_tde::Ide::start(args.project.as_deref());
+    if let Some(splash) = splash {
+        splash.finish();
+    }
     if let Some(file) = &args.commands {
         let result = std::fs::read_to_string(file)
             .map_err(|e| e.to_string())
             .and_then(|json| ide.run_commands(&json));
         if let Err(e) = result {
-            eprintln!("freya-td: {}: {e}", file.display());
+            eprintln!("freya-tde: {}: {e}", file.display());
         }
     }
     if args.generate {

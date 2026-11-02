@@ -11,7 +11,7 @@ use crate::error::ModelError;
 /// Where a component type is defined.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Origin {
-    /// The small common widget core shipped with Freya-TD (Label, Button …).
+    /// The small common widget core shipped with Freya TDE (Label, Button …).
     Core,
     /// A UI backend's own palette (e.g. `egui`, `slint`, `win32`).
     Backend(String),

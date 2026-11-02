@@ -1,12 +1,12 @@
-//! The askpass helper (`freya-td` as `GIT_ASKPASS`/`SSH_ASKPASS`) and the
+//! The askpass helper (`freya-tde` as `GIT_ASKPASS`/`SSH_ASKPASS`) and the
 //! whole way from `git` to the question service.
 
-/// `freya-td` as `GIT_ASKPASS`/`SSH_ASKPASS`: hands the question to the
+/// `freya-tde` as `GIT_ASKPASS`/`SSH_ASKPASS`: hands the question to the
 /// service and prints the answer (exit code 1 = cancelled).
 #[test]
 fn askpass_helper() {
-    use freya_td::git::askpass::Askpass;
-    let program = std::path::PathBuf::from(env!("CARGO_BIN_EXE_freya-td"));
+    use freya_tde::git::askpass::Askpass;
+    let program = std::path::PathBuf::from(env!("CARGO_BIN_EXE_freya-tde"));
     let askpass = Askpass::start(program.clone(), |question| {
         if question.starts_with("Enter passphrase") || question.starts_with("Password for") {
             Some("s3cret".to_owned())

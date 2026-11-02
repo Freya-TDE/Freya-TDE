@@ -1,4 +1,4 @@
-//! # freya-td – the Freya-TD development environment
+//! # freya-tde – the Freya TDE development environment
 //!
 //! Free-floating windows (like Delphi 7 / Lazarus) on RUF: main window with
 //! menu and component palette, form designer, object inspector, structure,

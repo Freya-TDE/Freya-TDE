@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::error::ModelError;
 use crate::platform::Platform;
 
-/// A Freya-TD project.
+/// A Freya TDE project.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProjectFile {
     /// File format version of the `.ptdr` file.
@@ -33,7 +33,7 @@ pub struct ProjectFile {
     /// directory (e.g. `"src/customers.ftdr"`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub forms: Vec<String>,
-    /// Freya-TD generates code (`main.rs`, `*.gen.rs`, `Cargo.toml`).
+    /// Freya TDE generates code (`main.rs`, `*.gen.rs`, `Cargo.toml`).
     /// `false` for projects made from an existing Cargo project: they are
     /// only managed (code, build, terminal, Git), nothing is generated.
     #[serde(default = "yes", skip_serializing_if = "is_yes")]

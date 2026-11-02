@@ -1,9 +1,9 @@
-# freya-td – die Entwicklungsumgebung
+# freya-tde – die Entwicklungsumgebung
 
-Freya-TD auf RUF: frei bewegliche Fenster wie bei Delphi 7 / Lazarus, jedes auf jedem
+Freya TDE auf RUF: frei bewegliche Fenster wie bei Delphi 7 / Lazarus, jedes auf jedem
 Bildschirm platzierbar. Die Anordnung wird pro Nutzer gespeichert und beim Start
 wiederhergestellt.
-*Freya-TD on RUF: free-floating windows (Delphi 7 / Lazarus style); the arrangement
+*Freya TDE on RUF: free-floating windows (Delphi 7 / Lazarus style); the arrangement
 is saved per user and restored on start.*
 
 | Fenster / window | Inhalt / content |
@@ -14,10 +14,19 @@ is saved per user and restored on start.*
 | Objektinspektor | Eigenschaften (Editor passend zum Typ, ↺ = Standardwert) und Ereignisse (… schlägt einen Handler vor) |
 | Struktur | Formulare und Elemente als Baum |
 | Meldungen | Reiter wie in VS Code. **Probleme** (Strg+Umschalt+M): Prüfergebnisse, Code-, Compiler- und rust-analyzer-Meldungen nach Datei gruppiert, mit Textfilter und Fehler/Warnungen/Hinweise; Auswahl springt zum Element bzw. zur Stelle. **Ausgabe** (Strg+Umschalt+U): Kanäle Build, Programm (Ausgabe des mit F9 gestarteten Programms), Git, rust-analyzer. **Terminal** (Strg+Umschalt+T): die Shell des Nutzers im Projektordner (Login-Shell unter Linux/macOS, `%ComSpec%` unter Windows) mit Farben, Vollbildprogrammen (`less`, `htop`, `vim`), toten Tasten und Eingabemethoden (`^`, `` ` ``, `ê`, IME), Mausauswahl, Strg+Umschalt+C/V (macOS ⌘C/⌘V), Mausrad bzw. Umschalt+Bild↑/↓ für die Rückschau, Rechtsklick: Kopieren, Einfügen, Leeren, Neu starten, Neues Terminal, Terminal beenden. Mehrere Terminals: „+ Neu“ öffnet eine weitere Shell in einem eigenen Reiter („1: bash“, „2: bash“), „✕ Beenden“ beendet das sichtbare; jedes hat eigene Rückschau. **Debug-Konsole** folgt mit dem Debugger |
-| Projekt | Reiter **Projekt-Manager**: alle Projekte der Projektliste des Nutzers (`<config>/freya-td/projects.toml`) als Baum aus Haupt- und Unterprojekten, geöffnete mit `*`, das aktive blau. Geöffnet ist ein Hauptprojekt und beliebig viele seiner Unterprojekte (Doppelklick öffnet bzw. aktiviert). Kontextmenü: öffnen, aktivieren, schließen, Unterprojekt hinzufügen, zuordnen, Unterprojekte suchen, ausblenden, entfernen, Git-Einstellungen (Autor, E-Mail, Signierschlüssel in `.git/config`; Remote und Hauptzweig in der `.ptdr`), Projekt aus Cargo.toml erstellen (auch Datei-Menü; solche Projekte werden nur verwaltet: bauen ohne Codeerzeugung). Reiter **Dateien**: der Projektordner als Baum (ohne `target/` und `.git/`; erzeugte und versteckte Dateien zuschaltbar). Doppelklick öffnet: `.ftdr` als Formular samt `.rs`, sonst im Code-Editor. Kontextmenü: neue Datei/neuer Ordner, Datei einbinden (von außen kopieren), Kopieren/Einfügen, Umbenennen, Löschen (in den Papierkorb), `Cargo.toml` mit dem CT-Editor öffnen. Projektdatei und Formulare sind geschützt. Änderungen von außen erscheinen nach spätestens 2 s; offene Dateien ohne ungespeicherte Änderungen werden neu geladen. Git-Status als farbiger Buchstabe (M, A, D, R, U, C = Konflikt), Ordner mit Änderungen bekommen einen Punkt |
+| Projekt | Reiter **Projekt-Manager**: alle Projekte der Projektliste des Nutzers (`<config>/freya-tde/projects.toml`) als Baum aus Haupt- und Unterprojekten, geöffnete mit `*`, das aktive blau. Geöffnet ist ein Hauptprojekt und beliebig viele seiner Unterprojekte (Doppelklick öffnet bzw. aktiviert). Kontextmenü: öffnen, aktivieren, schließen, Unterprojekt hinzufügen, zuordnen, Unterprojekte suchen, ausblenden, entfernen, Git-Einstellungen (Autor, E-Mail, Signierschlüssel in `.git/config`; Remote und Hauptzweig in der `.ptdr`), Projekt aus Cargo.toml erstellen (auch Datei-Menü; solche Projekte werden nur verwaltet: bauen ohne Codeerzeugung). Reiter **Dateien**: der Projektordner als Baum (ohne `target/` und `.git/`; erzeugte und versteckte Dateien zuschaltbar). Doppelklick öffnet: `.ftdr` als Formular samt `.rs`, sonst im Code-Editor. Kontextmenü: neue Datei/neuer Ordner, Datei einbinden (von außen kopieren), Kopieren/Einfügen, Umbenennen, Löschen (in den Papierkorb), `Cargo.toml` mit dem CT-Editor öffnen. Projektdatei und Formulare sind geschützt. Änderungen von außen erscheinen nach spätestens 2 s; offene Dateien ohne ungespeicherte Änderungen werden neu geladen. Git-Status als farbiger Buchstabe (M, A, D, R, U, C = Konflikt), Ordner mit Änderungen bekommen einen Punkt |
 | Quellcodeverwaltung | Git wie in VS Code (Strg+Umschalt+G): Repository-Zeile mit Zweig (`main+` = etwas gestaged; Klick = Zweig/Tag auschecken), Sync (↓/↑ zum Upstream) und ⋯ (Pull, Push, Klonen, Auschecken, Fetch; Commit, Änderungen, Pull/Push, Zweig, Remote, Stash, Tags; Git-Ausgabe). Commit-Nachricht (Strg+Enter, wächst mit dem Text) mit Commit, Commit (Amend), Commit & Push, Commit & Sync – ohne Änderungen, aber mit ausstehenden Commits wird der Knopf zu „Sync“. „Gestaged“ und „Änderungen“ mit Statusbuchstaben, als Liste oder Baum (Doppelklick = Diff, Kontextmenü: stagen, unstagen, verwerfen, öffnen). Graph mit Leiste: angezeigte Zweige (Auto, Alle, Auswahl), zum aktuellen Commit, Fetch (alle Remotes), Pull, Push, Aktualisieren. Der Zweig steht auch in der Statuszeile des Hauptfensters. Signierte Commits (GPG) fragt `gpg-agent` mit seinem eigenen Dialog ab |
 | Debugger | wie „Ausführen und Debuggen“ in VS Code (Strg+Umschalt+D, erscheint beim Start mit F9): Werkzeugleiste (Weiter, Anhalten, Über, Hinein, Heraus, Beenden), „Bei Panic anhalten“, Zustand; **Variablen** als Baum (Kinder laden beim Aufklappen, Aufgeklapptes bleibt über Haltepunkte hinweg offen; Kontextmenü: Überwachen, Wert kopieren); Reiter **Überwacht** (Eingabefeld, Werte im gewählten Rahmen), **Aufrufstapel** (Klick wählt den Rahmen und zeigt die Stelle), **Threads**, **Haltepunkte** (Bedingung, Trefferzahl, Logmeldung, aktivieren, entfernen) |
 | Tastenkürzel | Hilfe → Tastenkürzel: alle Kürzel je Fenster und Menü mit Erklärung, erzeugt aus den Menüs |
+| Über Freya TDE | Hilfe → Über: Logo, Version, Oberfläche (GTK-Version), Rechteinhaber, Lizenz |
+
+Beim Start zeigt Freya TDE einen Startbildschirm mit dem Logo, bis die Fenster bereit sind
+(mindestens gut eine Sekunde; nicht bei `--commands`/`--screenshots`, abschaltbar mit
+`--no-splash`). Das Programmsymbol (das F aus `images/Freya-F.svg`) erscheint in Titelleiste,
+Taskleiste und Alt+Tab; Bilder und Symbole liegen in `ide/assets/`. Der Konfigordner heißt
+`<config>/freya-tde/`; ein alter Ordner `freya-td` wird beim ersten Start übernommen.
+*On start a splash screen with the logo appears; the program icon shows in title bar, task
+bar and Alt+Tab (assets in `ide/assets/`). An old `freya-td` config folder is taken over.*
 
 Projekt-Menü: Code erzeugen (Strg+G), Bauen (Strg+F9, im Hintergrund).
 Start-Menü wie Delphi/Lazarus: Starten/Weiter (F9, im Debugger), Ohne Debugger starten
@@ -44,12 +53,13 @@ arbeitet der Editor ohne diese Funktionen.
 project folder has a `Cargo.toml`: live errors, completion, go to definition.*
 
 ```bash
-cargo run -p freya-td                          # neues, ungespeichertes Projekt
-cargo run -p freya-td -- pfad/app.ptdr         # Projekt öffnen
-cargo run -p freya-td -- --commands cmds.json  # Designer-Befehle (JSON) anwenden
-cargo run -p freya-td -- --generate --show-code # Code erzeugen und im Editor öffnen
-cargo run -p freya-td -- --screenshots shots   # alle Fenster als PNG, dann beenden
-xvfb-run -a cargo test -p freya-td             # Tests (Linux ohne Bildschirm)
+cargo run -p freya-tde                          # neues, ungespeichertes Projekt
+cargo run -p freya-tde -- pfad/app.ptdr         # Projekt öffnen
+cargo run -p freya-tde -- --commands cmds.json  # Designer-Befehle (JSON) anwenden
+cargo run -p freya-tde -- --generate --show-code # Code erzeugen und im Editor öffnen
+cargo run -p freya-tde -- --screenshots shots   # alle Fenster als PNG, dann beenden
+cargo run -p freya-tde -- --no-splash           # ohne Startbildschirm
+xvfb-run -a cargo test -p freya-tde             # Tests (Linux ohne Bildschirm)
 ```
 
 Die Logik hinter den Fenstern liegt ohne Oberfläche in `session` (Auswahl, Platzieren,
@@ -73,25 +83,25 @@ operations with dry run), `Ide::project_files`/`plan_file_op`/`file_op`/`open_pr
 `Ide::repo`/`git_status`/`git_changes`/`git_preview`/`git_run`, `problems`/`Ide::problems`,
 `output`/`Ide::output`, `terminal`, `Ide::terminal_run`/`terminal_text`, `Ide::new_terminal`/`close_terminal`/`select_terminal`/`terminal_count`, `debug` (DAP debugger without UI: `DebugSession`, serializable `Snapshot`, JSON `DebugCommand`s, `wait_for`).*
 
-Unter Linux startet Freya-TD über X11/XWayland (`GDK_BACKEND=x11`), weil Wayland
-Programmen das Positionieren ihrer Fenster verbietet. Git läuft über die `git`-Kommandozeile (`PATH` oder `FREYA_TD_GIT`) mit den Zugangsdaten,
+Unter Linux startet Freya TDE über X11/XWayland (`GDK_BACKEND=x11`), weil Wayland
+Programmen das Positionieren ihrer Fenster verbietet. Git läuft über die `git`-Kommandozeile (`PATH` oder `FREYA_TDE_GIT`) mit den Zugangsdaten,
 SSH-Schlüsseln und Einstellungen des Nutzers. Fragt `git` oder `ssh` nach Passwort oder
-Passphrase, startet es `freya-td` als `GIT_ASKPASS`/`SSH_ASKPASS`; die Frage erscheint als
-Dialog im laufenden Freya-TD, gespeichert wird nichts.
+Passphrase, startet es `freya-tde` als `GIT_ASKPASS`/`SSH_ASKPASS`; die Frage erscheint als
+Dialog im laufenden Freya TDE, gespeichert wird nichts.
 *Git uses the `git` command line; password/passphrase questions appear as a dialog in the
-running Freya-TD (askpass helper), nothing is stored.*
+running Freya TDE (askpass helper), nothing is stored.*
 
 Der Debugger spricht das Debug Adapter Protocol mit `lldb-dap` (LLVM) oder, falls das fehlt,
-mit `gdb -i dap` (ab gdb 14); `FREYA_TD_DAP` nennt einen anderen Adapter. Unter macOS wird
+mit `gdb -i dap` (ab gdb 14); `FREYA_TDE_DAP` nennt einen anderen Adapter. Unter macOS wird
 auch das `lldb-dap` aus Xcode bzw. Homebrew gefunden. Die Rust-Darstellung (String, Vec …)
 kommt aus den Skripten der Toolchain (`rustc --print sysroot`). In der Debug-Konsole wird
 Eingabe als Ausdruck ausgewertet; mit `` ` `` am Anfang geht sie als Befehl an den Debugger.
-*The debugger speaks DAP with `lldb-dap`, else `gdb -i dap` (gdb ≥ 14), or `FREYA_TD_DAP`.
+*The debugger speaks DAP with `lldb-dap`, else `gdb -i dap` (gdb ≥ 14), or `FREYA_TDE_DAP`.
 Debug console input is an expression; a leading `` ` `` sends a debugger command.*
-Den CT-Editor sucht Freya-TD in
-`FREYA_TD_CT_EDITOR`, neben dem Programm, im Repository (`CT-Editor/target/…`) und im `PATH`. Packs werden in `components/`
+Den CT-Editor sucht Freya TDE in
+`FREYA_TDE_CT_EDITOR`, neben dem Programm, im Repository (`CT-Editor/target/…`) und im `PATH`. Packs werden in `components/`
 und `widgets/` neben dem Programm bzw. im Repository gesucht, zusätzlich in
-`FREYA_TD_PACKS` (Pfadliste).
+`FREYA_TDE_PACKS` (Pfadliste).
 
 ## Lizenz / License
 

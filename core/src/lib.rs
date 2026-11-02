@@ -1,4 +1,4 @@
-//! # tdr-core – the Freya-TD component model
+//! # tdr-core – the Freya TDE component model
 //!
 //! The neutral form model everything else builds on: dependency graph,
 //! component packs, code generator, preview and designer. It knows no UI

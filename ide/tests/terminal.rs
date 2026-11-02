@@ -2,7 +2,7 @@
 
 use std::time::{Duration, Instant};
 
-use freya_td::terminal::{TermColor, Terminal};
+use freya_tde::terminal::{TermColor, Terminal};
 
 fn wait_for(terminal: &Terminal, seconds: u64, done: impl Fn(&Terminal) -> bool) -> bool {
     let end = Instant::now() + Duration::from_secs(seconds);

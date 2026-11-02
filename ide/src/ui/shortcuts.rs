@@ -29,7 +29,7 @@ fn description(id: &str) -> &'static str {
         "file.new" => "Legt ein neues Projekt an.",
         "file.open" => "Öffnet eine Projektdatei (.ptdr).",
         "file.save" => "Speichert Projekt und Formulare.",
-        "file.quit" => "Beendet Freya-TD (fragt bei ungespeicherten Änderungen).",
+        "file.quit" => "Beendet Freya TDE (fragt bei ungespeicherten Änderungen).",
         "edit.undo" => "Nimmt die letzte Änderung im Designer zurück.",
         "edit.redo" => "Stellt die zurückgenommene Änderung wieder her.",
         "project.generate" => "Erzeugt den Rust-Code aus den Formularen.",
@@ -91,7 +91,7 @@ fn collect(menu: &Menu, path: &str, scope: &str, out: &mut Vec<Shortcut>) {
     }
 }
 
-/// All shortcuts of Freya-TD, by window.
+/// All shortcuts of Freya TDE, by window.
 pub fn shortcuts() -> Vec<Shortcut> {
     let mut out = Vec::new();
     let bars = [
@@ -206,7 +206,7 @@ pub fn page() -> String {
         .unwrap_or(10)
         + 3;
     let mut text = String::from(
-        "Tastenkürzel von Freya-TD\n\
+        "Tastenkürzel von Freya TDE\n\
          Die Kürzel des Hauptmenüs gelten in allen Fenstern; das eigene Menü eines\n\
          Fensters geht vor (z. B. F5 = Aktualisieren in der Quellcodeverwaltung).\n",
     );

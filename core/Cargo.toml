@@ -1,6 +1,6 @@
 [package]
 name = "tdr-core"
-description = "Freya-TD core: the neutral component model (components, widgets, properties, events, provides/requires)"
+description = "Freya TDE core: the neutral component model (components, widgets, properties, events, provides/requires)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

@@ -22,9 +22,9 @@ use tdr_core::Severity;
 
 pub mod askpass;
 
-/// The `git` program: `FREYA_TD_GIT` or `git` from the `PATH`.
+/// The `git` program: `FREYA_TDE_GIT` or `git` from the `PATH`.
 pub fn program() -> PathBuf {
-    std::env::var_os("FREYA_TD_GIT")
+    std::env::var_os("FREYA_TDE_GIT")
         .filter(|p| !p.is_empty())
         .map_or_else(|| PathBuf::from("git"), PathBuf::from)
 }

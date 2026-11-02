@@ -2,6 +2,7 @@
 //! owns them together with the [`Session`] and refreshes them after every
 //! change.
 
+pub mod about;
 mod code;
 mod convert;
 mod debugger;
@@ -39,6 +40,7 @@ use crate::problems::{Problem, ProblemSeverity, ProblemSource};
 use crate::projects::{CargoProject, ProjectError, ProjectList, ProjectNode};
 use crate::session::{Changes, Session};
 
+use about::AboutWindow;
 use code::CodeWindow;
 use debugger::DebuggerWindow;
 use debugging::Debugging;
@@ -60,7 +62,7 @@ const MAX_COMPLETIONS: usize = 100;
 /// Directories searched for component and backend packs.
 fn pack_dirs() -> Vec<PathBuf> {
     let mut dirs = Vec::new();
-    if let Some(list) = std::env::var_os("FREYA_TD_PACKS") {
+    if let Some(list) = std::env::var_os("FREYA_TDE_PACKS") {
         dirs.extend(std::env::split_paths(&list));
     }
     let exe = std::env::current_exe().ok();
@@ -149,6 +151,7 @@ pub struct Ide {
     git_window: GitWindow,
     debugger: DebuggerWindow,
     shortcuts: ShortcutsWindow,
+    about: AboutWindow,
     /// Breakpoints, watches and the debug session.
     debugging: RefCell<Debugging>,
     /// Where breakpoints and watches are kept (`debug.toml`).
@@ -241,6 +244,7 @@ impl Ide {
             git_window: GitWindow::build(),
             debugger: DebuggerWindow::build(),
             shortcuts: ShortcutsWindow::build(),
+            about: AboutWindow::build(),
             debugging: RefCell::new(Debugging::default()),
             debug_store_file: crate::debug::DebugStore::default_path(),
             repo: RefCell::new(None),
@@ -304,6 +308,7 @@ impl Ide {
         git_window::connect(&ide);
         debugger::connect(&ide);
         shortcuts::connect(&ide);
+        about::connect(&ide);
         // Wie bei Delphi: Strg+G, F9, Strg+Umschalt+G … aus jedem Fenster.
         for (name, window) in ide.windows() {
             if name != window::MAIN {
@@ -377,7 +382,7 @@ impl Ide {
             );
         }
         if let Err(e) = desktop.save() {
-            eprintln!("freya-td: Fensteranordnung nicht gespeichert: {e}");
+            eprintln!("freya-tde: Fensteranordnung nicht gespeichert: {e}");
         }
     }
 
@@ -602,13 +607,13 @@ impl Ide {
     // --- Git ------------------------------------------------------------------------
 
     /// Answers git/ssh questions with a dialog (only in the real program:
-    /// the helper is `freya-td` itself).
+    /// the helper is `freya-tde` itself).
     fn askpass(&self) -> Option<Askpass> {
         if let Some(askpass) = self.askpass.borrow().clone() {
             return Some(askpass);
         }
         let exe = std::env::current_exe().ok()?;
-        if exe.file_stem().and_then(|s| s.to_str()) != Some("freya-td") {
+        if exe.file_stem().and_then(|s| s.to_str()) != Some("freya-tde") {
             return None;
         }
         let sender = self.askpass_questions.borrow().clone()?;
@@ -1113,7 +1118,7 @@ impl Ide {
                 }
             }
             _ => self.set_status(&format!(
-                "Geklont nach {} (kein einzelnes Freya-TD-Projekt darin).",
+                "Geklont nach {} (kein einzelnes Freya-TDE-Projekt darin).",
                 dir.display()
             )),
         }
@@ -1423,6 +1428,24 @@ impl Ide {
         self.show_window(window::SHORTCUTS);
     }
 
+    /// Help → About: centred over the main window's screen.
+    pub fn show_about(&self) {
+        let window = &self.about.window;
+        if let Some(screen) = Application::screen_rect() {
+            let size = window.widget().size();
+            window.set_screen_position(
+                screen.x + (screen.width - size.width) / 2,
+                screen.y + (screen.height - size.height) / 2,
+            );
+        }
+        window.show();
+    }
+
+    /// The about window (automation, screenshots).
+    pub fn about_window(&self) -> &RnclWindow {
+        &self.about.window
+    }
+
     pub fn show_window(&self, name: &str) {
         if let Some((_, window)) = self.windows().into_iter().find(|(n, _)| *n == name) {
             window.show();
@@ -1587,7 +1610,7 @@ impl Ide {
         if !self.confirm_discard() {
             return;
         }
-        let filters = [FileFilter::new("Freya-TD-Projekt", &["*.ptdr"])];
+        let filters = [FileFilter::new("Freya-TDE-Projekt", &["*.ptdr"])];
         if let Some(path) =
             dialog::open_file(Some(self.main.window.widget()), "Projekt öffnen", &filters)
         {
@@ -1677,7 +1700,7 @@ impl Ide {
     }
 
     fn open_project_with(&self, path: &Path, ask: bool) {
-        // Relativ angegeben (`freya-td app.ptdr`): der Projektordner wäre leer.
+        // Relativ angegeben (`freya-tde app.ptdr`): der Projektordner wäre leer.
         let path = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
         if self.open_projects().contains(&path) {
             self.activate_project(&path);
@@ -2227,7 +2250,7 @@ impl Ide {
         }
     }
 
-    /// Stops rust-analyzer (project closed, Freya-TD ends).
+    /// Stops rust-analyzer (project closed, Freya TDE ends).
     pub fn stop_lsp(&self) {
         // Ereignisse des alten Servers ab hier verwerfen.
         self.lsp_generation.set(self.lsp_generation.get() + 1);
@@ -2429,7 +2452,7 @@ impl Ide {
         }
     }
 
-    /// Ends Freya-TD (asks about unsaved changes).
+    /// Ends Freya TDE (asks about unsaved changes).
     pub fn quit(&self) -> bool {
         if !self.confirm_discard() {
             return false;
@@ -2452,7 +2475,7 @@ impl Ide {
             .map(|p| format!(" – {}", p.display()))
             .unwrap_or_else(|| " – (nicht gespeichert)".to_owned());
         format!(
-            "Freya-TD – {}{dirty}{path}",
+            "Freya TDE – {}{dirty}{path}",
             session.document().project().name
         )
     }

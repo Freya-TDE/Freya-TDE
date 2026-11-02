@@ -502,7 +502,7 @@ impl Session {
             .ok_or("Das Projekt ist noch nicht gespeichert.")?;
         if !self.doc.project().generate {
             return Err(
-                "Dieses Projekt wird nur verwaltet (aus einer Cargo.toml erstellt); Freya-TD erzeugt dafür keinen Code."
+                "Dieses Projekt wird nur verwaltet (aus einer Cargo.toml erstellt); Freya TDE erzeugt dafür keinen Code."
                     .to_owned(),
             );
         }

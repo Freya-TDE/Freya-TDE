@@ -1,4 +1,4 @@
-# tdr-core – Komponentenmodell von Freya-TD
+# tdr-core – Komponentenmodell von Freya TDE
 
 Das neutrale Formularmodell, auf dem alles Weitere aufbaut (Abhängigkeitsgraph,
 Komponenten-Packs, Codegen, Vorschau, Designer). Kennt kein UI-Toolkit.
@@ -69,7 +69,7 @@ Erzeugtes Projekt / generated project:
 | `src/<form>.gen.rs` | Generator | Struct des Formulars, ein Feld je Komponente, plus `form`-Template des Backends (z. B. `ui()`) |
 | `src/<form>.rs` | Nutzer / user | einmal angelegt, danach nur fehlende Handler-Stubs angehängt |
 
-`*.gen.rs` schreibt nur Freya-TD (schreibgeschützt, mit Prüfsumme). Vorschau = Debug-Build:
+`*.gen.rs` schreibt nur Freya TDE (schreibgeschützt, mit Prüfsumme). Vorschau = Debug-Build:
 
 ```rust
 let report = preview::build(&dir, Some(&generation))?;   // cargo build, JSON-Meldungen

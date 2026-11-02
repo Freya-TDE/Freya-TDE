@@ -3,12 +3,12 @@
 //! subprojects in a folder, and „Projekt aus Cargo.toml erstellen“ with a
 //! preview.
 //!
-//! The list lives in `<config>/freya-td/projects.toml` (see
+//! The list lives in `<config>/freya-tde/projects.toml` (see
 //! [`crate::desktop::config_dir`]); each project keeps its own `.ptdr`.
 //! Paths are absolute. Errors and plans are serializable with stable codes.
 //!
 //! ```
-//! use freya_td::projects::ProjectList;
+//! use freya_tde::projects::ProjectList;
 //!
 //! let list = ProjectList::default();
 //! assert!(list.tree(&[]).is_empty());
@@ -137,7 +137,7 @@ pub struct ProjectList {
 }
 
 impl ProjectList {
-    /// `<config>/freya-td/projects.toml`.
+    /// `<config>/freya-tde/projects.toml`.
     pub fn default_path() -> Option<PathBuf> {
         crate::desktop::config_dir().map(|d| d.join("projects.toml"))
     }
@@ -359,7 +359,7 @@ pub struct CargoProject {
     pub member_of: Option<PathBuf>,
 }
 
-/// A valid Cargo package name from any name (`Freya-TD` → `Freya-TD`,
+/// A valid Cargo package name from any name (`Freya TDE` → `Freya TDE`,
 /// `my app` → `my_app`, `2d` → `p_2d`).
 fn package_name(name: &str) -> String {
     let mut out: String = name

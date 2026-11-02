@@ -7,7 +7,7 @@
 //! relative and use `/` on every system (e.g. `src/main.rs`).
 //!
 //! ```
-//! use freya_td::files::{FileOp, plan};
+//! use freya_tde::files::{FileOp, plan};
 //!
 //! let dir = std::env::temp_dir().join("freya-files-doc");
 //! std::fs::create_dir_all(&dir).unwrap();
@@ -49,7 +49,7 @@ pub struct Entry {
     pub path: String,
     pub name: String,
     pub kind: EntryKind,
-    /// Written by Freya-TD (`*.gen.rs`).
+    /// Written by Freya TDE (`*.gen.rs`).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub generated: bool,
     /// Folders first, then files, each sorted by name (ignoring case).
@@ -334,7 +334,7 @@ pub fn plan(root: &Path, op: &FileOp, protected: &[String]) -> Plan {
                 severity: Severity::Warning,
                 code: "generated",
                 path: path.to_owned(),
-                detail: format!("{path} erzeugt Freya-TD beim nächsten „Code erzeugen“ neu."),
+                detail: format!("{path} erzeugt Freya TDE beim nächsten „Code erzeugen“ neu."),
             });
         }
     };

@@ -33,7 +33,7 @@ pub enum ModelError {
     MoveIntoItself(ComponentName),
     #[error("the root widget of a form cannot be removed")]
     CannotRemoveRoot,
-    #[error("form file format {0} is newer than this version of Freya-TD supports")]
+    #[error("form file format {0} is newer than this version of Freya TDE supports")]
     UnsupportedFormat(u32),
     #[error("invalid package name {0:?}: letters, digits, `-` and `_`, starting with a letter")]
     InvalidPackageName(String),

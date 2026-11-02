@@ -1,6 +1,6 @@
 [package]
-name = "freya-td"
-description = "Freya-TD: visual development environment for Rust (RAD, Delphi/Lazarus style)"
+name = "freya-tde"
+description = "Freya TDE: visual development environment for Rust (RAD, Delphi/Lazarus style)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -11,7 +11,7 @@ keywords = ["rad", "gui", "designer", "ide"]
 categories = ["development-tools", "gui"]
 
 [[bin]]
-name = "freya-td"
+name = "freya-tde"
 path = "src/main.rs"
 
 [dependencies]

@@ -3,7 +3,7 @@
 //!
 //! [`Askpass::start`] listens on a local port (127.0.0.1) with a random
 //! token. Every git command then runs with `GIT_ASKPASS` and `SSH_ASKPASS`
-//! set to a helper program – `freya-td` itself: when [`ENV`] is set,
+//! set to a helper program – `freya-tde` itself: when [`ENV`] is set,
 //! [`helper_main`] connects, hands over the question and prints the answer
 //! for git. The answer is never stored.
 //!
@@ -17,7 +17,7 @@ use std::process::Command;
 use std::sync::Arc;
 
 /// Environment variable with `port:token` for the helper.
-pub const ENV: &str = "FREYA_TD_ASKPASS";
+pub const ENV: &str = "FREYA_TDE_ASKPASS";
 
 type Answer = dyn Fn(&str) -> Option<String> + Send + Sync;
 
@@ -100,8 +100,8 @@ impl Askpass {
 pub fn disable(command: &mut Command) {
     // Ein Programm, das es nicht gibt: ssh und git brechen die Anmeldung ab.
     command
-        .env("GIT_ASKPASS", "freya-td-no-askpass")
-        .env("SSH_ASKPASS", "freya-td-no-askpass")
+        .env("GIT_ASKPASS", "freya-tde-no-askpass")
+        .env("SSH_ASKPASS", "freya-tde-no-askpass")
         .env("SSH_ASKPASS_REQUIRE", "force")
         .env_remove(ENV);
 }

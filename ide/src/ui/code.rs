@@ -283,7 +283,7 @@ impl CodeWindow {
     /// Shows a text without a file in a read-only tab (e.g. a diff);
     /// `key` identifies it, a second call with the same key replaces the text.
     pub fn open_text(&self, key: &str, label: &str, text: &str, language: &str) {
-        let path = PathBuf::from(format!("freya-td:{key}"));
+        let path = PathBuf::from(format!("freya-tde:{key}"));
         let existing = self.files.borrow().iter().position(|f| f.path == path);
         let index = match existing {
             Some(i) => {

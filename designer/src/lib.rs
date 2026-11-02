@@ -1,4 +1,4 @@
-//! # tdr-designer – the Freya-TD designer without UI
+//! # tdr-designer – the Freya TDE designer without UI
 //!
 //! Everything the form designer does, as a library: the UI (and later an
 //! AI) only calls these functions and draws the result.

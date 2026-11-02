@@ -151,7 +151,7 @@ impl ProjectManager {
                 }
             }
             "pm.add_sub" | "pm.add_main" => {
-                let filters = [FileFilter::new("Freya-TD-Projekt", &["*.ptdr"])];
+                let filters = [FileFilter::new("Freya-TDE-Projekt", &["*.ptdr"])];
                 if let Some(file) = dialog::open_file(Some(window), "Projekt hinzufügen", &filters)
                 {
                     let parent = (id == "pm.add_sub").then_some(target).flatten();
@@ -284,7 +284,7 @@ impl ProjectManager {
             Some(window),
             "Projekt aus Cargo.toml",
             &format!(
-                "{}\n\nDiese Projekte werden nur verwaltet: Freya-TD erzeugt keinen Code darin.\nAnlegen?",
+                "{}\n\nDiese Projekte werden nur verwaltet: Freya TDE erzeugt keinen Code darin.\nAnlegen?",
                 lines.join("\n")
             ),
         ) {

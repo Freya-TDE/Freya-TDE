@@ -1,7 +1,7 @@
 //! Debugger – a Debug Adapter Protocol (DAP) client without UI.
 //!
 //! The adapter runs as its own process over stdio: `lldb-dap` (LLVM), or
-//! `gdb -i dap` (gdb ≥ 14) when there is no lldb-dap; `FREYA_TD_DAP` names
+//! `gdb -i dap` (gdb ≥ 14) when there is no lldb-dap; `FREYA_TDE_DAP` names
 //! another one ([`Adapter::find`]). A [`DebugSession`] starts the program
 //! under the adapter and keeps everything the UI shows as a serializable
 //! [`Snapshot`]: state, threads, call stack, variables, watch expressions,
@@ -116,10 +116,10 @@ impl Adapter {
         Self { kind, program }
     }
 
-    /// `$FREYA_TD_DAP`, else `lldb-dap` (also `lldb-vscode`, Xcode's and
+    /// `$FREYA_TDE_DAP`, else `lldb-dap` (also `lldb-vscode`, Xcode's and
     /// Homebrew's on macOS), else gdb ≥ 14.
     pub fn find() -> Result<Self, DebugError> {
-        if let Some(program) = std::env::var_os("FREYA_TD_DAP").filter(|p| !p.is_empty()) {
+        if let Some(program) = std::env::var_os("FREYA_TDE_DAP").filter(|p| !p.is_empty()) {
             return Ok(Self::from_program(program));
         }
         if let Some(program) = Self::find_kind(AdapterKind::Lldb) {
@@ -134,7 +134,7 @@ impl Adapter {
         Err(DebugError::new(
             "adapter_not_found",
             "Kein Debugger gefunden: lldb-dap (LLVM) oder gdb ab Version 14 installieren \
-             oder FREYA_TD_DAP setzen.",
+             oder FREYA_TDE_DAP setzen.",
         ))
     }
 
@@ -1248,8 +1248,8 @@ impl DebugSession {
                 &mut data,
                 "initialize",
                 json!({
-                    "clientID": "freya-td",
-                    "clientName": "Freya-TD",
+                    "clientID": "freya-tde",
+                    "clientName": "Freya TDE",
                     "adapterID": adapter.name(),
                     "pathFormat": "path",
                     "linesStartAt1": true,

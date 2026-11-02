@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use freya_td::git::{After, Change, Git, GitOp, LogRefs};
+use freya_tde::git::{After, Change, Git, GitOp, LogRefs};
 
 fn write(dir: &Path, path: &str, text: &str) {
     let file = dir.join(path);
@@ -427,7 +427,7 @@ fn git_round_trip() {
     assert!(cloned.root().join("LICENSE").is_file());
 
     // Persönliche Angaben in .git/config: setzen, Vorschau, wieder entfernen.
-    use freya_td::git::Identity;
+    use freya_tde::git::Identity;
     let state = git.identity().unwrap();
     assert_eq!(state.local, Identity::default());
     assert_eq!(state.effective.name.as_deref(), Some("Test"));

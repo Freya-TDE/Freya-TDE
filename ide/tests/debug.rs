@@ -4,7 +4,7 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use freya_td::debug::{
+use freya_tde::debug::{
     Adapter, AdapterKind, Breakpoint, ConsoleKind, DebugCommand, DebugSession, DebugSettings,
     LaunchConfig, Snapshot, State,
 };

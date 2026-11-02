@@ -5,7 +5,7 @@ use std::path::Path;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-use freya_td::lsp::{DiagnosticSeverity, LspClient, LspEvent};
+use freya_tde::lsp::{DiagnosticSeverity, LspClient, LspEvent};
 
 const MAIN: &str = r#"fn helper() -> String {
     String::from("x")
@@ -37,7 +37,7 @@ fn wait_for(
 
 #[test]
 fn rust_analyzer_round_trip() {
-    if std::process::Command::new(freya_td::lsp::program())
+    if std::process::Command::new(freya_tde::lsp::program())
         .arg("--version")
         .output()
         .is_err()

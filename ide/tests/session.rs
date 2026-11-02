@@ -4,8 +4,8 @@
 use tdr_core::{ComponentName, ProjectFile, TypeRef, TypeRegistry, builtin};
 use tdr_designer::{Command, Document, Point};
 
-use freya_td::Session;
-use freya_td::session::handler_line;
+use freya_tde::Session;
+use freya_tde::session::handler_line;
 
 fn name(n: &str) -> ComponentName {
     ComponentName::new(n).unwrap()

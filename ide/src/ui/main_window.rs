@@ -110,14 +110,17 @@ pub(super) fn menu_bar() -> MenuBar {
         ),
         (
             "Hilfe".into(),
-            Menu::new().item("help.shortcuts", "Tastenkürzel", None),
+            Menu::new()
+                .item("help.shortcuts", "Tastenkürzel", None)
+                .separator()
+                .item("help.about", "Über Freya TDE", None),
         ),
     ]
 }
 
 impl MainWindow {
     pub fn build() -> Self {
-        let window = RnclWindow::new("Freya-TD");
+        let window = RnclWindow::new("Freya TDE");
         window.set_menu_bar(menu_bar());
         let pointer = RnclButton::new(&window, "Zeiger");
         pointer
@@ -314,6 +317,7 @@ pub fn connect(ide: &Rc<Ide>) {
             "window.debugger" => ide.debug_menu("dbg.show"),
             "window.debug_console" => ide.debug_menu("dbg.console"),
             "help.shortcuts" => ide.show_shortcuts(),
+            "help.about" => ide.show_about(),
             "window.designer" => ide.show_window(window::DESIGNER),
             "window.inspector" => ide.show_window(window::INSPECTOR),
             "window.structure" => ide.show_window(window::STRUCTURE),
@@ -330,7 +334,7 @@ pub fn connect(ide: &Rc<Ide>) {
             "window.reset" => ide.reset_desktop(),
             _ => {}
         }));
-    // Schließen des Hauptfensters beendet Freya-TD.
+    // Schließen des Hauptfensters beendet Freya TDE.
     let weak = Rc::downgrade(ide);
     main.window
         .on_close_requested(move || weak.upgrade().is_none_or(|ide| ide.quit()));

@@ -5,7 +5,7 @@
 //! [`Terminal::text`].
 //!
 //! ```no_run
-//! use freya_td::terminal::Terminal;
+//! use freya_tde::terminal::Terminal;
 //!
 //! let terminal = Terminal::start(std::path::Path::new("."), 24, 80).unwrap();
 //! terminal.write_text("cargo --version\r");

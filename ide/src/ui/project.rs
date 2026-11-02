@@ -2,7 +2,7 @@
 //! click opens a file (a form in the designer together with its `.rs`), the
 //! context menu creates, imports, copies, renames and deletes. The logic is
 //! [`crate::files`]; the tree is rescanned every few seconds, so changes
-//! made outside Freya-TD show up as well.
+//! made outside Freya TDE show up as well.
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -116,10 +116,10 @@ fn warnings(plan: &Plan) -> String {
         .collect()
 }
 
-/// The CT-Editor program: `FREYA_TD_CT_EDITOR`, next to Freya-TD, in the
+/// The CT-Editor program: `FREYA_TDE_CT_EDITOR`, next to Freya TDE, in the
 /// repository (development) or in the `PATH`.
 fn ct_editor() -> PathBuf {
-    if let Some(path) = std::env::var_os("FREYA_TD_CT_EDITOR").filter(|p| !p.is_empty()) {
+    if let Some(path) = std::env::var_os("FREYA_TDE_CT_EDITOR").filter(|p| !p.is_empty()) {
         return PathBuf::from(path);
     }
     let file = format!("ct-editor{}", std::env::consts::EXE_SUFFIX);
@@ -592,7 +592,7 @@ pub fn connect(ide: &Rc<Ide>) {
     manager
         .tree
         .on_context_menu(move |id, x, y| manager_context((id, x, y)));
-    // Änderungen außerhalb von Freya-TD (CT-Editor, Git, Dateimanager).
+    // Änderungen außerhalb von Freya TDE (CT-Editor, Git, Dateimanager).
     project
         .timer
         .on_timeout(with0(ide, |ide| ide.files_changed_outside()));

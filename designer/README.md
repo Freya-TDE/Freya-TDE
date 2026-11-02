@@ -1,4 +1,4 @@
-# tdr-designer – Designer-Logik von Freya-TD
+# tdr-designer – Designer-Logik von Freya TDE
 
 Alles, was der Formular-Designer tut, als Bibliothek ohne Oberfläche. Die Oberfläche
 (`ide/`, RUF) und später eine KI rufen nur diese Funktionen auf und zeichnen das Ergebnis.

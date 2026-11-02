@@ -3,7 +3,7 @@
 //! readers notice changes by [`Output::version`].
 //!
 //! ```
-//! use freya_td::output::{Output, channel};
+//! use freya_tde::output::{Output, channel};
 //!
 //! let output = Output::new();
 //! output.line(channel::BUILD, "> cargo build");

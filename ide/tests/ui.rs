@@ -54,7 +54,7 @@ fn main() {
         }
     }
     let _app = Application::new();
-    let ide = freya_td::Ide::start(None);
+    let ide = freya_tde::Ide::start(None);
     let surface = ide.design_surface();
 
     // Palette bewaffnen und in das Formular klicken: Button wird platziert.
@@ -121,9 +121,16 @@ fn main() {
     assert!(ide.session().form().unwrap().contains(&name("hint")));
     println!("test run_commands ... ok");
 
+    // Hilfe → Über.
+    ide.show_about();
+    assert!(ide.about_window().widget().is_visible());
+    assert!(freya_tde::ui::about::AboutWindow::lines()[0] == "Freya TDE");
+    ide.about_window().hide();
+    println!("test about ... ok");
+
     // Doppelklick im Designer: Handler anlegen, Code erzeugen, hinspringen.
     let project_dir = home.join("shop");
-    let session = freya_td::Session::create(
+    let session = freya_tde::Session::create(
         &project_dir,
         "shop",
         "none",
@@ -131,7 +138,7 @@ fn main() {
     )
     .unwrap();
     drop(session);
-    let ide = freya_td::Ide::start(Some(&project_dir.join("shop.ptdr")));
+    let ide = freya_tde::Ide::start(Some(&project_dir.join("shop.ptdr")));
     let surface = ide.design_surface();
     ide.arm(Some(builtin::button()));
     let client = {
@@ -161,7 +168,7 @@ fn main() {
     let mut passed = 6;
 
     // Projektfenster: Dateibaum und Dateioperationen (wie über das Kontextmenü).
-    use freya_td::files::{Entry, FileOp};
+    use freya_tde::files::{Entry, FileOp};
     fn paths(entries: &[Entry]) -> Vec<String> {
         entries
             .iter()
@@ -224,7 +231,7 @@ fn main() {
     println!("test project_files ... ok");
 
     // Git: Repository anlegen, Status mit Markierungen, stagen, Commit.
-    use freya_td::git::{After, Change, GitOp};
+    use freya_tde::git::{After, Change, GitOp};
     if std::process::Command::new("git")
         .arg("--version")
         .output()
@@ -249,7 +256,7 @@ fn main() {
         let log = ide.repo().unwrap().log(10).unwrap();
         assert_eq!(log[0].subject, "Initial commit");
         // Änderungsmarken im Editor: verglichen mit dem Git-Index.
-        use freya_td::git::LineChangeKind;
+        use freya_tde::git::LineChangeKind;
         let form_rs = project_dir.join("src/main_form.rs");
         ide.open_source(&form_rs, 1);
         let open = ide.code_file().unwrap();
@@ -285,7 +292,7 @@ fn main() {
             ide.code_file()
                 .is_some_and(|p| p.to_string_lossy().contains("diff:u:README.md"))
         );
-        ide.set_graph_refs(freya_td::git::LogRefs::All);
+        ide.set_graph_refs(freya_tde::git::LogRefs::All);
         assert!(
             ide.git_output().contains("> git commit -F -"),
             "{}",
@@ -293,7 +300,7 @@ fn main() {
         );
         assert_eq!(
             ide.git_output(),
-            ide.output().text(freya_td::output::channel::GIT)
+            ide.output().text(freya_tde::output::channel::GIT)
         );
         ide.git_show_output();
         ide.open_project_file("src/main_form.ftdr");
@@ -304,7 +311,7 @@ fn main() {
     }
 
     // rust-analyzer: ein Fehler im Editor erscheint als Marke am Rand.
-    if std::process::Command::new(freya_td::lsp::program())
+    if std::process::Command::new(freya_tde::lsp::program())
         .arg("--version")
         .output()
         .is_ok()
@@ -326,7 +333,7 @@ fn main() {
         let problems = ide.problems();
         assert!(
             problems.iter().any(|p| p.line == Some(line)
-                && p.source == freya_td::problems::ProblemSource::RustAnalyzer
+                && p.source == freya_tde::problems::ProblemSource::RustAnalyzer
                 && p.file.as_deref() == Some(file.as_path())),
             "{problems:?}"
         );
@@ -413,8 +420,8 @@ fn main() {
     }
 
     // Debugger: Haltepunkt per Klick in den Rand, F9, Schritt, Ausdruck, Ende.
-    if freya_td::debug::Adapter::find().is_ok() {
-        use freya_td::debug::State;
+    if freya_tde::debug::Adapter::find().is_ok() {
+        use freya_tde::debug::State;
         let demo_dir = project_dir.join("tools/dbgdemo");
         std::fs::create_dir_all(demo_dir.join("src")).unwrap();
         std::fs::write(
@@ -478,8 +485,12 @@ fn main() {
         // Bildschirmfotos zum Ansehen: FREYA_UI_SHOTS=<ordner>.
         if let Some(dir) = std::env::var_os("FREYA_UI_SHOTS") {
             ide.show_shortcuts();
+            ide.show_about();
             pump_until(1, || false);
             ide.screenshots(std::path::Path::new(&dir));
+            ide.about_window()
+                .widget()
+                .save_screenshot(std::path::Path::new(&dir).join("about.png"));
         }
         ide.debug_menu("start.run");
         assert!(pump_until(30, || ide
@@ -494,8 +505,8 @@ fn main() {
             .code_execution_line(&main_rs)
             .is_none()));
         // Die Haltepunkte bleiben für das Projekt gespeichert.
-        let store = freya_td::debug::DebugStore::load(
-            &freya_td::debug::DebugStore::default_path().unwrap(),
+        let store = freya_tde::debug::DebugStore::load(
+            &freya_tde::debug::DebugStore::default_path().unwrap(),
         );
         assert_eq!(store.get(&demo).breakpoints.len(), 1);
         println!("test debugger ... ok");
