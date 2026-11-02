@@ -53,13 +53,13 @@ mit Vorschau: `Git::preview`, `Git::run`), `Ide::repo`, `Ide::git_status`, `Ide:
 `output`/`Ide::output` (Ausgabekanäle), `projects` (globale Projektliste mit Haupt- und
 Unterprojekten, Suche nach Unterprojekten, „Projekt aus Cargo.toml erstellen“ mit Vorschau),
 `git::Identity`/`GitOp::SetIdentity` (Autor, E-Mail, Signierschlüssel in `.git/config`), `terminal` (Shell im Pseudo-Terminal ohne
-Oberfläche), `Ide::terminal_run`, `Ide::terminal_text` (wirken auf das sichtbare Terminal), `Ide::new_terminal`/`close_terminal`/`select_terminal`/`terminal_count`.
+Oberfläche), `Ide::terminal_run`, `Ide::terminal_text` (wirken auf das sichtbare Terminal), `Ide::new_terminal`/`close_terminal`/`select_terminal`/`terminal_count`, `debug` (Debugger über DAP ohne Oberfläche: `DebugSession` mit serialisierbarem `Snapshot` – Zustand, Threads, Aufrufstapel, Variablen, Überwachte Ausdrücke, Haltepunkt-Status, Debug-Konsole –, Befehle als JSON `DebugCommand`, `wait_for`; Haltepunkte und Ausdrücke pro Nutzer in `debug.toml`).
 *Automation (tests, AI): `Ide::run_commands`, `Ide::design_surface`, `Ide::screenshots`,
 `Ide::code_text`/`set_code_text`/`code_marks`, `lsp::LspClient`, `files` (file tree and file
 operations with dry run), `Ide::project_files`/`plan_file_op`/`file_op`/`open_project_file`,
 `git` (status, log, diff, graph as data; Git operations as JSON with preview),
 `Ide::repo`/`git_status`/`git_changes`/`git_preview`/`git_run`, `problems`/`Ide::problems`,
-`output`/`Ide::output`, `terminal`, `Ide::terminal_run`/`terminal_text`, `Ide::new_terminal`/`close_terminal`/`select_terminal`/`terminal_count`.*
+`output`/`Ide::output`, `terminal`, `Ide::terminal_run`/`terminal_text`, `Ide::new_terminal`/`close_terminal`/`select_terminal`/`terminal_count`, `debug` (DAP debugger without UI: `DebugSession`, serializable `Snapshot`, JSON `DebugCommand`s, `wait_for`).*
 
 Unter Linux startet Freya-TD über X11/XWayland (`GDK_BACKEND=x11`), weil Wayland
 Programmen das Positionieren ihrer Fenster verbietet. Git läuft über die `git`-Kommandozeile (`PATH` oder `FREYA_TD_GIT`) mit den Zugangsdaten,
@@ -68,6 +68,14 @@ Passphrase, startet es `freya-td` als `GIT_ASKPASS`/`SSH_ASKPASS`; die Frage ers
 Dialog im laufenden Freya-TD, gespeichert wird nichts.
 *Git uses the `git` command line; password/passphrase questions appear as a dialog in the
 running Freya-TD (askpass helper), nothing is stored.*
+
+Der Debugger spricht das Debug Adapter Protocol mit `lldb-dap` (LLVM) oder, falls das fehlt,
+mit `gdb -i dap` (ab gdb 14); `FREYA_TD_DAP` nennt einen anderen Adapter. Unter macOS wird
+auch das `lldb-dap` aus Xcode bzw. Homebrew gefunden. Die Rust-Darstellung (String, Vec …)
+kommt aus den Skripten der Toolchain (`rustc --print sysroot`). In der Debug-Konsole wird
+Eingabe als Ausdruck ausgewertet; mit `` ` `` am Anfang geht sie als Befehl an den Debugger.
+*The debugger speaks DAP with `lldb-dap`, else `gdb -i dap` (gdb ≥ 14), or `FREYA_TD_DAP`.
+Debug console input is an expression; a leading `` ` `` sends a debugger command.*
 Den CT-Editor sucht Freya-TD in
 `FREYA_TD_CT_EDITOR`, neben dem Programm, im Repository (`CT-Editor/target/…`) und im `PATH`. Packs werden in `components/`
 und `widgets/` neben dem Programm bzw. im Repository gesucht, zusätzlich in
