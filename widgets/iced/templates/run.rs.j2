@@ -1,0 +1,39 @@
+{#- iced event loop: the first form (the main form) is the program's state;
+    the other forms keep their state in `app`. -#}
+{%- set ui = forms | rejectattr("data_module") | list %}
+{%- if ui %}
+{%- set main = ui[0] %}
+struct FreyaApp({{ main.name }}::{{ main.struct }});
+impl FreyaApp {
+    fn update(&mut self, message: {{ main.name }}::Message) -> iced::Task<{{ main.name }}::Message> {
+        self.0.update(message)
+    }
+    fn view(&self) -> iced::Element<'_, {{ main.name }}::Message> {
+        self.0.view()
+    }
+    fn title(&self) -> String {
+        self.0.title()
+    }
+    fn subscription(&self) -> iced::Subscription<{{ main.name }}::Message> {
+        self.0.subscription()
+    }
+}
+// iced ruft `boot` einmal beim Start; der Zustand wandert dabei hinein.
+let form = std::cell::Cell::new(Some({{ app }}.{{ main.name }}));
+iced::application(
+    move || {
+        let mut form = form.take().expect("iced starts the program once");
+        form.freya_created();
+        FreyaApp(form)
+    },
+    FreyaApp::update,
+    FreyaApp::view,
+)
+.title(FreyaApp::title)
+.subscription(FreyaApp::subscription)
+.window({{ main.name }}::{{ main.struct }}::window_settings())
+.exit_on_close_request({{ main.name }}::{{ main.struct }}::EXIT_ON_CLOSE)
+.run()
+.map_err(|e| e.to_string())?;
+{%- endif %}
+Ok(())

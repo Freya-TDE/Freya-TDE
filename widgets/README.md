@@ -7,11 +7,11 @@ Visuelle Widgets und Backend-Paletten, aufbauend auf `tdr-core` (der gemeinsame 
 |---|---|---|
 | `gtk4` | fertig / done | GTK 4 über gtk4-rs (Linux, Windows, macOS); Kern-Widgets plus Palette „GTK“: RadioButton, Switch, SpinButton, Scale, ProgressBar, DropDown, ListBox, TextView, Notebook, Frame, Image, Separator, LinkButton, MainMenu |
 | `egui` | fertig / done | egui 0.37 mit eframe (Immediate Mode); Kern-Widgets plus Palette „egui“: RadioButton, Switch, DragValue, Slider, ProgressBar, ComboBox, ListBox, TextEdit, Hyperlink, Separator, CollapsingHeader, Tabs, MainMenu |
-| `iced` | geplant / planned | |
+| `iced` | fertig / done | iced 0.14 (Elm-Architektur); Kern-Widgets plus Palette „iced“: RadioButton, Toggler, Slider, ProgressBar, PickList, ListBox, TextEditor, Rule, GroupBox, Tabs |
 | `slint` | geplant / planned (Lizenz prüfen / check license) | |
 
 Neue Projekte nutzen `gtk4`, wenn das Pack gefunden wird; „Datei → Neues Projekt mit Oberfläche“ wählt ein
-anderes (GTK 4, egui, ohne Oberfläche).
+anderes (GTK 4, egui, iced, ohne Oberfläche).
 *New projects use `gtk4`; File → New project with UI picks another backend.*
 
 ## GTK 4
@@ -79,6 +79,23 @@ impl MainForm {
 - Hilfen in `app.gen.rs` (Template `app`): `Control<T>`, `switch`, `shortcut`, `menu_bar`.
 - Test: `xvfb-run -a cargo test -p tdr-core --test backend_egui` baut ein Projekt mit allen Widgets, startet es
   und klickt mit `xdotool` auf Knopf und Menü (`FREYA_TDE_SHOT=<ordner>` speichert ein Bild).
+
+## iced
+
+Elm-Architektur: das Formular ist der Zustand, jede Eingabe wird eine Nachricht (`main_form::Message`,
+z. B. `ok_button_click`, `name_edit_input(String)`), `update` übernimmt sie in den Zustand und ruft den
+Handler, `view` baut daraus die Oberfläche. Widgets sind wie bei egui Felder `crate::app::Control<T>`;
+ein Handler ändert den Zustand (`self.greeting.value = …`, `self.window.caption = …`).
+*Elm architecture: every input is a `Message`; `update` stores it and calls the handler, `view` builds the UI.*
+
+- `TextEditor` hält `iced::widget::text_editor::Content` (`self.notes.text()` liefert den Text).
+- `Tabs` zeigt Reiterknöpfe und die Seite `page`, `GroupBox` einen Rahmen mit Titel.
+- Layouts: senkrecht, waagerecht, Raster (Zeilen aus je `columns` Kindern), Stapel (erstes Kind), absolut
+  (`stack` mit versetzten Kindern); `stretch` dehnt. `enabled` wirkt auf Eingabe-Widgets, nicht auf Container.
+- Kein Hauptmenü und keine Zahlen-Drehfelder: iced hat keine; ebenso kein Bild-Widget (bräuchte Bildlader).
+- Gezeigt wird das erste Formular; `on_close` entscheidet über das Schließen (`iced::exit()`).
+- Test: `xvfb-run -a cargo test -p tdr-core --test backend_iced` baut ein Projekt mit allen Widgets, startet es und
+  klickt mit `xdotool` zweimal auf den Knopf.
 
 ## Backend-Pack / backend pack
 

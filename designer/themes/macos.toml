@@ -184,3 +184,56 @@ height = 120
 min-width = 200
 padding-x = 0
 header = 34
+
+# --- iced (widgets/iced)
+[widgets."backend:iced/RadioButton"]
+height = 24
+min-width = 24
+padding-x = 0
+
+[widgets."backend:iced/Toggler"]
+height = 22
+min-width = 40
+padding-x = 0
+
+[widgets."backend:iced/Slider"]
+height = 24
+min-width = 140
+padding-x = 0
+
+[widgets."backend:iced/ProgressBar"]
+height = 30
+min-width = 120
+padding-x = 0
+
+[widgets."backend:iced/PickList"]
+height = 32
+min-width = 120
+padding-x = 10
+
+[widgets."backend:iced/ListBox"]
+height = 124
+min-width = 140
+padding-x = 8
+
+[widgets."backend:iced/TextEditor"]
+height = 96
+min-width = 160
+padding-x = 6
+
+[widgets."backend:iced/Rule"]
+height = 5
+min-width = 20
+padding-x = 0
+
+[widgets."backend:iced/GroupBox"]
+height = 80
+min-width = 120
+padding-x = 0
+header = 22
+
+[widgets."backend:iced/Tabs"]
+height = 120
+min-width = 200
+padding-x = 0
+header = 40

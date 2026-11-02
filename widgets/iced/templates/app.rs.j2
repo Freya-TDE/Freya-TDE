@@ -1,0 +1,83 @@
+{#- iced: shared helpers of the generated code, appended to app.gen.rs. -#}
+/// The state of a widget: iced builds the view from these values, so a
+/// handler changes the widget by changing them (`self.ok_button.enabled =
+/// false`, `self.greeting.value = …`). `value` is reachable directly through
+/// `Deref` (`self.name_edit.trim()`).
+#[allow(dead_code)]
+#[derive(Debug)]
+pub struct Control<T> {
+    /// What the widget shows or edits (text, checked, number, selection …).
+    pub value: T,
+    /// Caption of buttons, check boxes, frames; title of the window.
+    pub caption: String,
+    /// Entries of lists and combo boxes; titles of tabs.
+    pub items: Vec<String>,
+    pub enabled: bool,
+    pub visible: bool,
+    /// Hint shown on hover (empty = none).
+    pub tooltip: String,
+}
+
+#[allow(dead_code)]
+impl<T> Control<T> {
+    pub fn new(value: T) -> Self {
+        Self {
+            value,
+            caption: String::new(),
+            items: Vec::new(),
+            enabled: true,
+            visible: true,
+            tooltip: String::new(),
+        }
+    }
+
+    pub fn with_caption(mut self, caption: impl Into<String>) -> Self {
+        self.caption = caption.into();
+        self
+    }
+
+    pub fn with_items<S: ToString>(mut self, items: Vec<S>) -> Self {
+        self.items = items.iter().map(ToString::to_string).collect();
+        self
+    }
+
+    pub fn with_state(mut self, enabled: bool, visible: bool, tooltip: &str) -> Self {
+        self.enabled = enabled;
+        self.visible = visible;
+        self.tooltip = tooltip.to_owned();
+        self
+    }
+
+    /// `element` as shown: nothing if hidden, with tooltip if one is set.
+    pub fn show<'a, M: 'a>(&'a self, element: iced::Element<'a, M>) -> iced::Element<'a, M> {
+        use iced::widget::{container, space, text, tooltip};
+        if !self.visible {
+            return space().into();
+        }
+        if self.tooltip.is_empty() {
+            element
+        } else {
+            tooltip(
+                element,
+                container(text(self.tooltip.as_str()))
+                    .padding(4)
+                    .style(container::rounded_box),
+                tooltip::Position::Bottom,
+            )
+            .into()
+        }
+    }
+}
+
+impl<T> std::ops::Deref for Control<T> {
+    type Target = T;
+    fn deref(&self) -> &T {
+        &self.value
+    }
+}
+
+impl<T> std::ops::DerefMut for Control<T> {
+    fn deref_mut(&mut self) -> &mut T {
+        &mut self.value
+    }
+}

@@ -1,0 +1,418 @@
+{#- iced: the form as an Elm-style program (appended to <form>.gen.rs).
+    Every input is a `Message`; `update` changes the state and calls the
+    handlers in <form>.rs; `view` builds the UI, one method
+    `freya_view_<name>` per container. -#}
+{%- set containers = ["core/Form", "core/Container", "backend:iced/GroupBox", "backend:iced/Tabs"] %}
+{#- Widgets that keep their natural width even with align Fill. -#}
+{%- set natural = ["core/Label", "core/CheckBox", "backend:iced/RadioButton", "backend:iced/Toggler"] %}
+{#- Wie die Theme-Tabelle des Designers (designer/themes/linux.toml): Rand 12, Abstand 8. -#}
+{%- set default_layout = {"kind": "vertical", "spacing": 8, "padding": {"left": 12, "top": 12, "right": 12, "bottom": 12}} %}
+
+{%- macro padding(p) -%}
+iced::Padding { top: {{ p.top }} as f32, right: {{ p.right }} as f32, bottom: {{ p.bottom }} as f32, left: {{ p.left }} as f32 }
+{%- endmacro %}
+
+{#- The widget `c` as an expression that converts into an Element. -#}
+{%- macro widget(c, fill) -%}
+{%- set t = c.type -%}
+{%- if t == "core/Label" -%}
+iced::widget::text(self.{{ c.name }}.value.as_str())
+{%- elif t == "core/Button" -%}
+iced::widget::button(
+    {%- if fill -%}
+    iced::widget::text(self.{{ c.name }}.caption.as_str()).width(iced::Fill).align_x(iced::alignment::Horizontal::Center)
+    {%- else -%}
+    iced::widget::text(self.{{ c.name }}.caption.as_str())
+    {%- endif -%}
+).on_press_maybe(self.{{ c.name }}.enabled.then_some(Message::{{ c.name }}_click)){% if fill %}.width(iced::Fill){% endif %}
+{%- elif t == "core/Edit" -%}
+iced::widget::text_input({{ c.rust.placeholder }}, self.{{ c.name }}.value.as_str())
+    {%- if not c.props.read_only %}.on_input_maybe(self.{{ c.name }}.enabled.then_some(Message::{{ c.name }}_input)){% endif -%}
+    .on_submit(Message::{{ c.name }}_submit)
+    {%- if c.props.password %}.secure(true){% endif %}
+{%- elif t == "core/CheckBox" -%}
+iced::widget::checkbox(self.{{ c.name }}.value).label(self.{{ c.name }}.caption.as_str()).on_toggle_maybe(self.{{ c.name }}.enabled.then_some(Message::{{ c.name }}_toggle))
+{%- elif t == "backend:iced/RadioButton" -%}
+iced::widget::radio(self.{{ c.name }}.caption.as_str(), true, self.{{ c.name }}.value.then_some(true), |_| Message::{{ c.name }}_select)
+{%- elif t == "backend:iced/Toggler" -%}
+iced::widget::toggler(self.{{ c.name }}.value).label(self.{{ c.name }}.caption.as_str()).on_toggle_maybe(self.{{ c.name }}.enabled.then_some(Message::{{ c.name }}_toggle))
+{%- elif t == "backend:iced/Slider" -%}
+iced::widget::row(vec![
+    iced::widget::slider({{ c.rust.minimum }}..={{ c.rust.maximum }}, self.{{ c.name }}.value, Message::{{ c.name }}_change).step({{ c.rust.step }}).into(),
+    {%- if c.props.show_value %}
+    iced::widget::text(format!("{}", self.{{ c.name }}.value)).into(),
+    {%- endif %}
+]).spacing(8).align_y(iced::alignment::Vertical::Center)
+{%- elif t == "backend:iced/ProgressBar" -%}
+{
+    let mut parts: Vec<iced::Element<'_, Message>> = Vec::new();
+    if !self.{{ c.name }}.caption.is_empty() {
+        parts.push(iced::widget::text(self.{{ c.name }}.caption.as_str()).size(12).into());
+    }
+    parts.push(iced::widget::progress_bar(0.0..=1.0, self.{{ c.name }}.value).into());
+    iced::widget::column(parts).spacing(2)
+}
+{%- elif t == "backend:iced/PickList" -%}
+iced::widget::pick_list(self.{{ c.name }}.items.as_slice(), self.{{ c.name }}.items.get(self.{{ c.name }}.value), Message::{{ c.name }}_select){% if fill %}.width(iced::Fill){% endif %}
+{%- elif t == "backend:iced/ListBox" -%}
+{
+    let rows: Vec<iced::Element<'_, Message>> = self
+        .{{ c.name }}
+        .items
+        .iter()
+        .enumerate()
+        .map(|(index, item)| {
+            let style: fn(&iced::Theme, iced::widget::button::Status) -> iced::widget::button::Style =
+                if self.{{ c.name }}.value == index as i32 {
+                    iced::widget::button::primary
+                } else {
+                    iced::widget::button::text
+                };
+            iced::widget::button(iced::widget::text(item.as_str()))
+                .width(iced::Fill)
+                .style(style)
+                .on_press_maybe(self.{{ c.name }}.enabled.then_some(Message::{{ c.name }}_select(index)))
+                .into()
+        })
+        .collect();
+    iced::widget::container(iced::widget::scrollable(iced::widget::column(rows)).height(120))
+        .style(iced::widget::container::bordered_box)
+        .padding(2)
+}
+{%- elif t == "backend:iced/TextEditor" -%}
+iced::widget::text_editor(&self.{{ c.name }}.value)
+    {%- if not c.props.read_only %}.on_action(Message::{{ c.name }}_edit){% endif -%}
+    .height({{ c.props.rows * 24 }})
+{%- elif t == "backend:iced/Rule" -%}
+iced::widget::rule::{{ "vertical" if c.props.vertical else "horizontal" }}(1)
+{%- else -%}
+iced::widget::text("{{ c.type_name }}")
+{%- endif -%}
+{%- endmacro %}
+
+{#- The child `c` as an Element (container: its own view method). -#}
+{%- macro child(c, fill) -%}
+{%- if c.type in containers -%}
+self.{{ c.name }}.show(self.freya_view_{{ c.name }}())
+{%- else -%}
+self.{{ c.name }}.show({{ widget(c, fill) }}.into())
+{%- endif -%}
+{%- endmacro %}
+
+{%- if root %}
+#[allow(unused_imports)]
+use iced::widget::text_editor;
+
+/// Everything the user can do in form `{{ form.name }}`.
+#[allow(non_camel_case_types, dead_code)]
+#[derive(Debug, Clone)]
+pub enum Message {
+{%- for c in widgets if c.field %}
+{%- set t = c.type %}
+{%- if t == "core/Button" %}
+    {{ c.name }}_click,
+{%- elif t == "core/Edit" %}
+    {{ c.name }}_input(String),
+    {{ c.name }}_submit,
+{%- elif t in ["core/CheckBox", "backend:iced/Toggler"] %}
+    {{ c.name }}_toggle(bool),
+{%- elif t == "backend:iced/RadioButton" %}
+    {{ c.name }}_select,
+{%- elif t == "backend:iced/Slider" %}
+    {{ c.name }}_change(f64),
+{%- elif t == "backend:iced/PickList" %}
+    {{ c.name }}_select(String),
+{%- elif t == "backend:iced/ListBox" %}
+    {{ c.name }}_select(usize),
+{%- elif t == "backend:iced/TextEditor" %}
+    {{ c.name }}_edit(text_editor::Action),
+{%- elif t == "backend:iced/Tabs" %}
+    {{ c.name }}_page(usize),
+{%- endif %}
+{%- endfor %}
+{%- if root.events.on_close %}
+    close_requested(iced::window::Id),
+{%- endif %}
+}
+
+impl {{ form.struct }} {
+    /// Window settings from the designer (size, resizable).
+    pub fn window_settings() -> iced::window::Settings {
+        iced::window::Settings {
+            size: iced::Size::new({{ root.props.size.width }} as f32, {{ root.props.size.height }} as f32),
+            resizable: {{ root.rust.resizable }},
+            ..Default::default()
+        }
+    }
+
+    /// Closing the window ends the program unless `on_close` decides.
+    pub const EXIT_ON_CLOSE: bool = {{ "false" if root.events.on_close else "true" }};
+
+    /// The window title (the caption of `{{ root.name }}`).
+    pub fn title(&self) -> String {
+        self.{{ root.name }}.caption.clone()
+    }
+
+    /// Called once before the window opens.
+    pub fn freya_created(&mut self) {
+    {%- if root.events.on_create %}
+        self.{{ root.events.on_create }}();
+    {%- endif %}
+    }
+
+    /// Events from outside the widgets (closing the window).
+    pub fn subscription(&self) -> iced::Subscription<Message> {
+    {%- if root.events.on_close %}
+        iced::window::close_requests().map(Message::close_requested)
+    {%- else %}
+        iced::Subscription::none()
+    {%- endif %}
+    }
+
+    /// Applies `message` to the state and calls the handler.
+    #[allow(unused_variables, clippy::needless_return)]
+    pub fn update(&mut self, message: Message) -> iced::Task<Message> {
+        match message {
+        {%- for c in widgets if c.field %}
+        {%- set t = c.type %}
+        {%- set e = c.events %}
+        {%- if t == "core/Button" %}
+            Message::{{ c.name }}_click => {
+            {%- if e.on_click %}
+                if self.{{ c.name }}.enabled {
+                    self.{{ e.on_click }}();
+                }
+            {%- endif %}
+            }
+        {%- elif t == "core/Edit" %}
+            Message::{{ c.name }}_input(text) => {
+            {%- if c.props.max_length > 0 %}
+                self.{{ c.name }}.value = text.chars().take({{ c.props.max_length }}).collect();
+            {%- else %}
+                self.{{ c.name }}.value = text;
+            {%- endif %}
+            {%- if e.on_change %}
+                let text = self.{{ c.name }}.value.clone();
+                self.{{ e.on_change }}(&text);
+            {%- endif %}
+            }
+            Message::{{ c.name }}_submit => {
+            {%- if e.on_submit %}
+                self.{{ e.on_submit }}();
+            {%- endif %}
+            }
+        {%- elif t in ["core/CheckBox", "backend:iced/Toggler"] %}
+            Message::{{ c.name }}_toggle(checked) => {
+                self.{{ c.name }}.value = checked;
+            {%- if e.on_toggle %}
+                self.{{ e.on_toggle }}(checked);
+            {%- endif %}
+            }
+        {%- elif t == "backend:iced/Slider" %}
+            Message::{{ c.name }}_change(value) => {
+                if self.{{ c.name }}.enabled {
+                    self.{{ c.name }}.value = value;
+                {%- if e.on_change %}
+                    self.{{ e.on_change }}(value);
+                {%- endif %}
+                }
+            }
+        {%- elif t == "backend:iced/PickList" %}
+            Message::{{ c.name }}_select(item) => {
+                if self.{{ c.name }}.enabled
+                    && let Some(index) = self.{{ c.name }}.items.iter().position(|i| *i == item)
+                {
+                    self.{{ c.name }}.value = index;
+                {%- if e.on_select %}
+                    self.{{ e.on_select }}(index as u32);
+                {%- endif %}
+                }
+            }
+        {%- elif t == "backend:iced/ListBox" %}
+            Message::{{ c.name }}_select(index) => {
+                self.{{ c.name }}.value = index as i32;
+            {%- if e.on_select %}
+                self.{{ e.on_select }}(index as i32);
+            {%- endif %}
+            }
+        {%- elif t == "backend:iced/TextEditor" %}
+            Message::{{ c.name }}_edit(action) => {
+                let edit = action.is_edit();
+                if self.{{ c.name }}.enabled || !edit {
+                    self.{{ c.name }}.value.perform(action);
+                {%- if e.on_change %}
+                    if edit {
+                        let text = self.{{ c.name }}.value.text();
+                        self.{{ e.on_change }}(&text);
+                    }
+                {%- endif %}
+                }
+            }
+        {%- elif t == "backend:iced/Tabs" %}
+            Message::{{ c.name }}_page(page) => {
+                self.{{ c.name }}.value = page;
+            {%- if e.on_page %}
+                self.{{ e.on_page }}(page as u32);
+            {%- endif %}
+            }
+        {%- endif %}
+        {%- endfor %}
+        {#- Optionsfelder: das gewählte an, die übrigen im selben Container aus. #}
+        {%- for w in widgets if w.field and w.type in containers %}
+        {%- set radios = w.children | selectattr("type", "eq", "backend:iced/RadioButton") | selectattr("field") | list %}
+        {%- for c in radios %}
+            Message::{{ c.name }}_select => {
+                if self.{{ c.name }}.enabled {
+                    self.{{ c.name }}.value = true;
+                {%- for o in radios if o.name != c.name %}
+                    self.{{ o.name }}.value = false;
+                {%- endfor %}
+                {%- if c.events.on_toggle %}
+                    self.{{ c.events.on_toggle }}(true);
+                {%- endif %}
+                }
+            }
+        {%- endfor %}
+        {%- endfor %}
+        {%- if root.events.on_close %}
+            Message::close_requested(_window) => {
+                if self.{{ root.events.on_close }}() {
+                    return iced::exit();
+                }
+            }
+        {%- endif %}
+        }
+        iced::Task::none()
+    }
+
+    /// Builds the window's content from the state.
+    pub fn view(&self) -> iced::Element<'_, Message> {
+        iced::widget::container(self.freya_view_{{ root.name }}())
+            .width(iced::Fill)
+            .height(iced::Fill)
+            .into()
+    }
+{%- for w in widgets if w.field and w.type in containers %}
+{%- set kids = w.children | selectattr("field") | list %}
+
+    /// The children of `{{ w.name }}`.
+    #[allow(unused_mut, clippy::vec_init_then_push)]
+    fn freya_view_{{ w.name }}(&self) -> iced::Element<'_, Message> {
+    {%- if w.type == "backend:iced/Tabs" %}
+        // Reiterleiste, darunter nur die gewählte Seite.
+        let mut header: Vec<iced::Element<'_, Message>> = Vec::new();
+        {%- for c in kids %}
+        {
+            let title = self.{{ w.name }}.items.get({{ loop.index0 }}).cloned().unwrap_or_else(|| "{{ c.name }}".to_owned());
+            let style: fn(&iced::Theme, iced::widget::button::Status) -> iced::widget::button::Style =
+                if self.{{ w.name }}.value == {{ loop.index0 }} {
+                    iced::widget::button::primary
+                } else {
+                    iced::widget::button::text
+                };
+            header.push(
+                iced::widget::button(iced::widget::text(title))
+                    .style(style)
+                    .on_press(Message::{{ w.name }}_page({{ loop.index0 }}))
+                    .into(),
+            );
+        }
+        {%- endfor %}
+        let page: iced::Element<'_, Message> = match self.{{ w.name }}.value {
+        {%- for c in kids %}
+            {{ loop.index0 }} => {{ child(c, true) }},
+        {%- endfor %}
+            _ => iced::widget::space().into(),
+        };
+        iced::widget::column(vec![
+            iced::widget::row(header).spacing(4).into(),
+            iced::widget::rule::horizontal(1).into(),
+            page,
+        ])
+        .spacing(6)
+        .into()
+    {%- else %}
+    {%- set l = w.layout or default_layout %}
+        let mut children: Vec<iced::Element<'_, Message>> = Vec::new();
+    {%- if l.kind == "grid" %}
+        {%- set columns = l.columns or 1 %}
+        {%- for row in kids | batch(columns) %}
+        children.push(
+            iced::widget::row(vec![
+            {%- for c in row %}
+                iced::widget::container({{ child(c, true) }}).width(iced::Fill).into(),
+            {%- endfor %}
+            ])
+            .spacing({{ l.spacing }})
+            .into(),
+        );
+        {%- endfor %}
+    {%- else %}
+    {%- for c in kids if l.kind != "stack" or loop.first %}
+        {%- set p = c.placement %}
+        {%- set align = p.align if p and p.kind == "layout" else "Fill" %}
+        {%- set stretch = p and p.kind == "layout" and p.stretch > 0 %}
+        {%- set fill = l.kind in ["vertical", "custom"] and align == "Fill" and c.type not in natural %}
+        {%- if l.kind == "absolute" and p and p.kind == "absolute" %}
+        children.push(
+            iced::widget::container(iced::widget::container({{ child(c, true) }}).width({{ p.width }}).height({{ p.height }}))
+                .padding(iced::Padding { top: {{ p.y }} as f32, right: 0.0, bottom: 0.0, left: {{ p.x }} as f32 })
+                .into(),
+        );
+        {%- elif l.kind in ["vertical", "custom"] and align in ["Center", "End"] %}
+        children.push(
+            iced::widget::container({{ child(c, false) }})
+                .width(iced::Fill)
+                .align_x(iced::alignment::Horizontal::{{ "Center" if align == "Center" else "Right" }})
+                .into(),
+        );
+        {%- elif stretch %}
+        children.push(
+            iced::widget::container({{ child(c, fill) }})
+                {%- if l.kind == "horizontal" %}
+                .width(iced::Fill)
+                {%- else %}
+                .height(iced::Fill)
+                {%- endif %}
+                .into(),
+        );
+        {%- else %}
+        children.push({{ child(c, fill) }});
+        {%- endif %}
+    {%- endfor %}
+    {%- endif %}
+    {%- if l.kind == "horizontal" %}
+        let inner: iced::Element<'_, Message> = iced::widget::row(children)
+            .spacing({{ l.spacing }})
+            .padding({{ padding(l.padding) }})
+            .align_y(iced::alignment::Vertical::Center)
+            .into();
+    {%- elif l.kind == "absolute" %}
+        let inner: iced::Element<'_, Message> = iced::widget::container(iced::widget::stack(children))
+            .padding({{ padding(l.padding) }})
+            .into();
+    {%- else %}
+        let inner: iced::Element<'_, Message> = iced::widget::column(children)
+            .spacing({{ l.spacing }})
+            .padding({{ padding(l.padding) }})
+            .width(iced::Fill)
+            .into();
+    {%- endif %}
+    {%- if w.type == "backend:iced/GroupBox" %}
+        iced::widget::column(vec![
+            iced::widget::text(self.{{ w.name }}.caption.as_str()).size(14).into(),
+            iced::widget::container(inner)
+                .width(iced::Fill)
+                .style(iced::widget::container::bordered_box)
+                .into(),
+        ])
+        .spacing(4)
+        .into()
+    {%- else %}
+        inner
+    {%- endif %}
+    {%- endif %}
+    }
+{%- endfor %}
+}
+{%- endif %}

@@ -615,13 +615,20 @@ fn main() {
             .rect(&name("level"))
             .is_some()
     );
+    ide.new_project_with("iced");
+    assert_eq!(ide.session().document().project().backend, "iced");
+    assert!(
+        tdr_designer::palette(ide.session().document().registry(), "iced")
+            .iter()
+            .any(|i| i.type_ref == TypeRef::backend("iced", "PickList"))
+    );
     ide.new_project_with("kein_backend");
     assert_eq!(
         ide.session().document().project().backend,
-        "egui",
+        "iced",
         "unbekanntes Backend ändert nichts"
     );
-    println!("test egui_project ... ok");
+    println!("test egui_iced_projects ... ok");
     passed += 1;
 
     Application::process_events();

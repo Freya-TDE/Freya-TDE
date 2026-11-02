@@ -1,0 +1,289 @@
+# iced – UI-Backend für Zielprojekte / UI backend for target projects
+#
+# Elm-Architektur: das Formular ist der Zustand, jede Eingabe wird eine Nachricht
+# (`main_form::Message`), `update` ändert den Zustand und ruft die Handler, `view`
+# baut die Oberfläche daraus. Jedes Widget ist ein Feld `crate::app::Control<T>`
+# (Wert, Beschriftung, Einträge, enabled, visible, tooltip).
+# Elm architecture: every input becomes a message, `update` changes the state and
+# calls the handlers, `view` builds the UI from the state.
+
+[pack]
+name = "iced"
+version = "0.1.0"
+kind = "backend"
+description = "iced: Elm-style UI in pure Rust on Linux, Windows, macOS (and web)"
+authors = ["Dragon Software <info@dragon-software.net>"]
+license = "MIT OR Apache-2.0"
+generated-code-license = "MIT OR Apache-2.0"
+
+[backend]
+event-loop = "main-thread"
+absolute-positioning = true
+platforms = ["linux", "windows", "macos"]
+cargo = [{ crate = "iced", version = "0.14" }]
+app-file = "templates/app.rs.j2"
+form-file = "templates/form.rs.j2"
+run-file = "templates/run.rs.j2"
+
+# --- Kern-Widgets / core widgets ----------------------------------------------------------
+
+[[extend]]
+type = "core/Form"
+[extend.codegen]
+type = "crate::app::Control<()>"
+init = "crate::app::Control::new(()).with_caption({{ rust.title }}).with_state({{ rust.enabled }}, true, {{ rust.tooltip }})"
+
+[[extend]]
+type = "core/Container"
+[extend.codegen]
+type = "crate::app::Control<()>"
+init = "crate::app::Control::new(()).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+[[extend]]
+type = "core/Label"
+[extend.codegen]
+type = "crate::app::Control<String>"
+init = "crate::app::Control::new({{ rust.text }}.to_string()).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+[[extend]]
+type = "core/Button"
+[extend.codegen]
+type = "crate::app::Control<()>"
+init = "crate::app::Control::new(()).with_caption({{ rust.caption }}).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+[[extend]]
+type = "core/Edit"
+[extend.properties.max_length]
+type = "int"
+min = 0
+default = 0
+category = "Behavior"
+description = "Maximum number of characters (0 = no limit)"
+[extend.codegen]
+type = "crate::app::Control<String>"
+init = "crate::app::Control::new({{ rust.text }}.to_string()).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+[[extend]]
+type = "core/CheckBox"
+[extend.codegen]
+type = "crate::app::Control<bool>"
+init = "crate::app::Control::new({{ rust.checked }}).with_caption({{ rust.caption }}).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+# --- iced-Palette / iced palette ----------------------------------------------------------
+
+[[component]]
+name = "RadioButton"
+kind = "widget"
+look = "radio"
+category = "iced"
+icon = "radio"
+description = "Option button; radio buttons in the same container form a group"
+[component.properties.caption]
+type = "text"
+default = "Option"
+category = "Appearance"
+[component.properties.checked]
+type = "bool"
+category = "Behavior"
+[component.events.on_toggle]
+params = [{ name = "checked", type = "bool" }]
+description = "Chosen by the user"
+[component.codegen]
+type = "crate::app::Control<bool>"
+init = "crate::app::Control::new({{ rust.checked }}).with_caption({{ rust.caption }}).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+[[component]]
+name = "Toggler"
+kind = "widget"
+look = "switch"
+category = "iced"
+icon = "switch"
+description = "On/off switch with optional caption"
+[component.properties.caption]
+type = "text"
+category = "Appearance"
+[component.properties.active]
+type = "bool"
+category = "Behavior"
+[component.events.on_toggle]
+params = [{ name = "active", type = "bool" }]
+[component.codegen]
+type = "crate::app::Control<bool>"
+init = "crate::app::Control::new({{ rust.active }}).with_caption({{ rust.caption }}).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+[[component]]
+name = "Slider"
+kind = "widget"
+look = "slider"
+category = "iced"
+icon = "slider"
+description = "Slider to choose a value"
+[component.properties.value]
+type = "float"
+category = "Value"
+[component.properties.minimum]
+type = "float"
+category = "Value"
+[component.properties.maximum]
+type = "float"
+default = 100.0
+category = "Value"
+[component.properties.step]
+type = "float"
+default = 1.0
+category = "Value"
+[component.properties.show_value]
+type = "bool"
+default = true
+category = "Appearance"
+description = "Show the current value next to the slider"
+[component.events.on_change]
+params = [{ name = "value", type = "f64" }]
+[component.codegen]
+type = "crate::app::Control<f64>"
+init = "crate::app::Control::new({{ rust.value }}).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+[[component]]
+name = "ProgressBar"
+kind = "widget"
+look = "progress"
+category = "iced"
+icon = "progress"
+description = "Shows the progress of a task"
+[component.properties.fraction]
+type = "float"
+min = 0.0
+max = 1.0
+category = "Value"
+description = "Progress from 0.0 to 1.0"
+[component.properties.text]
+type = "text"
+category = "Appearance"
+description = "Text above the bar (empty = none)"
+[component.codegen]
+type = "crate::app::Control<f32>"
+init = "crate::app::Control::new({{ rust.fraction }} as f32).with_caption({{ rust.text }}).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+[[component]]
+name = "PickList"
+kind = "widget"
+look = "dropdown"
+category = "iced"
+icon = "dropdown"
+description = "Choose one entry from a list"
+[component.properties.items]
+type = "list"
+item = "text"
+category = "Value"
+description = "The entries"
+[component.properties.selected]
+type = "int"
+min = 0
+category = "Value"
+description = "Index of the selected entry"
+[component.events.on_select]
+params = [{ name = "index", type = "u32" }]
+[component.codegen]
+type = "crate::app::Control<usize>"
+init = "crate::app::Control::new({{ props.selected }}usize).with_items::<&str>({{ rust.items }}).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+[[component]]
+name = "ListBox"
+kind = "widget"
+look = "list"
+category = "iced"
+icon = "list"
+description = "List of text entries to choose from"
+[component.properties.items]
+type = "list"
+item = "text"
+category = "Value"
+[component.properties.selected]
+type = "int"
+min = -1
+default = -1
+category = "Value"
+description = "Index of the selected entry (-1 = none)"
+[component.events.on_select]
+params = [{ name = "index", type = "i32" }]
+description = "Selection changed"
+[component.codegen]
+type = "crate::app::Control<i32>"
+init = "crate::app::Control::new({{ props.selected }}i32).with_items::<&str>({{ rust.items }}).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+[[component]]
+name = "TextEditor"
+kind = "widget"
+look = "memo"
+category = "iced"
+icon = "memo"
+description = "Multi-line text; `self.<name>.text()` gives the text"
+[component.properties.text]
+type = "text"
+category = "Appearance"
+[component.properties.rows]
+type = "int"
+min = 1
+default = 4
+category = "Appearance"
+description = "Visible lines"
+[component.properties.read_only]
+type = "bool"
+category = "Behavior"
+[component.events.on_change]
+params = [{ name = "text", type = "&str" }]
+[component.codegen]
+type = "crate::app::Control<iced::widget::text_editor::Content>"
+init = "crate::app::Control::new(iced::widget::text_editor::Content::with_text({{ rust.text }})).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+[[component]]
+name = "Rule"
+kind = "widget"
+look = "separator"
+category = "iced"
+icon = "separator"
+description = "A line between widgets"
+[component.properties.vertical]
+type = "bool"
+category = "Appearance"
+[component.codegen]
+type = "crate::app::Control<()>"
+init = "crate::app::Control::new(()).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+[[component]]
+name = "GroupBox"
+kind = "container"
+look = "frame"
+category = "iced"
+icon = "frame"
+description = "Container with a border and a title"
+[component.properties.title]
+type = "text"
+default = "Group"
+category = "Appearance"
+[component.codegen]
+type = "crate::app::Control<()>"
+init = "crate::app::Control::new(()).with_caption({{ rust.title }}).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+[[component]]
+name = "Tabs"
+kind = "container"
+look = "tabs"
+category = "iced"
+icon = "tabs"
+description = "Pages with tabs; every child is one page (usually a Container)"
+[component.properties.pages]
+type = "list"
+item = "text"
+category = "Appearance"
+description = "Tab titles, one per child (missing ones: the child's name)"
+[component.properties.page]
+type = "int"
+min = 0
+category = "Behavior"
+description = "The page shown at the start (and in the designer)"
+[component.events.on_page]
+params = [{ name = "page", type = "u32" }]
+[component.codegen]
+type = "crate::app::Control<usize>"
+init = "crate::app::Control::new({{ props.page }}usize).with_items::<&str>({{ rust.pages }}).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
