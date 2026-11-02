@@ -94,6 +94,7 @@ padding-x = 6
 height = 80
 min-width = 120
 padding-x = 0
+header = 22
 
 [widgets."backend:gtk4/Image"]
 height = 64
@@ -109,3 +110,14 @@ padding-x = 0
 height = 34
 min-width = 60
 padding-x = 14
+
+[widgets."backend:gtk4/Notebook"]
+height = 120
+min-width = 200
+padding-x = 0
+header = 34
+
+[widgets."backend:gtk4/ListBox"]
+height = 120
+min-width = 140
+padding-x = 8

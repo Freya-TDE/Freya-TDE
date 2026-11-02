@@ -30,6 +30,7 @@
 //! category = "Database"                 # optional palette group
 //! description = "…"                     # optional
 //! icon = "database"                     # optional
+//! look = "switch"                       # optional: how the designer draws it (see ComponentType::look)
 //! provides = ["sqlx.pool"]              # or [{ capability = "…", description = "…" }]
 //! requires = [{ capability = "tokio.runtime" }]
 //! cargo = [{ crate = "sqlx", version = "0.9", features = ["postgres"], default-features = true }]
@@ -191,6 +192,7 @@ struct RawComponent {
     #[serde(default)]
     description: String,
     icon: Option<String>,
+    look: Option<String>,
     #[serde(default)]
     properties: IndexMap<String, RawProperty>,
     #[serde(default)]
@@ -720,6 +722,7 @@ impl Checker<'_> {
             .with_category(raw.category.clone())
             .with_description(raw.description.clone());
         ty.icon = raw.icon.clone();
+        ty.look = raw.look.clone();
 
         for (name, property) in &raw.properties {
             let loc = format!("{location}, property {name}");

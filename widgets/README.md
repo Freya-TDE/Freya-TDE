@@ -5,7 +5,7 @@ Visuelle Widgets und Backend-Paletten, aufbauend auf `tdr-core` (der gemeinsame 
 
 | Backend | Zustand / state | Inhalt / content |
 |---|---|---|
-| `gtk4` | fertig / done | GTK 4 über gtk4-rs (Linux, Windows, macOS); Kern-Widgets plus Palette „GTK“: RadioButton, Switch, SpinButton, Scale, ProgressBar, DropDown, TextView, Frame, Image, Separator, LinkButton |
+| `gtk4` | fertig / done | GTK 4 über gtk4-rs (Linux, Windows, macOS); Kern-Widgets plus Palette „GTK“: RadioButton, Switch, SpinButton, Scale, ProgressBar, DropDown, ListBox, TextView, Notebook, Frame, Image, Separator, LinkButton, MainMenu |
 | `egui` | geplant / planned | |
 | `iced` | geplant / planned | |
 | `slint` | geplant / planned (Lizenz prüfen / check license) | |
@@ -37,6 +37,13 @@ impl MainForm {
   Rand 12, Abstand 8 – wie die Theme-Tabelle des Designers.
 - Optionsfelder (`RadioButton`) im selben Container bilden eine Gruppe; `TextView` steht in einem
   Rollbereich.
+- `Notebook`: jedes Kind ist eine Seite (meist ein Container), Titel aus `pages`, sonst der Name;
+  `page` ist die Startseite und die Seite, die der Designer zeigt (Klick auf einen Reiter wechselt).
+- `MainMenu` (nicht-visuell, in der Komponentenleiste) setzt eine Menüleiste über das Formular. Einträge
+  als Pfade, einer je Zeile: `Datei/Öffnen | Ctrl+O`, `Datei/-` (Trennlinie), `Datei/Export/PDF`
+  (Untermenü). Gewählt wird `on_select(item: &str)` mit dem Pfad, z. B. `"Datei/Öffnen"`; Kürzel gelten
+  im ganzen Fenster (macOS: Ctrl = Befehlstaste).
+  *Entries as paths, `| shortcut`, `-` = separator; `on_select` gets the path.*
 - Löst ein Handler über eine Widget-Änderung ein weiteres Ereignis desselben Formulars aus, wird dieses
   übersprungen (kein doppeltes `borrow_mut`).
   *An event triggered from inside a handler of the same form is skipped.*
@@ -67,8 +74,12 @@ dann der eingebaute Satz der IDE (`ide/assets/palette/`, Quellen und Generator `
 *Icons: `icon = "switch"`; first `icons/<name>.png` in the pack folder (48 × 48 px), then the IDE's
 built-in set.*
 
-Maße für den Designer: `[widgets."backend:<backend>/<Typ>"]` in `designer/themes/<plattform>.toml`.
-*Natural sizes for the designer go into the theme tables.*
+Darstellung im Designer: `look = "…"` am Typ (`switch`, `slider`, `spin`, `progress`, `dropdown`, `memo`,
+`list`, `radio`, `separator`, `image`, `frame`, `link`, `tabs`; `menubar` für ein nicht-visuelles Hauptmenü),
+gezeichnet in den Farben der Theme-Tabelle; ohne `look` ein Kasten mit Symbol und Namen. Maße:
+`[widgets."backend:<backend>/<Typ>"]` in `designer/themes/<plattform>.toml`, bei Containern `header` =
+Platz oben (Rahmentitel, Reiterleiste).
+*Designer drawing: `look` on the type (same looks for every backend); sizes and `header` in the theme tables.*
 
 Kontext der Templates und Einzelheiten: Modul-Doku von `tdr_core::codegen` und `tdr_core::pack`.
 *Template context and details: module docs of `tdr_core::codegen` and `tdr_core::pack`.*

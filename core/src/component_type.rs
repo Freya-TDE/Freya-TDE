@@ -145,6 +145,13 @@ pub struct ComponentType {
     /// Icon name for palette and design surface.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
+    /// How the designer draws a widget of this type (see
+    /// `tdr_designer::render`): `switch`, `slider`, `spin`, `progress`,
+    /// `dropdown`, `memo`, `list`, `radio`, `separator`, `image`, `frame`,
+    /// `link`, `tabs`, or `menubar` for a non-visual main menu. `None` = a
+    /// box with icon and name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub look: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub properties: Vec<PropertyDef>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -169,6 +176,7 @@ impl ComponentType {
             category: String::new(),
             description: String::new(),
             icon: None,
+            look: None,
             properties: Vec::new(),
             events: Vec::new(),
             provides: Vec::new(),
@@ -181,6 +189,12 @@ impl ComponentType {
     /// Icon name, e.g. `"button"` (the IDE's icon set or the pack's `icons/<name>.png`).
     pub fn with_icon(mut self, icon: impl Into<String>) -> Self {
         self.icon = Some(icon.into());
+        self
+    }
+
+    /// How the designer draws it, e.g. `"switch"`.
+    pub fn with_look(mut self, look: impl Into<String>) -> Self {
+        self.look = Some(look.into());
         self
     }
 

@@ -66,7 +66,15 @@ pub(crate) struct Props<'a> {
 
 impl Props<'_> {
     pub fn value(&self, widget: &Widget, property: &str) -> Option<Value> {
-        let component = &widget.component;
+        self.component_value(&widget.component, property)
+    }
+
+    /// A property of any element (widgets and non-visual components).
+    pub fn component_value(
+        &self,
+        component: &tdr_core::Component,
+        property: &str,
+    ) -> Option<Value> {
         component
             .get(property)
             .map(|v| v.value.clone())
@@ -83,6 +91,54 @@ impl Props<'_> {
             Value::Text(t) => Some(t),
             _ => None,
         }
+    }
+
+    pub fn float(&self, widget: &Widget, property: &str, default: f64) -> f64 {
+        match self.value(widget, property) {
+            Some(Value::Float(f)) => f,
+            Some(Value::Int(i)) => i as f64,
+            _ => default,
+        }
+    }
+
+    pub fn int(&self, widget: &Widget, property: &str, default: i64) -> i64 {
+        match self.value(widget, property) {
+            Some(Value::Int(i)) => i,
+            _ => default,
+        }
+    }
+
+    /// A list of texts (other items are skipped).
+    pub fn texts(&self, widget: &Widget, property: &str) -> Vec<String> {
+        texts(self.value(widget, property))
+    }
+
+    /// How the type of `widget` is drawn (`look` of its type).
+    pub fn look(&self, widget: &Widget) -> Option<&str> {
+        self.registry
+            .get(&widget.component.type_ref)?
+            .look
+            .as_deref()
+    }
+
+    /// The top-level entries of the form's main menu (a component with
+    /// `look = "menubar"` and an `items` list like `Datei/Öffnen`), `None`
+    /// without main menu.
+    pub fn menu_bar(&self) -> Option<Vec<String>> {
+        let menu = self.form.components.iter().find(|c| {
+            self.registry
+                .get(&c.type_ref)
+                .is_some_and(|t| t.look.as_deref() == Some("menubar"))
+        })?;
+        let mut titles: Vec<String> = Vec::new();
+        for item in texts(self.component_value(menu, "items")) {
+            let path = item.split('|').next().unwrap_or("").trim();
+            let top = path.split('/').next().unwrap_or("").trim();
+            if !top.is_empty() && !titles.iter().any(|t| t == top) {
+                titles.push(top.to_owned());
+            }
+        }
+        Some(titles)
     }
 
     pub fn bool(&self, widget: &Widget, property: &str, default: bool) -> bool {
@@ -102,6 +158,19 @@ impl Props<'_> {
 }
 
 /// The text that decides a widget's natural width.
+fn texts(value: Option<Value>) -> Vec<String> {
+    match value {
+        Some(Value::List(items)) => items
+            .into_iter()
+            .filter_map(|v| match v {
+                Value::Text(t) => Some(t),
+                _ => None,
+            })
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
 pub(crate) fn display_text(props: &Props<'_>, widget: &Widget) -> Option<String> {
     let type_ref = &widget.component.type_ref;
     if *type_ref == builtin::label() {
@@ -126,6 +195,10 @@ struct Layouter<'a> {
 impl Layouter<'_> {
     /// Layout kind, spacing and padding (left, top, right, bottom).
     fn params(&self, widget: &Widget) -> (LayoutKind, i32, [i32; 4]) {
+        // Reiter: die Seiten liegen übereinander und füllen den Inhalt.
+        if self.props.look(widget) == Some("tabs") {
+            return (LayoutKind::Stack, 0, [0; 4]);
+        }
         match &widget.visual.layout {
             Some(l) => (
                 l.kind.clone(),
@@ -147,9 +220,10 @@ impl Layouter<'_> {
 
     fn natural(&self, widget: &Widget) -> (i32, i32) {
         if widget.component.type_ref == builtin::form() {
+            let bars = self.theme.title_bar_height + self.menu_bar_height();
             return match self.props.value(widget, "size") {
-                Some(Value::Size(s)) => (s.width, s.height + self.theme.title_bar_height),
-                _ => (640, 480 + self.theme.title_bar_height),
+                Some(Value::Size(s)) => (s.width, s.height + bars),
+                _ => (640, 480 + bars),
             };
         }
         let metrics = self.theme.metrics(&widget.component.type_ref);
@@ -238,8 +312,17 @@ impl Layouter<'_> {
         };
         (
             (w + left + right).max(metrics.min_width),
-            (h + top + bottom).max(metrics.height),
+            (h + top + bottom + metrics.header).max(metrics.height),
         )
+    }
+
+    /// Height of the form's menu bar (0 without main menu).
+    fn menu_bar_height(&self) -> i32 {
+        if self.props.menu_bar().is_some() {
+            self.theme.menu_bar_height
+        } else {
+            0
+        }
     }
 
     /// Places `natural` inside `cell` by `align` on one axis.
@@ -264,9 +347,19 @@ impl Layouter<'_> {
         let container = self.props.is_container(widget);
         let (kind, spacing, [left, top, right, bottom]) = self.params(widget);
         let client = if is_window {
-            rect.inset(0, self.theme.title_bar_height, 0, 0)
+            rect.inset(
+                0,
+                self.theme.title_bar_height + self.menu_bar_height(),
+                0,
+                0,
+            )
         } else {
-            rect
+            rect.inset(
+                0,
+                self.theme.metrics(&widget.component.type_ref).header,
+                0,
+                0,
+            )
         };
         let content = client.inset(left, top, right, bottom);
         self.items.push(LayoutItem {
@@ -286,11 +379,20 @@ impl Layouter<'_> {
         }
 
         let name = widget.component.name.clone();
-        let flow: Vec<&Widget> = widget
+        let mut flow: Vec<&Widget> = widget
             .children
             .iter()
             .filter(|c| !c.visual.placement.is_absolute())
             .collect();
+        // Reiter: nur die gewählte Seite (`page`) wird angeordnet und gezeichnet.
+        let tabs = self.props.look(widget) == Some("tabs");
+        if tabs && !flow.is_empty() {
+            let page = self
+                .props
+                .int(widget, "page", 0)
+                .clamp(0, flow.len() as i64 - 1) as usize;
+            flow = vec![flow[page]];
+        }
         let naturals: Vec<(i32, i32)> = flow.iter().map(|c| self.natural(c)).collect();
         let mut placed: Vec<(&Widget, Rect)> = Vec::new();
         let stretch_of = |w: &Widget| match w.visual.placement {
@@ -397,7 +499,11 @@ impl Layouter<'_> {
             }
             LayoutKind::Stack => {
                 for (child, natural) in flow.iter().zip(&naturals) {
-                    let align = align_of(child);
+                    let align = if tabs {
+                        tdr_core::Align::Fill
+                    } else {
+                        align_of(child)
+                    };
                     let (x, w) = Self::align(align, content.x, content.width, natural.0);
                     let (y, h) = Self::align(align, content.y, content.height, natural.1);
                     placed.push((child, Rect::new(x, y, w, h)));

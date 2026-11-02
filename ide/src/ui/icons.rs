@@ -39,7 +39,9 @@ const BUILTIN: &[(&str, &[u8])] = &[
     ("image", include_bytes!("../../assets/palette/image.png")),
     ("label", include_bytes!("../../assets/palette/label.png")),
     ("link", include_bytes!("../../assets/palette/link.png")),
+    ("list", include_bytes!("../../assets/palette/list.png")),
     ("memo", include_bytes!("../../assets/palette/memo.png")),
+    ("menu", include_bytes!("../../assets/palette/menu.png")),
     (
         "pointer",
         include_bytes!("../../assets/palette/pointer.png"),

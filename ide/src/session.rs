@@ -15,7 +15,7 @@ use tdr_core::{
 use tdr_designer::layout::drop_target;
 use tdr_designer::{
     Command, CommandError, Document, DocumentError, FormLayout, ItemKind, OpenReport, Point,
-    Primitive, Theme, hit_test, layout, render, render_selection, suggest_handler,
+    Primitive, Theme, hit_test, layout, render, render_selection, suggest_handler, tab_at,
 };
 
 /// Name of the first form of new projects (`main` and `app` are reserved
@@ -320,6 +320,30 @@ impl Session {
         };
         if let Some(type_ref) = self.armed.take() {
             return self.place(type_ref, at, &layout);
+        }
+        // Klick auf einen Reiter: Seite wechseln (wie Delphi), Notebook wählen.
+        let tab = self
+            .form()
+            .and_then(|form| tab_at(form, &layout, self.doc.registry(), &self.theme, at));
+        if let (Some((notebook, page)), Some(form)) = (tab, self.form.clone()) {
+            self.selection = vec![notebook.clone()];
+            let current = self
+                .form()
+                .and_then(|f| f.widget(&notebook))
+                .and_then(|w| w.component.get("page"))
+                .map(|v| v.value.clone());
+            let page = tdr_core::Value::Int(page as i64);
+            if current.as_ref() == Some(&page)
+                || (current.is_none() && page == tdr_core::Value::Int(0))
+            {
+                return Ok(Changes::selection());
+            }
+            return self.apply(Command::SetProperty {
+                form,
+                element: notebook,
+                property: "page".into(),
+                value: Some(tdr_core::PropertyValue::new(page)),
+            });
         }
         let Some(hit) = hit_test(&layout, at, &self.selection) else {
             let changed = !self.selection.is_empty();

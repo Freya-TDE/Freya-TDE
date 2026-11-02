@@ -84,6 +84,275 @@ impl Painter<'_> {
         self.text_in(r, x, text, color, false);
     }
 
+    /// A backend widget drawn by its type's `look` – close to the real thing,
+    /// from the theme colors (the real look comes from the debug run).
+    fn look(&mut self, look: &str, widget: &Widget, r: Rect, caption: &str, text_color: Color) {
+        let c = self.theme.colors.clone();
+        let radius = self.theme.radius;
+        let font = self.theme.font_size;
+        let white = Color::rgb(255, 255, 255);
+        let value_fraction = |p: &Props<'_>| {
+            let (min, max) = (
+                p.float(widget, "minimum", 0.0),
+                p.float(widget, "maximum", 100.0),
+            );
+            let value = p.float(widget, "value", 0.0);
+            if max > min {
+                ((value - min) / (max - min)).clamp(0.0, 1.0)
+            } else {
+                0.0
+            }
+        };
+        match look {
+            "switch" => {
+                let (w, h) = (r.width.min(48), r.height.min(26));
+                let track = Rect::new(r.x, r.y + (r.height - h) / 2, w, h);
+                let on = self.props.bool(widget, "active", false);
+                let fill = if on { c.accent } else { c.control_border };
+                self.out.push(rect(track, Some(fill), None, h / 2));
+                let knob = h - 4;
+                let x = if on {
+                    track.right() - knob - 2
+                } else {
+                    track.x + 2
+                };
+                self.out.push(rect(
+                    Rect::new(x, track.y + 2, knob, knob),
+                    Some(white),
+                    None,
+                    knob / 2,
+                ));
+            }
+            "slider" => {
+                let y = r.y + r.height / 2;
+                let (x0, x1) = (r.x + 8, r.right() - 8);
+                let at = x0 + ((x1 - x0) as f64 * value_fraction(&self.props)).round() as i32;
+                self.out.push(rect(
+                    Rect::new(x0, y - 2, x1 - x0, 4),
+                    Some(c.control_border),
+                    None,
+                    2,
+                ));
+                self.out.push(rect(
+                    Rect::new(x0, y - 2, at - x0, 4),
+                    Some(c.accent),
+                    None,
+                    2,
+                ));
+                self.out.push(rect(
+                    Rect::new(at - 8, y - 8, 16, 16),
+                    Some(white),
+                    Some(c.control_border),
+                    8,
+                ));
+            }
+            "spin" => {
+                self.out
+                    .push(rect(r, Some(c.input), Some(c.control_border), radius));
+                let digits = self.props.int(widget, "digits", 0).clamp(0, 20) as usize;
+                let text = format!("{:.*}", digits, self.props.float(widget, "value", 0.0));
+                let padding = self.theme.metrics(&widget.component.type_ref).padding_x;
+                self.text_in(r, r.x + padding, &text, text_color, false);
+                let b = r.height;
+                for (i, sign) in ["−", "+"].iter().enumerate() {
+                    let cell = Rect::new(r.right() - b * (2 - i as i32), r.y, b, r.height);
+                    self.out.push(Primitive::Line {
+                        from: Point::new(cell.x, r.y),
+                        to: Point::new(cell.x, r.bottom()),
+                        color: c.control_border,
+                    });
+                    self.text_centered(cell, sign, text_color);
+                }
+            }
+            "progress" => {
+                let text = self.props.text(widget, "text").unwrap_or_default();
+                let bar = Rect::new(r.x, r.bottom() - 8, r.width, 6);
+                let fraction = self.props.float(widget, "fraction", 0.0).clamp(0.0, 1.0);
+                self.out.push(rect(bar, Some(c.control_border), None, 3));
+                let done = (bar.width as f64 * fraction).round() as i32;
+                self.out.push(rect(
+                    Rect::new(bar.x, bar.y, done, bar.height),
+                    Some(c.accent),
+                    None,
+                    3,
+                ));
+                if !text.is_empty() {
+                    let x = r.x + (r.width - self.theme.text_width(&text)) / 2;
+                    self.text(x, bar.y - font - 2, &text, c.placeholder, false);
+                }
+            }
+            "dropdown" => {
+                self.out
+                    .push(rect(r, Some(c.control), Some(c.control_border), radius));
+                let items = self.props.texts(widget, "items");
+                let selected = self.props.int(widget, "selected", 0).max(0) as usize;
+                let text = items.get(selected).cloned().unwrap_or_default();
+                let padding = self.theme.metrics(&widget.component.type_ref).padding_x;
+                self.text_in(r, r.x + padding, &text, text_color, false);
+                let arrow = Rect::new(r.right() - r.height, r.y, r.height, r.height);
+                self.text_centered(arrow, "▾", text_color);
+            }
+            "memo" | "list" => {
+                self.out
+                    .push(rect(r, Some(c.input), Some(c.control_border), radius));
+                let padding = self.theme.metrics(&widget.component.type_ref).padding_x;
+                let row = font + 10;
+                let (lines, selected) = if look == "list" {
+                    (
+                        self.props.texts(widget, "items"),
+                        self.props.int(widget, "selected", -1),
+                    )
+                } else {
+                    let text = self.props.text(widget, "text").unwrap_or_default();
+                    (text.lines().map(str::to_owned).collect(), -1)
+                };
+                let mut y = r.y + 4;
+                for (i, line) in lines.iter().enumerate() {
+                    if y + row > r.bottom() - 2 {
+                        break;
+                    }
+                    let line_rect = Rect::new(r.x + 1, y, r.width - 2, row);
+                    let color = if i as i64 == selected {
+                        self.out.push(rect(line_rect, Some(c.accent), None, 0));
+                        white
+                    } else {
+                        text_color
+                    };
+                    self.text_in(line_rect, r.x + padding, line, color, false);
+                    y += row;
+                }
+            }
+            "radio" => {
+                let size = self.theme.check_size;
+                let dot = Rect::new(r.x, r.y + (r.height - size) / 2, size, size);
+                let checked = self.props.bool(widget, "checked", false);
+                self.out.push(rect(
+                    dot,
+                    Some(c.input),
+                    Some(if checked { c.accent } else { c.control_border }),
+                    size / 2,
+                ));
+                if checked {
+                    let inner = Rect::new(dot.x + 4, dot.y + 4, size - 8, size - 8);
+                    self.out
+                        .push(rect(inner, Some(c.accent), None, (size - 8) / 2));
+                }
+                self.text_in(
+                    r,
+                    dot.right() + self.theme.spacing,
+                    caption,
+                    text_color,
+                    false,
+                );
+            }
+            "separator" => {
+                let (from, to) = if self.props.bool(widget, "vertical", false) {
+                    (
+                        Point::new(r.x + r.width / 2, r.y),
+                        Point::new(r.x + r.width / 2, r.bottom()),
+                    )
+                } else {
+                    (
+                        Point::new(r.x, r.y + r.height / 2),
+                        Point::new(r.right(), r.y + r.height / 2),
+                    )
+                };
+                self.out.push(Primitive::Line {
+                    from,
+                    to,
+                    color: c.control_border,
+                });
+            }
+            "image" => {
+                self.out.push(Primitive::Rect {
+                    rect: r,
+                    fill: None,
+                    stroke: Some(c.container_border),
+                    radius: 0,
+                    dashed: true,
+                });
+                let size = r.width.min(r.height).min(48) - 8;
+                if size > 8 {
+                    let at = Rect::new(
+                        r.x + (r.width - size) / 2,
+                        r.y + (r.height - size) / 2,
+                        size,
+                        size,
+                    );
+                    self.out.push(Primitive::Icon {
+                        rect: at,
+                        name: "image".into(),
+                    });
+                }
+            }
+            "frame" => {
+                let header = self.theme.metrics(&widget.component.type_ref).header;
+                let title = self.props.text(widget, "title").unwrap_or_default();
+                let border = Rect::new(r.x, r.y + header / 2, r.width, r.height - header / 2);
+                self.out
+                    .push(rect(border, None, Some(c.container_border), radius));
+                if !title.is_empty() {
+                    let w = self.theme.text_width(&title) + 8;
+                    self.out.push(rect(
+                        Rect::new(r.x + 8, r.y, w, header),
+                        Some(c.window),
+                        None,
+                        0,
+                    ));
+                    self.text_in(
+                        Rect::new(r.x, r.y, r.width, header),
+                        r.x + 12,
+                        &title,
+                        text_color,
+                        false,
+                    );
+                }
+            }
+            "link" => {
+                let text = if caption.is_empty() {
+                    self.props.text(widget, "uri").unwrap_or_default()
+                } else {
+                    caption.to_owned()
+                };
+                let w = self.theme.text_width(&text);
+                let x = r.x + (r.width - w) / 2;
+                self.text_in(r, x, &text, c.accent, false);
+                let y = r.y + (r.height + font) / 2 + 1;
+                self.out.push(Primitive::Line {
+                    from: Point::new(x, y),
+                    to: Point::new(x + w, y),
+                    color: c.accent,
+                });
+            }
+            "tabs" => {
+                let header = self.theme.metrics(&widget.component.type_ref).header;
+                let body = Rect::new(r.x, r.y + header, r.width, r.height - header);
+                self.out
+                    .push(rect(body, Some(c.window), Some(c.container_border), 0));
+                let page = self.props.int(widget, "page", 0).max(0) as usize;
+                for (i, (tab, title)) in tabs(&self.props, self.theme, widget, r)
+                    .into_iter()
+                    .enumerate()
+                {
+                    self.text_centered(tab, &title, text_color);
+                    if i == page {
+                        self.out.push(rect(
+                            Rect::new(tab.x + 4, tab.bottom() - 3, tab.width - 8, 3),
+                            Some(c.accent),
+                            None,
+                            0,
+                        ));
+                    }
+                }
+            }
+            _ => {
+                self.out
+                    .push(rect(r, Some(c.control), Some(c.control_border), 0));
+                self.text_centered(r, &widget.component.type_ref.name, text_color);
+            }
+        }
+    }
+
     fn widget(&mut self, widget: &Widget, r: Rect, kind: ItemKind) {
         let c = &self.theme.colors;
         let enabled = self.props.bool(widget, "enabled", true);
@@ -106,6 +375,28 @@ impl Painter<'_> {
             });
             let x = bar.x + (bar.width - self.theme.text_width(&title)) / 2;
             self.text_in(bar, x, &title, title_text, true);
+            // Hauptmenü wie bei Delphi: die Menüleiste steht im Formular.
+            if let Some(titles) = self.props.menu_bar() {
+                let menu = Rect::new(
+                    r.x + 1,
+                    bar.bottom() + 1,
+                    r.width - 2,
+                    self.theme.menu_bar_height - 1,
+                );
+                self.out.push(rect(menu, Some(c.control), None, 0));
+                self.out.push(Primitive::Line {
+                    from: Point::new(r.x, menu.bottom()),
+                    to: Point::new(r.right(), menu.bottom()),
+                    color: border,
+                });
+                let mut x = menu.x + 10;
+                for title in titles {
+                    self.text_in(menu, x, &title, c.text, false);
+                    x += self.theme.text_width(&title) + 20;
+                }
+            }
+        } else if let Some(look) = self.props.look(widget).map(str::to_owned) {
+            self.look(&look, widget, r, &caption, text_color);
         } else if *type_ref == builtin::button() {
             let (control, border) = (c.control, c.control_border);
             self.out
@@ -193,6 +484,58 @@ impl Painter<'_> {
             self.out.push(rect(r, Some(veil), None, 0));
         }
     }
+}
+
+/// The tabs of a widget with `look = "tabs"` drawn in `r`: area and title
+/// (`pages[i]`, else the child's name).
+fn tabs(props: &Props<'_>, theme: &Theme, widget: &Widget, r: Rect) -> Vec<(Rect, String)> {
+    let header = theme.metrics(&widget.component.type_ref).header;
+    let pages = props.texts(widget, "pages");
+    let mut x = r.x;
+    widget
+        .children
+        .iter()
+        .enumerate()
+        .map(|(i, child)| {
+            let title = pages
+                .get(i)
+                .cloned()
+                .unwrap_or_else(|| child.component.name.to_string());
+            let w = theme.text_width(&title) + 24;
+            let tab = Rect::new(x, r.y, w, header);
+            x += w;
+            (tab, title)
+        })
+        .collect()
+}
+
+/// The tab under `at`: the widget with `look = "tabs"` and the page index –
+/// a click there shows that page in the designer (like Delphi).
+pub fn tab_at(
+    form: &Form,
+    layout: &FormLayout,
+    registry: &TypeRegistry,
+    theme: &Theme,
+    at: Point,
+) -> Option<(ComponentName, usize)> {
+    let props = Props { form, registry };
+    // Innerste Reiter zuerst (tiefere Elemente liegen oben).
+    let mut items: Vec<_> = layout
+        .items
+        .iter()
+        .filter(|i| i.kind == ItemKind::Widget)
+        .collect();
+    items.sort_by_key(|i| std::cmp::Reverse(i.depth));
+    items.into_iter().find_map(|item| {
+        let widget = form.widget(&item.name)?;
+        if props.look(widget) != Some("tabs") {
+            return None;
+        }
+        tabs(&props, theme, widget, item.rect)
+            .iter()
+            .position(|(tab, _)| tab.contains(at))
+            .map(|page| (item.name.clone(), page))
+    })
 }
 
 /// The display list of `form` laid out as `layout`.

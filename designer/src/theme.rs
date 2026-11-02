@@ -26,7 +26,14 @@
 //! height = 34
 //! min-width = 80
 //! padding-x = 14
+//!
+//! [widgets."backend:gtk4/Frame"]
+//! height = 80
+//! min-width = 120
+//! header = 22             # containers: room for a title or tab bar
 //! ```
+//!
+//! `menu-bar-height` (default 28) is the height of a form's menu bar.
 
 use std::collections::BTreeMap;
 
@@ -42,6 +49,9 @@ pub struct WidgetMetrics {
     /// Space left and right of the text.
     #[serde(default)]
     pub padding_x: i32,
+    /// Containers: space above the content (title of a frame, tab bar).
+    #[serde(default)]
+    pub header: i32,
 }
 
 impl Default for WidgetMetrics {
@@ -50,6 +60,7 @@ impl Default for WidgetMetrics {
             height: 30,
             min_width: 80,
             padding_x: 8,
+            header: 0,
         }
     }
 }
@@ -105,10 +116,17 @@ pub struct Theme {
     pub tray_height: i32,
     pub icon_size: i32,
     pub margin: i32,
+    /// Menu bar of a form with a main menu (`look = "menubar"`).
+    #[serde(default = "menu_bar_height")]
+    pub menu_bar_height: i32,
     pub colors: Colors,
     /// Natural sizes by type reference (`"core/Button"`).
     #[serde(default)]
     pub widgets: BTreeMap<String, WidgetMetrics>,
+}
+
+fn menu_bar_height() -> i32 {
+    28
 }
 
 const LINUX: &str = include_str!("../themes/linux.toml");

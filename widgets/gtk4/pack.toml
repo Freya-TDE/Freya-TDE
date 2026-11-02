@@ -155,6 +155,7 @@ init = """{
 
 [[component]]
 name = "RadioButton"
+look = "radio"
 kind = "widget"
 category = "GTK"
 icon = "radio"
@@ -184,6 +185,7 @@ init = """{
 
 [[component]]
 name = "Switch"
+look = "switch"
 kind = "widget"
 category = "GTK"
 icon = "switch"
@@ -210,6 +212,7 @@ init = """{
 
 [[component]]
 name = "SpinButton"
+look = "spin"
 kind = "widget"
 category = "GTK"
 icon = "spin"
@@ -253,6 +256,7 @@ init = """{
 
 [[component]]
 name = "Scale"
+look = "slider"
 kind = "widget"
 category = "GTK"
 icon = "slider"
@@ -294,6 +298,7 @@ init = """{
 
 [[component]]
 name = "ProgressBar"
+look = "progress"
 kind = "widget"
 category = "GTK"
 icon = "progress"
@@ -328,6 +333,7 @@ init = """{
 
 [[component]]
 name = "DropDown"
+look = "dropdown"
 kind = "widget"
 category = "GTK"
 icon = "dropdown"
@@ -348,8 +354,7 @@ params = [{ name = "index", type = "u32" }]
 type = "gtk4::DropDown"
 init = """{
     use gtk4::prelude::*;
-    let items: Vec<String> = {{ rust.items }}.into_iter().map(|item| item.to_string()).collect();
-    let items: Vec<&str> = items.iter().map(String::as_str).collect();
+    let items: Vec<&str> = {{ rust.items }};
     let dropdown = gtk4::DropDown::from_strings(&items);
     dropdown.set_selected({{ props.selected }});
     dropdown.set_sensitive({{ rust.enabled }});
@@ -362,6 +367,7 @@ init = """{
 
 [[component]]
 name = "TextView"
+look = "memo"
 kind = "widget"
 category = "GTK"
 icon = "memo"
@@ -403,7 +409,146 @@ init = """{
 }"""
 
 [[component]]
+name = "Notebook"
+kind = "container"
+look = "tabs"
+category = "GTK"
+icon = "tabs"
+description = "Pages with tabs; every child is one page (usually a Container)"
+[component.properties.pages]
+type = "list"
+item = "text"
+category = "Appearance"
+description = "Tab titles, one per child (missing ones: the child's name)"
+[component.properties.page]
+type = "int"
+min = 0
+category = "Behavior"
+description = "The page shown at the start (and in the designer)"
+[component.events.on_page]
+params = [{ name = "page", type = "u32" }]
+[component.codegen]
+type = "gtk4::Notebook"
+init = """{
+    use gtk4::prelude::*;
+    let notebook = gtk4::Notebook::new();
+    notebook.set_sensitive({{ rust.enabled }});
+    notebook.set_visible({{ rust.visible }});
+    {%- if props.tooltip %}
+    notebook.set_tooltip_text(Some({{ rust.tooltip }}));
+    {%- endif %}
+    notebook
+}"""
+
+[[component]]
+name = "ListBox"
+kind = "widget"
+look = "list"
+category = "GTK"
+icon = "list"
+description = "List of text entries to choose from"
+[component.properties.items]
+type = "list"
+item = "text"
+category = "Value"
+[component.properties.selected]
+type = "int"
+min = -1
+default = -1
+category = "Value"
+description = "Index of the selected entry (-1 = none)"
+[component.events.on_select]
+params = [{ name = "index", type = "i32" }]
+description = "Selection changed (-1 = nothing selected)"
+[component.codegen]
+type = "gtk4::ListBox"
+init = """{
+    use gtk4::prelude::*;
+    let list = gtk4::ListBox::new();
+    let items: Vec<&str> = {{ rust.items }};
+    for item in items {
+        let label = gtk4::Label::new(Some(item));
+        label.set_xalign(0.0);
+        label.set_margin_start(8);
+        label.set_margin_end(8);
+        label.set_margin_top(4);
+        label.set_margin_bottom(4);
+        list.append(&label);
+    }
+    if {{ props.selected }} >= 0 {
+        list.select_row(list.row_at_index({{ props.selected }}).as_ref());
+    }
+    list.set_sensitive({{ rust.enabled }});
+    list.set_visible({{ rust.visible }});
+    {%- if props.tooltip %}
+    list.set_tooltip_text(Some({{ rust.tooltip }}));
+    {%- endif %}
+    list
+}"""
+
+[[component]]
+name = "MainMenu"
+look = "menubar"
+category = "GTK"
+icon = "menu"
+description = "Menu bar of the window: entries like `Datei/Öffnen | Ctrl+O`, `Datei/-` (separator)"
+[component.properties.items]
+type = "list"
+item = "text"
+category = "Menu"
+description = "One entry per line: path with `/`, optional `| shortcut`, `-` = separator"
+[component.events.on_select]
+params = [{ name = "item", type = "&str" }]
+description = "An entry was chosen; `item` is its path, e.g. `Datei/Öffnen`"
+[component.codegen]
+type = "gtk4::PopoverMenuBar"
+init = """{
+    // Menüs aus den Pfaden: `Datei/Öffnen | Ctrl+O`; `-` beginnt einen Abschnitt.
+    let bar = gtk4::gio::Menu::new();
+    let mut menus: Vec<(String, gtk4::gio::Menu, gtk4::gio::Menu)> = Vec::new();
+    let items: Vec<&str> = {{ rust.items }};
+    for (index, entry) in items.iter().enumerate() {
+        let path = entry.split('|').next().unwrap_or("").trim();
+        let parts: Vec<&str> = path.split('/').map(str::trim).collect();
+        if parts.len() < 2 {
+            continue;
+        }
+        let mut parent: Option<usize> = None;
+        for depth in 0..parts.len() - 1 {
+            let key = parts[..=depth].join("/");
+            let found = menus.iter().position(|(k, _, _)| *k == key);
+            let at = match found {
+                Some(at) => at,
+                None => {
+                    let menu = gtk4::gio::Menu::new();
+                    let section = gtk4::gio::Menu::new();
+                    menu.append_section(None, &section);
+                    match parent {
+                        None => bar.append_submenu(Some(parts[depth]), &menu),
+                        Some(p) => menus[p].2.append_submenu(Some(parts[depth]), &menu),
+                    }
+                    menus.push((key, menu, section));
+                    menus.len() - 1
+                }
+            };
+            parent = Some(at);
+        }
+        let Some(at) = parent else { continue };
+        let label = parts[parts.len() - 1];
+        if label == "-" {
+            let section = gtk4::gio::Menu::new();
+            menus[at].1.append_section(None, &section);
+            menus[at].2 = section;
+        } else {
+            menus[at].2.append(Some(label), Some(&format!("{{ name }}.item{index}")));
+        }
+    }
+    gtk4::PopoverMenuBar::from_model(Some(&bar))
+}"""
+
+[[component]]
 name = "Frame"
+look = "frame"
 kind = "container"
 category = "GTK"
 icon = "frame"
@@ -427,6 +572,7 @@ init = """{
 
 [[component]]
 name = "Image"
+look = "image"
 kind = "widget"
 category = "GTK"
 icon = "image"
@@ -459,6 +605,7 @@ init = """{
 
 [[component]]
 name = "Separator"
+look = "separator"
 kind = "widget"
 category = "GTK"
 icon = "separator"
@@ -485,6 +632,7 @@ init = """{
 
 [[component]]
 name = "LinkButton"
+look = "link"
 kind = "widget"
 category = "GTK"
 icon = "link"

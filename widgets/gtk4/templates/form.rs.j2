@@ -4,6 +4,7 @@
 {%- set containers = ["core/Form", "core/Container", "backend:gtk4/Frame"] %}
 {#- Wie die Theme-Tabelle des Designers (designer/themes/linux.toml): Rand 12, Abstand 8. -#}
 {%- set default_layout = {"kind": "vertical", "spacing": 8, "padding": {"left": 12, "top": 12, "right": 12, "bottom": 12}} %}
+{%- set menus = components | selectattr("type", "eq", "backend:gtk4/MainMenu") | selectattr("field") | list %}
 {%- if root %}
 #[allow(unused_imports)]
 use gtk4::prelude::*;
@@ -92,9 +93,28 @@ impl {{ form.struct }} {
             layout.set_hexpand(true);
             layout.set_vexpand(true);
             self.{{ w.name }}.append(&layout);
+            {%- elif w.type == "core/Form" and menus %}
+            // Menüleiste über dem Inhalt.
+            let outer = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+            outer.append(&self.{{ menus[0].name }});
+            layout.set_vexpand(true);
+            outer.append(&layout);
+            self.{{ w.name }}.set_child(Some(&outer));
             {%- else %}
             self.{{ w.name }}.set_child(Some(&layout));
             {%- endif %}
+        }
+    {%- endfor %}
+    {%- for w in widgets if w.field and w.type == "backend:gtk4/Notebook" %}
+        // Reiter: jedes Kind ist eine Seite, Titel aus `pages` (sonst der Name).
+        {
+            let titles: Vec<&str> = {{ w.rust.pages }};
+            let title = |index: usize, name: &'static str| titles.get(index).copied().unwrap_or(name);
+            let _ = &title;
+            {%- for c in w.children if c.field %}
+            self.{{ w.name }}.append_page(&self.{{ c.name }}, Some(&gtk4::Label::new(Some(title({{ loop.index0 }}, "{{ c.name }}")))));
+            {%- endfor %}
+            self.{{ w.name }}.set_current_page(Some({{ w.props.page }}));
         }
     {%- endfor %}
     }
@@ -157,6 +177,15 @@ impl {{ form.struct }} {
                 let index = dropdown.selected();
                 Self::freya_call(&weak, |f| f.{{ handler }}(index));
             });
+        {%- elif key == "backend:gtk4/ListBox.on_select" %}
+            form.{{ w.name }}.connect_row_selected(move |_, row| {
+                let index = row.map_or(-1, |row| row.index());
+                Self::freya_call(&weak, |f| f.{{ handler }}(index));
+            });
+        {%- elif key == "backend:gtk4/Notebook.on_page" %}
+            form.{{ w.name }}.connect_switch_page(move |_, _, page| {
+                Self::freya_call(&weak, |f| f.{{ handler }}(page));
+            });
         {%- elif key == "backend:gtk4/TextView.on_change" %}
             form.{{ w.name }}.buffer().connect_changed(move |buffer| {
                 let text = buffer.text(&buffer.start_iter(), &buffer.end_iter(), false);
@@ -165,6 +194,61 @@ impl {{ form.struct }} {
         {%- endif %}
         }
     {%- endfor %}
+    {%- endfor %}
+    {%- for m in menus %}
+        // Hauptmenü: eine Aktion je Eintrag (`{{ m.name }}.item<n>`), Kürzel am Fenster.
+        {
+            let group = gtk4::gio::SimpleActionGroup::new();
+            let shortcuts = gtk4::ShortcutController::new();
+            shortcuts.set_scope(gtk4::ShortcutScope::Global);
+            let items: Vec<&str> = {{ m.rust.items }};
+            for (index, entry) in items.iter().enumerate() {
+                let (path, keys) = match entry.split_once('|') {
+                    Some((path, keys)) => (path.trim(), keys.trim()),
+                    None => (entry.trim(), ""),
+                };
+                if path.ends_with('-') || !path.contains('/') {
+                    continue;
+                }
+                let action = gtk4::gio::SimpleAction::new(&format!("item{index}"), None);
+                {%- if m.events.on_select %}
+                {
+                    let weak = weak.clone();
+                    let path = path.to_owned();
+                    action.connect_activate(move |_, _| {
+                        Self::freya_call(&weak, |f| f.{{ m.events.on_select }}(&path));
+                    });
+                }
+                {%- endif %}
+                group.add_action(&action);
+                if !keys.is_empty() {
+                    // `Ctrl+Shift+S` → `<Control><Shift>s` (macOS: Befehlstaste).
+                    let parts: Vec<&str> = keys.split('+').map(str::trim).collect();
+                    let mut accel = String::new();
+                    for (i, part) in parts.iter().enumerate() {
+                        if i + 1 < parts.len() {
+                            accel.push_str(match part.to_ascii_lowercase().as_str() {
+                                "ctrl" | "strg" if cfg!(target_os = "macos") => "<Meta>",
+                                "ctrl" | "strg" => "<Control>",
+                                "shift" | "umschalt" => "<Shift>",
+                                "alt" => "<Alt>",
+                                _ => "<Meta>",
+                            });
+                        } else if part.chars().count() == 1 {
+                            accel.push_str(&part.to_lowercase());
+                        } else {
+                            accel.push_str(part);
+                        }
+                    }
+                    if let Some(trigger) = gtk4::ShortcutTrigger::parse_string(&accel) {
+                        let target = gtk4::NamedAction::new(&format!("{{ m.name }}.item{index}"));
+                        shortcuts.add_shortcut(gtk4::Shortcut::new(Some(trigger), Some(target)));
+                    }
+                }
+            }
+            form.{{ root.name }}.insert_action_group("{{ m.name }}", Some(&group));
+            form.{{ root.name }}.add_controller(shortcuts);
+        }
     {%- endfor %}
         // Schließen: `on_close` darf es verhindern; das Hauptformular beendet
         // das Programm.

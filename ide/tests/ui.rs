@@ -4,7 +4,7 @@
 //! `harness = false`. Linux without display: `xvfb-run cargo test`.
 
 use rncl::prelude::*;
-use ruf::{Key, Modifiers, Shape};
+use ruf::{Key, Modifiers};
 use tdr_core::{ComponentName, TypeRef, builtin};
 
 fn name(n: &str) -> ComponentName {
@@ -124,25 +124,21 @@ fn main() {
                 .any(|i| i.type_ref == switch && i.icon.as_deref() == Some("switch"))
         );
     }
-    let images_before = surface
-        .shapes()
-        .iter()
-        .filter(|s| matches!(s, Shape::Image { .. }))
-        .count();
     ide.arm(Some(switch.clone()));
     mouse(&surface, MouseAction::Pressed, spot);
     mouse(&surface, MouseAction::Released, spot);
     assert_eq!(ide.session().selection(), [name("switch1")]);
-    let images = surface
-        .shapes()
-        .iter()
-        .filter(|s| matches!(s, Shape::Image { .. }))
-        .count();
-    assert_eq!(
-        images,
-        images_before + 1,
-        "Symbol des Schalters im Designer"
-    );
+    // Gezeichnet wie ein Schalter: Spur und Knopf (look = "switch").
+    {
+        let session = ide.session();
+        let (layout, primitives) = session.picture().unwrap();
+        let area = layout.rect(&name("switch1")).unwrap();
+        let parts = primitives
+            .iter()
+            .filter(|p| matches!(p, tdr_designer::Primitive::Rect { rect, radius, .. } if *radius > 4 && area.contains(rect.center())))
+            .count();
+        assert!(parts >= 2, "Schalter im Designer");
+    }
     surface.simulate_key(KeyEvent {
         key: Key::Delete,
         modifiers: Modifiers::default(),
@@ -150,6 +146,42 @@ fn main() {
     });
     assert!(!ide.session().form().unwrap().contains(&name("switch1")));
     println!("test gtk4_palette ... ok");
+
+    // Reiter: ein Klick auf den zweiten zeigt dessen Seite (rückgängig machbar).
+    ide.run_commands(
+        r#"[
+        {"command": "add_widget", "form": "main_form", "parent": "window", "type": "backend:gtk4/Notebook", "name": "pages"},
+        {"command": "set_property", "form": "main_form", "element": "pages", "property": "pages", "value": {"List": [{"Text": "Eins"}, {"Text": "Zwei"}]}},
+        {"command": "add_widget", "form": "main_form", "parent": "pages", "type": "core/Label", "name": "first"},
+        {"command": "add_widget", "form": "main_form", "parent": "pages", "type": "core/Label", "name": "second"}
+    ]"#,
+    )
+    .unwrap();
+    let visible = |n: &str| ide.session().layout().unwrap().rect(&name(n)).is_some();
+    assert!(visible("first") && !visible("second"));
+    let notebook = ide
+        .session()
+        .layout()
+        .unwrap()
+        .rect(&name("pages"))
+        .unwrap();
+    let theme = ide.session().theme().clone();
+    let second_tab = tdr_designer::Point::new(
+        notebook.x + theme.text_width("Eins") + 24 + 10,
+        notebook.y + 10,
+    );
+    mouse(&surface, MouseAction::Pressed, second_tab);
+    mouse(&surface, MouseAction::Released, second_tab);
+    assert!(
+        !visible("first") && visible("second"),
+        "zweite Seite sichtbar"
+    );
+    assert_eq!(ide.session().selection(), [name("pages")]);
+    ide.undo();
+    assert!(visible("first"));
+    ide.run_commands(r#"[{"command": "remove", "form": "main_form", "element": "pages"}]"#)
+        .unwrap();
+    println!("test notebook_tabs ... ok");
 
     // Befehle als JSON (Skripte, KI).
     let count = ide

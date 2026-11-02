@@ -206,6 +206,61 @@ fn form() -> Form {
         &window,
         Widget::from_component(widget("home", gtk("LinkButton")).with("caption", "Freya TDE")),
     );
+    // Leere Liste: muss trotzdem kompilieren.
+    add(
+        &mut form,
+        &window,
+        Widget::from_component(widget("empty", gtk("DropDown"))),
+    );
+    let texts =
+        |items: &[&str]| Value::List(items.iter().map(|t| Value::Text((*t).into())).collect());
+    add(
+        &mut form,
+        &window,
+        Widget::from_component(
+            widget("pages", gtk("Notebook"))
+                .with("pages", texts(&["Allgemein"]))
+                .on("on_page", handler("page_changed")),
+        ),
+    );
+    for (page, text) in [("general", "Seite 1"), ("extra", "Seite 2")] {
+        add(
+            &mut form,
+            &name("pages"),
+            Widget::new(name(page), builtin::container()),
+        );
+        add(
+            &mut form,
+            &name(page),
+            Widget::from_component(
+                widget(&format!("{page}_label"), builtin::label()).with("text", text),
+            ),
+        );
+    }
+    add(
+        &mut form,
+        &window,
+        Widget::from_component(
+            widget("colors", gtk("ListBox"))
+                .with("items", texts(&["Rot", "Grün", "Blau"]))
+                .on("on_select", handler("color_selected")),
+        ),
+    );
+    form.add_component(
+        widget("main_menu", gtk("MainMenu"))
+            .with(
+                "items",
+                texts(&[
+                    "Datei/Neu | Ctrl+N",
+                    "Datei/-",
+                    "Datei/Export/PDF",
+                    "Datei/Beenden | Ctrl+Q",
+                    "Hilfe/Über",
+                ]),
+            )
+            .on("on_select", handler("menu_selected")),
+    )
+    .unwrap();
     form
 }
 
@@ -230,10 +285,18 @@ fn started(app: &mut app::App) -> Result<(), app::Error> {
     let blue = app.main_form.blue.clone();
     let red = app.main_form.red.clone();
     let window = app.main_form.window.clone();
+    let pages = app.main_form.pages.clone();
+    let colors = app.main_form.colors.clone();
     gtk4::glib::timeout_add_local_once(std::time::Duration::from_millis(300), move || {
         edit.set_text("Freya");
         button.emit_clicked();
         blue.set_active(true);
+        pages.set_current_page(Some(1));
+        colors.select_row(colors.row_at_index(2).as_ref());
+        // Menüeinträge: Index 0 = Datei/Neu, 2 = Datei/Export/PDF.
+        let _ = window.activate_action("main_menu.item0", None);
+        let _ = window.activate_action("main_menu.item2", None);
+        println!("pages={}", pages.n_pages());
         println!("label={}", label.text());
         println!("visible={}", window.is_visible());
         println!("radio_group={}", !red.is_active());
@@ -269,6 +332,15 @@ impl MainForm {
     pub fn level_changed(&mut self, _value: f64) {}
     pub fn fruit_selected(&mut self, _index: u32) {}
     pub fn notes_changed(&mut self, _text: &str) {}
+    pub fn page_changed(&mut self, page: u32) {
+        println!("page={page}");
+    }
+    pub fn color_selected(&mut self, index: i32) {
+        println!("color={index}");
+    }
+    pub fn menu_selected(&mut self, item: &str) {
+        println!("menu={item}");
+    }
 }
 "#;
 
@@ -350,6 +422,11 @@ fn generated_project_builds_and_runs() {
     assert!(stdout.contains("blue=true"), "{stdout}");
     assert!(stdout.contains("radio_group=true"), "{stdout}");
     assert!(stdout.contains("visible=true"), "{stdout}");
+    assert!(stdout.contains("pages=2"), "{stdout}");
+    assert!(stdout.contains("page=1"), "{stdout}");
+    assert!(stdout.contains("color=2"), "{stdout}");
+    assert!(stdout.contains("menu=Datei/Neu"), "{stdout}");
+    assert!(stdout.contains("menu=Datei/Export/PDF"), "{stdout}");
     // FREYA_TDE_KEEP_DEMO=1 lässt das Projekt zum Ansehen liegen.
     if std::env::var_os("FREYA_TDE_KEEP_DEMO").is_none() {
         let _ = std::fs::remove_dir_all(&dir);

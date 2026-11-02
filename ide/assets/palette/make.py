@@ -55,6 +55,11 @@ ICONS = {
              + line(11, 26, 36, 26) + line(11, 33, 30, 33),
     "tabs": f"<path d='M5 15h13v-6h-0' fill='none'/>" + rect(5, 15, 38, 26, 3) + rect(5, 8, 14, 9, 2, fill=BODY) + rect(20, 8, 12, 9, 2, fill=SOFT)
             + f"<rect x='6' y='14' width='12' height='3' fill='{BODY}'/>" + line(11, 26, 35, 26) + line(11, 33, 28, 33),
+    "list": rect(6, 6, 36, 36, 3) + rect(7, 15, 34, 8, 0, fill=BLUE, stroke="none", sw=0)
+            + line(11, 11, 30, 11) + line(11, 19, 32, 19, "#ffffff") + line(11, 27, 28, 27) + line(11, 35, 31, 35),
+    "menu": rect(4, 6, 40, 9, 2, fill=SOFT) + text(9, 13.5, "File", 7, anchor="start") + text(25, 13.5, "Edit", 7, anchor="start")
+            + rect(8, 15, 26, 27, 2) + line(13, 22, 29, 22) + line(13, 29, 26, 29) + line(13, 36, 28, 36)
+            + f"<rect x='9' y='26' width='24' height='6' fill='{PALE}'/>" + line(13, 29, 26, 29, BLUE),
     "link": rect(4, 12, 40, 24, 4, fill=SOFT) + text(24, 27, "www", 12, BLUE) + line(10, 31, 38, 31, BLUE, 2),
     # --- IDE ------------------------------------------------------------------------
     "pointer": f"<path d='M14 6v31l8-8 5.5 12 5-2.3-5.5-11.7H38z' fill='{BODY}' stroke='{INK}' stroke-width='2.5' stroke-linejoin='round'/>",
