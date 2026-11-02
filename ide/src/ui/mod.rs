@@ -1602,12 +1602,24 @@ impl Ide {
             )
     }
 
+    /// A new, unsaved project with the default UI backend (GTK 4).
     pub fn new_project(&self) {
+        let backend = default_backend(&full_registry(&self.pack_dirs).0);
+        self.new_project_with(backend);
+    }
+
+    /// A new, unsaved project with UI backend `backend` (`"gtk4"`, `"egui"`
+    /// … or `"none"`); an unknown backend is reported in the status line.
+    pub fn new_project_with(&self, backend: &str) {
+        let (registry, packs) = full_registry(&self.pack_dirs);
+        if backend != NO_BACKEND && registry.backend(backend).is_none() {
+            self.main
+                .set_status(&format!("UI-Backend „{backend}“ ist nicht installiert."));
+            return;
+        }
         if !self.confirm_discard() {
             return;
         }
-        let (registry, packs) = full_registry(&self.pack_dirs);
-        let backend = default_backend(&registry);
         match Session::untitled("projekt1", backend, packs, registry) {
             Ok(session) => {
                 *self.session.borrow_mut() = session;

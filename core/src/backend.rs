@@ -61,6 +61,11 @@ pub struct BackendDescriptor {
     /// was initialised (e.g. `gtk4::init()?;`). Same context as `run`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub setup: Option<String>,
+    /// Template for items appended to `app.gen.rs` – shared helpers of the
+    /// backend's generated code (e.g. a widget state type the forms use as
+    /// `crate::app::…`). Same context as `run`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub app: Option<String>,
 }
 
 impl BackendDescriptor {
@@ -74,6 +79,7 @@ impl BackendDescriptor {
             form: None,
             run: None,
             setup: None,
+            app: None,
         }
     }
 }

@@ -55,7 +55,9 @@
 //! data_module}`), `app` (the variable holding the `App`) and `runtime`
 //! (the runtime variable or none). It must evaluate to `Result<(), Error>`.
 //! The optional `setup` template gets the same context; its statements run
-//! first in `run()`, before `App::init` (e.g. `gtk4::init()?;`).
+//! first in `run()`, before `App::init` (e.g. `gtk4::init()?;`). The
+//! optional `app` template (same context) adds items to `app.gen.rs`, e.g.
+//! helpers the forms use as `crate::app::…`.
 //!
 //! Every rendered piece is parsed with `syn`; errors are reported for the
 //! component and template part concerned.
@@ -1460,6 +1462,27 @@ fn app_file(
             rendered
         })
         .unwrap_or_default();
+    // Gemeinsame Hilfen des Backends für app.gen.rs.
+    let app_items = backend
+        .and_then(|b| b.app.as_ref())
+        .and_then(|template| {
+            let context = minijinja::context! {
+                forms => forms.iter().map(form_data).collect::<Vec<_>>(),
+                app => "app",
+                runtime => runtime_var,
+            };
+            let mut issues = Vec::new();
+            let rendered = render(env, "app", template, &context, &mut issues).filter(|text| {
+                let parsed = syn::parse_str::<syn::File>(text).map(drop);
+                check_rust(&mut issues, "app", text, parsed);
+                issues.is_empty()
+            });
+            for issue in issues {
+                out.error(None, issue);
+            }
+            rendered
+        })
+        .unwrap_or_default();
 
     code.push_str("/// Creates the application, calls `started` in `main.rs` and runs the UI.\n");
     match start {
@@ -1488,6 +1511,11 @@ fn app_file(
                  crate::started(&mut app)?;\n{ui}\n}}\n"
             );
         }
+    }
+    if !app_items.is_empty() {
+        code.push('\n');
+        code.push_str(&app_items);
+        code.push('\n');
     }
     let content = generated_file("the project", &format_rust(APP, &code, out));
     file(APP, FileKind::Generated, content, source)

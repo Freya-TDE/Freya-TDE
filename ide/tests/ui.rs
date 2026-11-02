@@ -587,6 +587,43 @@ fn main() {
         println!("test debugger ... übersprungen (kein lldb-dap/gdb)");
     }
 
+    // Neues Projekt mit egui: Palette mit dessen Widgets, Platzieren klappt.
+    ide.new_project_with("egui");
+    {
+        let session = ide.session();
+        assert_eq!(session.document().project().backend, "egui");
+        let items = tdr_designer::palette(session.document().registry(), "egui");
+        assert!(
+            items
+                .iter()
+                .any(|i| i.type_ref == TypeRef::backend("egui", "Slider"))
+        );
+        assert!(
+            !items
+                .iter()
+                .any(|i| i.type_ref == TypeRef::backend("gtk4", "Switch"))
+        );
+    }
+    ide.run_commands(
+        r#"[{"command": "add_widget", "form": "main_form", "parent": "window", "type": "backend:egui/Slider", "name": "level"}]"#,
+    )
+    .unwrap();
+    assert!(
+        ide.session()
+            .layout()
+            .unwrap()
+            .rect(&name("level"))
+            .is_some()
+    );
+    ide.new_project_with("kein_backend");
+    assert_eq!(
+        ide.session().document().project().backend,
+        "egui",
+        "unbekanntes Backend ändert nichts"
+    );
+    println!("test egui_project ... ok");
+    passed += 1;
+
     Application::process_events();
     let _ = std::fs::remove_dir_all(&home);
     println!("\ntest result: ok. {passed} passed");

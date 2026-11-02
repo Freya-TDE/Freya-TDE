@@ -28,7 +28,8 @@ Taskleiste und Alt+Tab; Bilder und Symbole liegen in `ide/assets/`. Der Konfigor
 *On start a splash screen with the logo appears; the program icon shows in title bar, task
 bar and Alt+Tab (assets in `ide/assets/`). An old `freya-td` config folder is taken over.*
 
-Neue Projekte nutzen das UI-Backend GTK 4 (`widgets/gtk4`), F9 startet also ein echtes GTK-Fenster.
+Neue Projekte nutzen das UI-Backend GTK 4 (`widgets/gtk4`), F9 startet also ein echtes GTK-Fenster; Datei →
+Neues Projekt mit Oberfläche wählt egui oder ein Projekt ohne Oberfläche (`Ide::new_project_with`).
 Symbole der Palette und der Komponentenleiste: `ide/assets/palette/` (Quellen `*.svg`, erzeugt mit
 `make.py`), ein Pack kann eigene in `icons/<name>.png` mitbringen.
 *New projects use the GTK 4 backend; palette icons live in `ide/assets/palette/` (packs may bring

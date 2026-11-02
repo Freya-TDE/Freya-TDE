@@ -35,6 +35,14 @@ pub(super) fn menu_bar() -> MenuBar {
             "Datei".into(),
             Menu::new()
                 .item("file.new", "Neues Projekt", Some("Ctrl+N"))
+                .submenu(
+                    "Neues Projekt mit Oberfläche",
+                    Menu::new()
+                        .item("file.new.gtk4", "GTK 4", None)
+                        .item("file.new.egui", "egui", None)
+                        .separator()
+                        .item("file.new.none", "Ohne Oberfläche (nur Komponenten)", None),
+                )
                 .item("file.open", "Projekt öffnen …", Some("Ctrl+O"))
                 .item("file.save", "Speichern", Some("Ctrl+S"))
                 .separator()
@@ -296,6 +304,10 @@ pub fn connect(ide: &Rc<Ide>) {
         .on_menu(with(ide, |ide, id: String| match id.as_str() {
             "file.new" => {
                 ide.new_project();
+                ide.main.build_palette(ide);
+            }
+            id if id.starts_with("file.new.") => {
+                ide.new_project_with(&id["file.new.".len()..]);
                 ide.main.build_palette(ide);
             }
             "file.open" => {

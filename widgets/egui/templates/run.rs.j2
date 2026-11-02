@@ -1,0 +1,24 @@
+{#- egui event loop: eframe draws the first form (the main form) in the
+    window; the other forms keep their state in `app`. -#}
+{%- set ui = forms | rejectattr("data_module") | list %}
+{%- if ui %}
+{%- set main = ui[0] %}
+struct FreyaApp({{ main.name }}::{{ main.struct }});
+impl eframe::App for FreyaApp {
+    fn ui(&mut self, ui: &mut eframe::egui::Ui, _frame: &mut eframe::Frame) {
+        self.0.ui(ui);
+    }
+}
+let mut form = {{ app }}.{{ main.name }};
+let title = form.title();
+eframe::run_native(
+    &title,
+    {{ main.name }}::{{ main.struct }}::native_options(),
+    Box::new(move |_cc| {
+        form.freya_created();
+        Ok(Box::new(FreyaApp(form)))
+    }),
+)
+.map_err(|e| e.to_string())?;
+{%- endif %}
+Ok(())

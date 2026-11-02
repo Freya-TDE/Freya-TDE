@@ -69,6 +69,7 @@
 //! form = "impl {{ form.struct }} { … }" # template for <form>.gen.rs (or form-file)
 //! run = "…"                             # template for the event loop in run() (or run-file)
 //! setup = "gtk4::init()?;"              # optional: statements before App::init (or setup-file)
+//! app = "pub struct Control<T> { … }"   # optional: items appended to app.gen.rs (or app-file)
 //! ```
 //!
 //! `[component.codegen]` of a runtime component may also give
@@ -155,6 +156,8 @@ struct RawBackend {
     run_file: Option<String>,
     setup: Option<String>,
     setup_file: Option<String>,
+    app: Option<String>,
+    app_file: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -972,6 +975,7 @@ impl Checker<'_> {
         backend.form = self.template(location, "form", &raw.form, &raw.form_file);
         backend.run = self.template(location, "run", &raw.run, &raw.run_file);
         backend.setup = self.template(location, "setup", &raw.setup, &raw.setup_file);
+        backend.app = self.template(location, "app", &raw.app, &raw.app_file);
         backend
     }
 

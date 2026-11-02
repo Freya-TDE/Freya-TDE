@@ -121,3 +121,66 @@ header = 34
 height = 120
 min-width = 140
 padding-x = 8
+
+# --- egui (widgets/egui) – dichter als GTK / denser than GTK
+[widgets."backend:egui/RadioButton"]
+height = 22
+min-width = 24
+padding-x = 0
+
+[widgets."backend:egui/Switch"]
+height = 22
+min-width = 40
+padding-x = 0
+
+[widgets."backend:egui/DragValue"]
+height = 24
+min-width = 60
+padding-x = 6
+
+[widgets."backend:egui/Slider"]
+height = 24
+min-width = 140
+padding-x = 0
+
+[widgets."backend:egui/ProgressBar"]
+height = 22
+min-width = 120
+padding-x = 0
+
+[widgets."backend:egui/ComboBox"]
+height = 26
+min-width = 120
+padding-x = 8
+
+[widgets."backend:egui/ListBox"]
+height = 100
+min-width = 140
+padding-x = 8
+
+[widgets."backend:egui/TextEdit"]
+height = 80
+min-width = 160
+padding-x = 6
+
+[widgets."backend:egui/Hyperlink"]
+height = 22
+min-width = 60
+padding-x = 0
+
+[widgets."backend:egui/Separator"]
+height = 9
+min-width = 20
+padding-x = 0
+
+[widgets."backend:egui/CollapsingHeader"]
+height = 60
+min-width = 120
+padding-x = 0
+header = 24
+
+[widgets."backend:egui/Tabs"]
+height = 120
+min-width = 200
+padding-x = 0
+header = 34

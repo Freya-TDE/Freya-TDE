@@ -1,0 +1,184 @@
+{#- egui: shared helpers of the generated code, appended to app.gen.rs. -#}
+/// The state of a widget: egui draws it every frame from these values, so a
+/// handler changes the widget by changing them (`self.ok_button.enabled =
+/// false`, `self.greeting.value = …`). `value` is reachable directly through
+/// `Deref` (`self.name_edit.trim()`).
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq)]
+pub struct Control<T> {
+    /// What the widget shows or edits (text, checked, number, selection …).
+    pub value: T,
+    /// Caption of buttons, check boxes, frames; title of the window.
+    pub caption: String,
+    /// Entries of lists, combo boxes, menus; titles of tabs.
+    pub items: Vec<String>,
+    pub enabled: bool,
+    pub visible: bool,
+    /// Hint shown on hover (empty = none).
+    pub tooltip: String,
+}
+
+#[allow(dead_code)]
+impl<T> Control<T> {
+    pub fn new(value: T) -> Self {
+        Self {
+            value,
+            caption: String::new(),
+            items: Vec::new(),
+            enabled: true,
+            visible: true,
+            tooltip: String::new(),
+        }
+    }
+
+    pub fn with_caption(mut self, caption: impl Into<String>) -> Self {
+        self.caption = caption.into();
+        self
+    }
+
+    pub fn with_items<S: ToString>(mut self, items: Vec<S>) -> Self {
+        self.items = items.iter().map(ToString::to_string).collect();
+        self
+    }
+
+    pub fn with_state(mut self, enabled: bool, visible: bool, tooltip: &str) -> Self {
+        self.enabled = enabled;
+        self.visible = visible;
+        self.tooltip = tooltip.to_owned();
+        self
+    }
+
+    /// Hover text for `response` if a tooltip is set.
+    pub fn hint(&self, response: eframe::egui::Response) -> eframe::egui::Response {
+        if self.tooltip.is_empty() {
+            response
+        } else {
+            response.on_hover_text(&self.tooltip)
+        }
+    }
+}
+
+impl<T> std::ops::Deref for Control<T> {
+    type Target = T;
+    fn deref(&self) -> &T {
+        &self.value
+    }
+}
+
+impl<T> std::ops::DerefMut for Control<T> {
+    fn deref_mut(&mut self) -> &mut T {
+        &mut self.value
+    }
+}
+
+/// An on/off switch (egui has none of its own).
+#[allow(dead_code)]
+pub fn switch(on: &mut bool) -> impl eframe::egui::Widget + '_ {
+    use eframe::egui;
+    move |ui: &mut egui::Ui| {
+        let size = ui.spacing().interact_size.y * egui::vec2(2.0, 1.0);
+        let (rect, mut response) = ui.allocate_exact_size(size, egui::Sense::click());
+        if response.clicked() {
+            *on = !*on;
+            response.mark_changed();
+        }
+        if ui.is_rect_visible(rect) {
+            let t = ui.ctx().animate_bool_responsive(response.id, *on);
+            let visuals = ui.style().interact_selectable(&response, *on);
+            let rect = rect.expand(visuals.expansion);
+            let radius = 0.5 * rect.height();
+            ui.painter().rect(
+                rect,
+                radius,
+                visuals.bg_fill,
+                visuals.bg_stroke,
+                egui::StrokeKind::Inside,
+            );
+            let x = egui::lerp((rect.left() + radius)..=(rect.right() - radius), t);
+            let center = egui::pos2(x, rect.center().y);
+            ui.painter()
+                .circle(center, 0.75 * radius, visuals.bg_fill, visuals.fg_stroke);
+        }
+        response
+    }
+}
+
+/// `Ctrl+Shift+S` as an egui shortcut (Ctrl = Command on macOS).
+#[allow(dead_code)]
+pub fn shortcut(keys: &str) -> Option<eframe::egui::KeyboardShortcut> {
+    use eframe::egui::{Key, KeyboardShortcut, Modifiers};
+    let parts: Vec<&str> = keys.split('+').map(str::trim).collect();
+    let (key, modifiers) = parts.split_last()?;
+    let mut mods = Modifiers::NONE;
+    for m in modifiers {
+        match m.to_ascii_lowercase().as_str() {
+            "ctrl" | "strg" | "cmd" => mods = mods | Modifiers::COMMAND,
+            "shift" | "umschalt" => mods = mods | Modifiers::SHIFT,
+            "alt" => mods = mods | Modifiers::ALT,
+            _ => return None,
+        }
+    }
+    let key = Key::from_name(key).or_else(|| Key::from_name(&key.to_uppercase()))?;
+    Some(KeyboardShortcut::new(mods, key))
+}
+
+/// Shows a menu bar from entries like `Datei/Öffnen | Ctrl+O` (`-` =
+/// separator, deeper paths = submenus); returns the chosen entry's path,
+/// also when its shortcut was pressed.
+#[allow(dead_code)]
+pub fn menu_bar(ui: &mut eframe::egui::Ui, items: &[String]) -> Option<String> {
+    let entries: Vec<(Vec<String>, String)> = items
+        .iter()
+        .map(|item| {
+            let (path, keys) = item.split_once('|').unwrap_or((item.as_str(), ""));
+            let parts: Vec<String> = path.split('/').map(|p| p.trim().to_owned()).collect();
+            (parts, keys.trim().to_owned())
+        })
+        .filter(|(parts, _)| parts.len() >= 2)
+        .collect();
+    let mut chosen = None;
+    for (parts, keys) in &entries {
+        if let Some(shortcut) = shortcut(keys)
+            && ui.ctx().input_mut(|i| i.consume_shortcut(&shortcut))
+        {
+            chosen = Some(parts.join("/"));
+        }
+    }
+    eframe::egui::MenuBar::new().ui(ui, |ui| {
+        menu_level(ui, &entries, &[], &mut chosen);
+    });
+    chosen
+}
+
+/// The menus below `prefix`, in the order of the entries.
+fn menu_level(
+    ui: &mut eframe::egui::Ui,
+    entries: &[(Vec<String>, String)],
+    prefix: &[String],
+    chosen: &mut Option<String>,
+) {
+    let depth = prefix.len();
+    let mut seen: Vec<&str> = Vec::new();
+    for (parts, keys) in entries {
+        if parts.len() <= depth || !parts.starts_with(prefix) {
+            continue;
+        }
+        let name = parts[depth].as_str();
+        if parts.len() == depth + 1 {
+            if name == "-" {
+                ui.separator();
+            } else {
+                let button = eframe::egui::Button::new(name).shortcut_text(keys.as_str());
+                if ui.add(button).clicked() {
+                    *chosen = Some(parts.join("/"));
+                    ui.close();
+                }
+            }
+        } else if !seen.contains(&name) {
+            seen.push(name);
+            let mut sub = prefix.to_vec();
+            sub.push(name.to_owned());
+            ui.menu_button(name, |ui| menu_level(ui, entries, &sub, chosen));
+        }
+    }
+}

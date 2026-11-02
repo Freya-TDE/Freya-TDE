@@ -1,0 +1,360 @@
+{#- egui: a form draws itself every frame from its state (appended to
+    <form>.gen.rs). Every container gets a method `freya_ui_<name>` that lays
+    out its direct children; events are checked right after a widget is
+    drawn and call the handlers in <form>.rs. -#}
+{%- set containers = ["core/Form", "core/Container", "backend:egui/CollapsingHeader", "backend:egui/Tabs"] %}
+{#- Wie die Theme-Tabelle des Designers (designer/themes/linux.toml): Rand 12, Abstand 8. -#}
+{%- set default_layout = {"kind": "vertical", "spacing": 8, "padding": {"left": 12, "top": 12, "right": 12, "bottom": 12}} %}
+{#- Widgets that keep their natural width even with align Fill. -#}
+{%- set natural = ["core/Label", "core/CheckBox", "backend:egui/RadioButton", "backend:egui/Switch", "backend:egui/Hyperlink", "backend:egui/DragValue", "backend:egui/Slider"] %}
+{%- set menus = components | selectattr("type", "eq", "backend:egui/MainMenu") | selectattr("field") | list %}
+
+{#- The widget of `c` as an `impl egui::Widget` expression. `fill`: take the
+    full width (vertical layouts with align Fill). -#}
+{%- macro widget(c, fill) -%}
+{%- set t = c.type -%}
+{%- if t == "core/Label" -%}
+egui::Label::new(self.{{ c.name }}.value.as_str()){% if c.props.wrap %}.wrap(){% else %}.extend(){% endif %}
+{%- elif t == "core/Button" -%}
+egui::Button::new(self.{{ c.name }}.caption.as_str())
+{%- elif t == "core/Edit" -%}
+egui::TextEdit::singleline(&mut self.{{ c.name }}.value)
+    {%- if c.props.placeholder %}.hint_text({{ c.rust.placeholder }}){% endif -%}
+    {%- if c.props.password %}.password(true){% endif -%}
+    {%- if c.props.read_only %}.interactive(false){% endif -%}
+    {%- if c.props.max_length > 0 %}.char_limit({{ c.props.max_length }}){% endif -%}
+    {%- if fill %}.desired_width(f32::INFINITY){% endif %}
+{%- elif t == "core/CheckBox" -%}
+egui::Checkbox::new(&mut self.{{ c.name }}.value, self.{{ c.name }}.caption.as_str())
+{%- elif t == "backend:egui/RadioButton" -%}
+egui::RadioButton::new(self.{{ c.name }}.value, self.{{ c.name }}.caption.as_str())
+{%- elif t == "backend:egui/Switch" -%}
+crate::app::switch(&mut self.{{ c.name }}.value)
+{%- elif t == "backend:egui/DragValue" -%}
+egui::DragValue::new(&mut self.{{ c.name }}.value).range({{ c.rust.minimum }}..={{ c.rust.maximum }}).speed({{ c.rust.step }}).fixed_decimals({{ c.props.digits }})
+{%- elif t == "backend:egui/Slider" -%}
+egui::Slider::new(&mut self.{{ c.name }}.value, {{ c.rust.minimum }}..={{ c.rust.maximum }}).step_by({{ c.rust.step }}).show_value({{ c.rust.show_value }})
+{%- elif t == "backend:egui/ProgressBar" -%}
+|ui: &mut egui::Ui| {
+    let bar = egui::ProgressBar::new(self.{{ c.name }}.value);
+    if self.{{ c.name }}.caption.is_empty() {
+        ui.add(bar)
+    } else {
+        ui.add(bar.text(self.{{ c.name }}.caption.as_str()))
+    }
+}
+{%- elif t == "backend:egui/ComboBox" -%}
+|ui: &mut egui::Ui| {
+    let control = &mut self.{{ c.name }};
+    let shown = control.items.get(control.value).cloned().unwrap_or_default();
+    let mut changed = false;
+    let mut response = egui::ComboBox::from_id_salt("{{ form.name }}.{{ c.name }}")
+        .selected_text(shown)
+        {%- if fill %}
+        .width(ui.available_width())
+        {%- endif %}
+        .show_ui(ui, |ui| {
+            for (index, item) in control.items.iter().enumerate() {
+                if ui.selectable_label(control.value == index, item.as_str()).clicked() {
+                    control.value = index;
+                    changed = true;
+                }
+            }
+        })
+        .response;
+    if changed {
+        response.mark_changed();
+    }
+    response
+}
+{%- elif t == "backend:egui/ListBox" -%}
+|ui: &mut egui::Ui| {
+    let control = &mut self.{{ c.name }};
+    let mut changed = false;
+    let mut response = egui::Frame::group(ui.style())
+        .show(ui, |ui| {
+            egui::ScrollArea::vertical()
+                .id_salt("{{ form.name }}.{{ c.name }}")
+                .max_height(120.0)
+                .show(ui, |ui| {
+                    ui.set_min_width(ui.available_width());
+                    for (index, item) in control.items.iter().enumerate() {
+                        let selected = control.value == index as i32;
+                        if ui.selectable_label(selected, item.as_str()).clicked() {
+                            control.value = index as i32;
+                            changed = true;
+                        }
+                    }
+                });
+        })
+        .response;
+    if changed {
+        response.mark_changed();
+    }
+    response
+}
+{%- elif t == "backend:egui/TextEdit" -%}
+egui::TextEdit::multiline(&mut self.{{ c.name }}.value).desired_rows({{ c.props.rows }})
+    {%- if c.props.monospace %}.font(egui::TextStyle::Monospace){% endif -%}
+    {%- if c.props.read_only %}.interactive(false){% endif -%}
+    {%- if fill %}.desired_width(f32::INFINITY){% endif %}
+{%- elif t == "backend:egui/Hyperlink" -%}
+egui::Hyperlink::from_label_and_url(
+    if self.{{ c.name }}.caption.is_empty() { self.{{ c.name }}.value.as_str() } else { self.{{ c.name }}.caption.as_str() },
+    self.{{ c.name }}.value.as_str(),
+)
+{%- elif t == "backend:egui/Separator" -%}
+egui::Separator::default(){% if c.props.vertical %}.vertical(){% endif %}
+{%- else -%}
+egui::Label::new("{{ c.type_name }}")
+{%- endif -%}
+{%- endmacro %}
+
+{#- A child container: its own method, inside a collapsing header if it is one. -#}
+{%- macro container(c) -%}
+|ui: &mut egui::Ui| {
+    ui.add_enabled_ui(self.{{ c.name }}.enabled, |ui| {
+    {%- if c.type == "backend:egui/CollapsingHeader" %}
+        let title = self.{{ c.name }}.caption.clone();
+        egui::CollapsingHeader::new(title)
+            .id_salt("{{ form.name }}.{{ c.name }}")
+            .default_open({{ c.rust.open }})
+            .show(ui, |ui| self.freya_ui_{{ c.name }}(ui));
+    {%- else %}
+        self.freya_ui_{{ c.name }}(ui);
+    {%- endif %}
+    })
+    .response
+}
+{%- endmacro %}
+
+{#- What happens after `c` was drawn (`response`). `radios`: the radio
+    buttons of the same container. -#}
+{%- macro events(c, radios) -%}
+let response = self.{{ c.name }}.hint(response);
+{%- set t = c.type %}
+{%- if t == "backend:egui/RadioButton" %}
+if response.clicked() {
+    self.{{ c.name }}.value = true;
+    {%- for o in radios if o.name != c.name %}
+    self.{{ o.name }}.value = false;
+    {%- endfor %}
+    {%- if c.events.on_toggle %}
+    self.{{ c.events.on_toggle }}(true);
+    {%- endif %}
+}
+{%- endif %}
+{%- for event, handler in c.events | items if handler %}
+{%- set key = t ~ "." ~ event %}
+{%- if key == "core/Button.on_click" %}
+if response.clicked() {
+    self.{{ handler }}();
+}
+{%- elif key in ["core/Edit.on_change", "backend:egui/TextEdit.on_change"] %}
+if response.changed() {
+    let text = self.{{ c.name }}.value.clone();
+    self.{{ handler }}(&text);
+}
+{%- elif key == "core/Edit.on_submit" %}
+if response.lost_focus() && ui.ctx().input(|i| i.key_pressed(egui::Key::Enter)) {
+    self.{{ handler }}();
+}
+{%- elif key in ["core/CheckBox.on_toggle", "backend:egui/Switch.on_toggle"] %}
+if response.changed() {
+    let checked = self.{{ c.name }}.value;
+    self.{{ handler }}(checked);
+}
+{%- elif key in ["backend:egui/DragValue.on_change", "backend:egui/Slider.on_change"] %}
+if response.changed() {
+    let value = self.{{ c.name }}.value;
+    self.{{ handler }}(value);
+}
+{%- elif key == "backend:egui/ComboBox.on_select" %}
+if response.changed() {
+    let index = self.{{ c.name }}.value as u32;
+    self.{{ handler }}(index);
+}
+{%- elif key == "backend:egui/ListBox.on_select" %}
+if response.changed() {
+    let index = self.{{ c.name }}.value;
+    self.{{ handler }}(index);
+}
+{%- endif %}
+{%- endfor %}
+let _ = response;
+{%- endmacro %}
+
+{%- if root %}
+#[allow(unused_imports)]
+use eframe::egui;
+
+#[allow(clippy::needless_borrow)]
+impl {{ form.struct }} {
+    /// Window options from the designer (title, size, resizable).
+    pub fn native_options() -> eframe::NativeOptions {
+        eframe::NativeOptions {
+            viewport: egui::ViewportBuilder::default()
+                .with_title({{ root.rust.title }})
+                .with_inner_size([{{ root.props.size.width }} as f32, {{ root.props.size.height }} as f32])
+                .with_resizable({{ root.rust.resizable }}),
+            ..Default::default()
+        }
+    }
+
+    /// The window title (the caption of `{{ root.name }}`).
+    pub fn title(&self) -> String {
+        self.{{ root.name }}.caption.clone()
+    }
+
+    /// Called once before the first frame.
+    pub fn freya_created(&mut self) {
+    {%- if root.events.on_create %}
+        self.{{ root.events.on_create }}();
+    {%- endif %}
+    }
+
+    /// Draws the form (every frame) and handles its events.
+    pub fn ui(&mut self, ui: &mut egui::Ui) {
+        // Titel nachführen, wenn ein Handler ihn geändert hat.
+        let title_id = egui::Id::unique("freya_title");
+        let title_changed = ui.ctx().data_mut(|d| {
+            let shown: &mut String = d.get_temp_mut_or_default(title_id);
+            let changed = *shown != self.{{ root.name }}.caption;
+            if changed {
+                shown.clone_from(&self.{{ root.name }}.caption);
+            }
+            changed
+        });
+        if title_changed {
+            ui.ctx().send_viewport_cmd(egui::ViewportCommand::Title(self.title()));
+        }
+        if ui.ctx().input(|i| i.viewport().close_requested()) {
+        {%- if root.events.on_close %}
+            if !self.{{ root.events.on_close }}() {
+                ui.ctx().send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            }
+        {%- endif %}
+        }
+    {%- for m in menus %}
+        egui::Panel::top("{{ form.name }}.{{ m.name }}").show(ui, |ui| {
+            let chosen = crate::app::menu_bar(ui, &self.{{ m.name }}.items);
+            {%- if m.events.on_select %}
+            if let Some(item) = chosen {
+                self.{{ m.events.on_select }}(&item);
+            }
+            {%- else %}
+            let _ = chosen;
+            {%- endif %}
+        });
+    {%- endfor %}
+        egui::CentralPanel::default()
+            .frame(egui::Frame::central_panel(&ui.style()).inner_margin(egui::Margin::ZERO))
+            .show(ui, |ui| {
+                ui.add_enabled_ui(self.{{ root.name }}.enabled, |ui| self.freya_ui_{{ root.name }}(ui));
+            });
+    }
+{%- for w in widgets if w.field and w.type in containers %}
+
+    /// The children of `{{ w.name }}`.
+    #[allow(unused_variables)]
+    fn freya_ui_{{ w.name }}(&mut self, ui: &mut egui::Ui) {
+    {%- set kids = w.children | selectattr("field") | list %}
+    {%- set radios = kids | selectattr("type", "eq", "backend:egui/RadioButton") | list %}
+    {%- if w.type == "backend:egui/Tabs" %}
+        // Reiterleiste, darunter nur die gewählte Seite.
+        let before = self.{{ w.name }}.value;
+        ui.horizontal(|ui| {
+        {%- for c in kids %}
+            let title = self.{{ w.name }}.items.get({{ loop.index0 }}).cloned().unwrap_or_else(|| "{{ c.name }}".to_owned());
+            if ui.selectable_label(self.{{ w.name }}.value == {{ loop.index0 }}, title).clicked() {
+                self.{{ w.name }}.value = {{ loop.index0 }};
+            }
+        {%- endfor %}
+        });
+        ui.separator();
+        {%- if w.events.on_page %}
+        if self.{{ w.name }}.value != before {
+            let page = self.{{ w.name }}.value as u32;
+            self.{{ w.events.on_page }}(page);
+        }
+        {%- else %}
+        let _ = before;
+        {%- endif %}
+        match self.{{ w.name }}.value {
+        {%- for c in kids %}
+            {{ loop.index0 }} => {
+                if self.{{ c.name }}.visible {
+                {%- if c.type in containers %}
+                    let response = ui.add({{ container(c) }});
+                {%- else %}
+                    let response = ui.add({{ widget(c, false) }});
+                {%- endif %}
+                    {{ events(c, []) | indent(20) }}
+                }
+            }
+        {%- endfor %}
+            _ => {}
+        }
+    {%- else %}
+    {%- set l = w.layout or default_layout %}
+        egui::Frame::NONE
+            .inner_margin(egui::Margin {
+                left: {{ [l.padding.left, 127] | min }},
+                right: {{ [l.padding.right, 127] | min }},
+                top: {{ [l.padding.top, 127] | min }},
+                bottom: {{ [l.padding.bottom, 127] | min }},
+            })
+            .show(ui, |ui| {
+                ui.spacing_mut().item_spacing = egui::vec2({{ l.spacing }} as f32, {{ l.spacing }} as f32);
+            {%- if l.kind == "absolute" %}
+                // Absolut: Fläche so groß wie das äußerste Kind.
+                let extent = [{% for c in kids %}{% set p = c.placement %}{% if p and p.kind == "absolute" %}({{ p.x + p.width }}, {{ p.y + p.height }}), {% endif %}{% endfor %}(0, 0)]
+                    .iter()
+                    .fold((0, 0), |a, b| (a.0.max(b.0), a.1.max(b.1)));
+                let (area, _) = ui.allocate_exact_size(egui::vec2(extent.0 as f32, extent.1 as f32), egui::Sense::hover());
+            {%- elif l.kind == "horizontal" %}
+                ui.horizontal(|ui| {
+            {%- elif l.kind == "grid" %}
+                egui::Grid::new("{{ form.name }}.{{ w.name }}")
+                    .num_columns({{ l.columns or 1 }})
+                    .spacing([{{ l.spacing }} as f32, {{ l.spacing }} as f32])
+                    .show(ui, |ui| {
+            {%- else %}
+                ui.vertical(|ui| {
+            {%- endif %}
+            {%- for c in kids if l.kind != "stack" or loop.first %}
+                {%- set p = c.placement %}
+                {%- set align = p.align if p and p.kind == "layout" else "Fill" %}
+                {%- set item = container(c) if c.type in containers else widget(c, l.kind == "vertical" and align == "Fill" and c.type not in natural) %}
+                    if self.{{ c.name }}.visible {
+                    {%- if l.kind == "absolute" and p and p.kind == "absolute" %}
+                        let rect = egui::Rect::from_min_size(area.min + egui::vec2({{ p.x }} as f32, {{ p.y }} as f32), egui::vec2({{ p.width }} as f32, {{ p.height }} as f32));
+                        let response = ui.add_enabled_ui(self.{{ c.name }}.enabled, |ui| ui.put(rect, {{ item | indent(24) }})).inner;
+                    {%- elif l.kind in ["vertical", "custom"] and align == "Fill" and c.type not in natural %}
+                        let response = ui.with_layout(egui::Layout::top_down_justified(egui::Align::{{ "Center" if c.type == "core/Button" else "Min" }}), |ui| {
+                            ui.add_enabled_ui(self.{{ c.name }}.enabled, |ui| ui.add({{ item | indent(28) }})).inner
+                        }).inner;
+                    {%- elif l.kind in ["vertical", "custom"] and align in ["Center", "End"] %}
+                        let response = ui.with_layout(egui::Layout::top_down(egui::Align::{{ "Center" if align == "Center" else "Max" }}), |ui| {
+                            ui.add_enabled_ui(self.{{ c.name }}.enabled, |ui| ui.add({{ item | indent(28) }})).inner
+                        }).inner;
+                    {%- else %}
+                        let response = ui.add_enabled_ui(self.{{ c.name }}.enabled, |ui| ui.add({{ item | indent(24) }})).inner;
+                    {%- endif %}
+                        {{ events(c, radios) | indent(24) }}
+                    }
+                {%- if l.kind == "grid" %}
+                    if {{ loop.index }} % {{ l.columns or 1 }} == 0 {
+                        ui.end_row();
+                    }
+                {%- endif %}
+            {%- endfor %}
+            {%- if l.kind != "absolute" %}
+                });
+            {%- endif %}
+            });
+    {%- endif %}
+    }
+{%- endfor %}
+}
+{%- endif %}
