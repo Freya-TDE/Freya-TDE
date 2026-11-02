@@ -435,6 +435,11 @@ pub fn connect(ide: &Rc<Ide>) {
         }
         ide.panel.terminal.redraw();
     }));
+    // Getippter Text über die Eingabemethode (tote Tasten, Akzente, IME).
+    canvas.on_text_input(with(ide, |ide, text: String| {
+        ide.panel.terminal.text_input(&text);
+        ide.panel.terminal.redraw();
+    }));
     panel
         .window
         .on_menu(with(ide, |ide, id: String| match id.as_str() {

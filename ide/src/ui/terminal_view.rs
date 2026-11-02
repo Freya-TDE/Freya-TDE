@@ -273,6 +273,10 @@ impl TerminalView {
         }
         if let Some((row, col)) = screen.cursor.filter(|_| running) {
             let (x, y) = at(row, col);
+            // Kandidatenfenster der Eingabemethode am Cursor.
+            self.canvas
+                .widget()
+                .set_input_cursor(Rect::new(x, y, cw, ch));
             // Block-Cursor; das Zeichen darunter in der Hintergrundfarbe.
             shapes.push(Shape::Rect {
                 rect: Rect::new(x, y, cw, ch),
@@ -403,6 +407,17 @@ impl TerminalView {
         if let Some(t) = self.terminal.borrow().as_ref() {
             t.write(&[0x0c]);
         }
+    }
+
+    /// Text from the input method (typed characters, dead keys like
+    /// `^` + `e` = `ê`, AltGr characters, IME).
+    pub fn text_input(&self, text: &str) {
+        let terminal = self.terminal.borrow();
+        let Some(terminal) = terminal.as_ref().filter(|t| t.is_running()) else {
+            return;
+        };
+        self.selection.set(None);
+        terminal.write_text(text);
     }
 
     /// A key on the canvas. Returns what the panel should do itself:
