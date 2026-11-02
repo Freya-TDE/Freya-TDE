@@ -26,7 +26,7 @@
 //!
 //! [[component]]
 //! name = "Pool"                         # PascalCase
-//! kind = "non-visual"                   # "non-visual" (default), "widget", "container"
+//! kind = "non-visual"                   # "non-visual" (default), "widget", "container"; widgets also get enabled, visible, tooltip
 //! category = "Database"                 # optional palette group
 //! description = "…"                     # optional
 //! icon = "database"                     # optional
@@ -67,6 +67,7 @@
 //! cargo = [{ crate = "eframe", version = "0.33" }]
 //! form = "impl {{ form.struct }} { … }" # template for <form>.gen.rs (or form-file)
 //! run = "…"                             # template for the event loop in run() (or run-file)
+//! setup = "gtk4::init()?;"              # optional: statements before App::init (or setup-file)
 //! ```
 //!
 //! `[component.codegen]` of a runtime component may also give
@@ -151,6 +152,8 @@ struct RawBackend {
     form_file: Option<String>,
     run: Option<String>,
     run_file: Option<String>,
+    setup: Option<String>,
+    setup_file: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -724,6 +727,15 @@ impl Checker<'_> {
                 ty.properties.push(def);
             }
         }
+        // Wie die Kern-Widgets: enabled, visible, tooltip (sofern nicht
+        // selbst definiert).
+        if kind.is_widget() {
+            for def in crate::builtin::common() {
+                if !ty.properties.iter().any(|p| p.name == def.name) {
+                    ty.properties.push(def);
+                }
+            }
+        }
 
         for (name, event) in &raw.events {
             let loc = format!("{location}, event {name}");
@@ -956,6 +968,7 @@ impl Checker<'_> {
             .collect();
         backend.form = self.template(location, "form", &raw.form, &raw.form_file);
         backend.run = self.template(location, "run", &raw.run, &raw.run_file);
+        backend.setup = self.template(location, "setup", &raw.setup, &raw.setup_file);
         backend
     }
 

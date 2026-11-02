@@ -8,7 +8,7 @@ is saved per user and restored on start.*
 
 | Fenster / window | Inhalt / content |
 |---|---|
-| Hauptfenster | Menü, Komponentenpalette (ein Reiter je Kategorie), Statuszeile |
+| Hauptfenster | Menü, Komponentenpalette wie Lazarus: ein Reiter je Kategorie (Standard, dann die Palette des UI-Backends, dann die Packs), ein Symbol je Typ, Name und Beschreibung im Tooltip, der gewählte Typ ist hinterlegt; Statuszeile |
 | Designer | das Formular auf einer Zeichenfläche: klicken wählt (Strg/Umschalt ergänzt), mit gewählter Palette klicken platziert, ziehen ordnet um bzw. verschiebt in einen anderen Container, Doppelklick springt zum Handler (legt ihn an), Entf löscht, Esc bricht ab, Rechtsklick-Menü, F12 = Code |
 | Code | ein Reiter je Datei (GtkSourceView): Hervorhebung, Zeilennummern, Fehlermarken vom Build und von rust-analyzer; Strg+Leertaste (und `.`/`::`) vervollständigt, Strg+Klick oder Strg+F12 springt zur Definition; Klammerblöcke falten per Pfeil am Rand (Code → Alles falten/aufklappen); Git-Änderungsmarken am Rand (grün neu, blau geändert, rotes Dreieck gelöscht – verglichen mit dem gestagten Stand, aktualisiert beim Tippen); `.gen.rs` schreibgeschützt; Strg+S speichert, Strg+W schließt, F12 = Designer; der Designer folgt dem Reiter |
 | Objektinspektor | Eigenschaften (Editor passend zum Typ, ↺ = Standardwert) und Ereignisse (… schlägt einen Handler vor) |
@@ -27,6 +27,12 @@ Taskleiste und Alt+Tab; Bilder und Symbole liegen in `ide/assets/`. Der Konfigor
 `<config>/freya-tde/`; ein alter Ordner `freya-td` wird beim ersten Start übernommen.
 *On start a splash screen with the logo appears; the program icon shows in title bar, task
 bar and Alt+Tab (assets in `ide/assets/`). An old `freya-td` config folder is taken over.*
+
+Neue Projekte nutzen das UI-Backend GTK 4 (`widgets/gtk4`), F9 startet also ein echtes GTK-Fenster.
+Symbole der Palette und der Komponentenleiste: `ide/assets/palette/` (Quellen `*.svg`, erzeugt mit
+`make.py`), ein Pack kann eigene in `icons/<name>.png` mitbringen.
+*New projects use the GTK 4 backend; palette icons live in `ide/assets/palette/` (packs may bring
+their own in `icons/`).*
 
 Projekt-Menü: Code erzeugen (Strg+G), Bauen (Strg+F9, im Hintergrund).
 Start-Menü wie Delphi/Lazarus: Starten/Weiter (F9, im Debugger), Ohne Debugger starten

@@ -1,0 +1,15 @@
+{#- GTK 4 event loop: every form goes into an Rc<RefCell<…>>, the first one
+    is the main form – it is shown, and closing it ends the program. -#}
+{%- set ui = forms | rejectattr("data_module") | list %}
+let main_loop = gtk4::glib::MainLoop::new(None, false);
+{%- for f in ui %}
+let form_{{ f.name }} = std::rc::Rc::new(std::cell::RefCell::new({{ app }}.{{ f.name }}));
+{{ f.name }}::{{ f.struct }}::start(&form_{{ f.name }}, {% if loop.first %}Some(main_loop.clone()){% else %}None{% endif %});
+{%- if loop.first %}
+form_{{ f.name }}.borrow().show();
+{%- endif %}
+{%- endfor %}
+{%- if ui %}
+main_loop.run();
+{%- endif %}
+Ok(())

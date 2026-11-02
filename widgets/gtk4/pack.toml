@@ -1,0 +1,514 @@
+# GTK 4 – UI-Backend für Zielprojekte / UI backend for target projects
+#
+# Erzeugt echte GTK-4-Fenster mit gtk4-rs. Jedes Widget ist ein Feld des
+# Formular-Structs (z. B. `self.ok_button: gtk4::Button`), die Handler bekommen
+# `&mut self` und können die Widgets direkt ansprechen.
+# Generates real GTK 4 windows with gtk4-rs; every widget is a field of the
+# form struct, handlers get `&mut self` and use the widgets directly.
+#
+# Ablauf / flow: `setup` initialisiert GTK, `App::init` erzeugt die Widgets,
+# `run` legt jedes Formular in ein `Rc<RefCell<…>>`, baut das Layout auf
+# (`build_ui`), verbindet die Ereignisse (`start`) und zeigt das erste Formular;
+# schließt es, endet das Programm.
+
+[pack]
+name = "gtk4"
+version = "0.1.0"
+kind = "backend"
+description = "GTK 4 (gtk4-rs): native widgets on Linux, Windows and macOS"
+authors = ["Dragon Software <info@dragon-software.net>"]
+license = "MIT OR Apache-2.0"
+generated-code-license = "MIT OR Apache-2.0"
+
+[backend]
+event-loop = "main-thread"
+absolute-positioning = true
+platforms = ["linux", "windows", "macos"]
+cargo = [{ crate = "gtk4", version = "0.11" }]
+setup = "gtk4::init()?;"
+form-file = "templates/form.rs.j2"
+run-file = "templates/run.rs.j2"
+
+# --- Kern-Widgets / core widgets ----------------------------------------------------------
+
+[[extend]]
+type = "core/Form"
+[extend.codegen]
+type = "gtk4::Window"
+init = """{
+    use gtk4::prelude::*;
+    let window = gtk4::Window::new();
+    window.set_title(Some({{ rust.title }}));
+    window.set_default_size({{ props.size.width }}, {{ props.size.height }});
+    window.set_resizable({{ rust.resizable }});
+    window.set_sensitive({{ rust.enabled }});
+    {%- if props.tooltip %}
+    window.set_tooltip_text(Some({{ rust.tooltip }}));
+    {%- endif %}
+    window
+}"""
+
+[[extend]]
+type = "core/Container"
+[extend.codegen]
+type = "gtk4::Box"
+init = """{
+    use gtk4::prelude::*;
+    let container = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    container.set_sensitive({{ rust.enabled }});
+    container.set_visible({{ rust.visible }});
+    {%- if props.tooltip %}
+    container.set_tooltip_text(Some({{ rust.tooltip }}));
+    {%- endif %}
+    container
+}"""
+
+[[extend]]
+type = "core/Label"
+[extend.properties.selectable]
+type = "bool"
+category = "Behavior"
+description = "Text can be selected and copied"
+[extend.properties.wrap]
+type = "bool"
+category = "Appearance"
+description = "Wrap long text into several lines"
+[extend.codegen]
+type = "gtk4::Label"
+init = """{
+    use gtk4::prelude::*;
+    let label = gtk4::Label::new(Some({{ rust.text }}));
+    label.set_xalign(0.0);
+    label.set_selectable({{ rust.selectable }});
+    label.set_wrap({{ rust.wrap }});
+    label.set_sensitive({{ rust.enabled }});
+    label.set_visible({{ rust.visible }});
+    {%- if props.tooltip %}
+    label.set_tooltip_text(Some({{ rust.tooltip }}));
+    {%- endif %}
+    label
+}"""
+
+[[extend]]
+type = "core/Button"
+[extend.codegen]
+type = "gtk4::Button"
+init = """{
+    use gtk4::prelude::*;
+    let button = gtk4::Button::with_label({{ rust.caption }});
+    button.set_sensitive({{ rust.enabled }});
+    button.set_visible({{ rust.visible }});
+    {%- if props.tooltip %}
+    button.set_tooltip_text(Some({{ rust.tooltip }}));
+    {%- endif %}
+    button
+}"""
+
+[[extend]]
+type = "core/Edit"
+[extend.properties.max_length]
+type = "int"
+min = 0
+default = 0
+category = "Behavior"
+description = "Maximum number of characters (0 = no limit)"
+[extend.codegen]
+type = "gtk4::Entry"
+init = """{
+    use gtk4::prelude::*;
+    let edit = gtk4::Entry::new();
+    edit.set_text({{ rust.text }});
+    {%- if props.placeholder %}
+    edit.set_placeholder_text(Some({{ rust.placeholder }}));
+    {%- endif %}
+    edit.set_editable(!{{ rust.read_only }});
+    edit.set_visibility(!{{ rust.password }});
+    {%- if props.password %}
+    edit.set_input_purpose(gtk4::InputPurpose::Password);
+    {%- endif %}
+    edit.set_max_length({{ props.max_length }});
+    edit.set_sensitive({{ rust.enabled }});
+    edit.set_visible({{ rust.visible }});
+    {%- if props.tooltip %}
+    edit.set_tooltip_text(Some({{ rust.tooltip }}));
+    {%- endif %}
+    edit
+}"""
+
+[[extend]]
+type = "core/CheckBox"
+[extend.codegen]
+type = "gtk4::CheckButton"
+init = """{
+    use gtk4::prelude::*;
+    let check = gtk4::CheckButton::with_label({{ rust.caption }});
+    check.set_active({{ rust.checked }});
+    check.set_sensitive({{ rust.enabled }});
+    check.set_visible({{ rust.visible }});
+    {%- if props.tooltip %}
+    check.set_tooltip_text(Some({{ rust.tooltip }}));
+    {%- endif %}
+    check
+}"""
+
+# --- GTK-Palette / GTK palette ------------------------------------------------------------
+
+[[component]]
+name = "RadioButton"
+kind = "widget"
+category = "GTK"
+icon = "radio"
+description = "Option button; radio buttons in the same container form a group"
+[component.properties.caption]
+type = "text"
+default = "Option"
+category = "Appearance"
+[component.properties.checked]
+type = "bool"
+category = "Behavior"
+[component.events.on_toggle]
+params = [{ name = "checked", type = "bool" }]
+[component.codegen]
+type = "gtk4::CheckButton"
+init = """{
+    use gtk4::prelude::*;
+    let radio = gtk4::CheckButton::with_label({{ rust.caption }});
+    radio.set_active({{ rust.checked }});
+    radio.set_sensitive({{ rust.enabled }});
+    radio.set_visible({{ rust.visible }});
+    {%- if props.tooltip %}
+    radio.set_tooltip_text(Some({{ rust.tooltip }}));
+    {%- endif %}
+    radio
+}"""
+
+[[component]]
+name = "Switch"
+kind = "widget"
+category = "GTK"
+icon = "switch"
+description = "On/off switch"
+[component.properties.active]
+type = "bool"
+category = "Behavior"
+[component.events.on_toggle]
+params = [{ name = "active", type = "bool" }]
+[component.codegen]
+type = "gtk4::Switch"
+init = """{
+    use gtk4::prelude::*;
+    let switch = gtk4::Switch::new();
+    switch.set_active({{ rust.active }});
+    switch.set_halign(gtk4::Align::Start);
+    switch.set_sensitive({{ rust.enabled }});
+    switch.set_visible({{ rust.visible }});
+    {%- if props.tooltip %}
+    switch.set_tooltip_text(Some({{ rust.tooltip }}));
+    {%- endif %}
+    switch
+}"""
+
+[[component]]
+name = "SpinButton"
+kind = "widget"
+category = "GTK"
+icon = "spin"
+description = "Number input with up/down buttons"
+[component.properties.value]
+type = "float"
+category = "Value"
+[component.properties.minimum]
+type = "float"
+category = "Value"
+[component.properties.maximum]
+type = "float"
+default = 100.0
+category = "Value"
+[component.properties.step]
+type = "float"
+default = 1.0
+category = "Value"
+[component.properties.digits]
+type = "int"
+min = 0
+max = 20
+category = "Appearance"
+description = "Decimal places shown"
+[component.events.on_change]
+params = [{ name = "value", type = "f64" }]
+[component.codegen]
+type = "gtk4::SpinButton"
+init = """{
+    use gtk4::prelude::*;
+    let spin = gtk4::SpinButton::with_range({{ rust.minimum }}, {{ rust.maximum }}, {{ rust.step }});
+    spin.set_digits({{ props.digits }});
+    spin.set_value({{ rust.value }});
+    spin.set_sensitive({{ rust.enabled }});
+    spin.set_visible({{ rust.visible }});
+    {%- if props.tooltip %}
+    spin.set_tooltip_text(Some({{ rust.tooltip }}));
+    {%- endif %}
+    spin
+}"""
+
+[[component]]
+name = "Scale"
+kind = "widget"
+category = "GTK"
+icon = "slider"
+description = "Slider to choose a value"
+[component.properties.value]
+type = "float"
+category = "Value"
+[component.properties.minimum]
+type = "float"
+category = "Value"
+[component.properties.maximum]
+type = "float"
+default = 100.0
+category = "Value"
+[component.properties.step]
+type = "float"
+default = 1.0
+category = "Value"
+[component.properties.show_value]
+type = "bool"
+category = "Appearance"
+description = "Show the current value next to the slider"
+[component.events.on_change]
+params = [{ name = "value", type = "f64" }]
+[component.codegen]
+type = "gtk4::Scale"
+init = """{
+    use gtk4::prelude::*;
+    let scale = gtk4::Scale::with_range(gtk4::Orientation::Horizontal, {{ rust.minimum }}, {{ rust.maximum }}, {{ rust.step }});
+    scale.set_value({{ rust.value }});
+    scale.set_draw_value({{ rust.show_value }});
+    scale.set_sensitive({{ rust.enabled }});
+    scale.set_visible({{ rust.visible }});
+    {%- if props.tooltip %}
+    scale.set_tooltip_text(Some({{ rust.tooltip }}));
+    {%- endif %}
+    scale
+}"""
+
+[[component]]
+name = "ProgressBar"
+kind = "widget"
+category = "GTK"
+icon = "progress"
+description = "Shows the progress of a task"
+[component.properties.fraction]
+type = "float"
+min = 0.0
+max = 1.0
+category = "Value"
+description = "Progress from 0.0 to 1.0"
+[component.properties.text]
+type = "text"
+category = "Appearance"
+description = "Text on the bar (empty = none)"
+[component.codegen]
+type = "gtk4::ProgressBar"
+init = """{
+    use gtk4::prelude::*;
+    let progress = gtk4::ProgressBar::new();
+    progress.set_fraction({{ rust.fraction }});
+    {%- if props.text %}
+    progress.set_text(Some({{ rust.text }}));
+    progress.set_show_text(true);
+    {%- endif %}
+    progress.set_sensitive({{ rust.enabled }});
+    progress.set_visible({{ rust.visible }});
+    {%- if props.tooltip %}
+    progress.set_tooltip_text(Some({{ rust.tooltip }}));
+    {%- endif %}
+    progress
+}"""
+
+[[component]]
+name = "DropDown"
+kind = "widget"
+category = "GTK"
+icon = "dropdown"
+description = "Choose one entry from a list"
+[component.properties.items]
+type = "list"
+item = "text"
+category = "Value"
+description = "The entries"
+[component.properties.selected]
+type = "int"
+min = 0
+category = "Value"
+description = "Index of the selected entry"
+[component.events.on_select]
+params = [{ name = "index", type = "u32" }]
+[component.codegen]
+type = "gtk4::DropDown"
+init = """{
+    use gtk4::prelude::*;
+    let items: Vec<String> = {{ rust.items }}.into_iter().map(|item| item.to_string()).collect();
+    let items: Vec<&str> = items.iter().map(String::as_str).collect();
+    let dropdown = gtk4::DropDown::from_strings(&items);
+    dropdown.set_selected({{ props.selected }});
+    dropdown.set_sensitive({{ rust.enabled }});
+    dropdown.set_visible({{ rust.visible }});
+    {%- if props.tooltip %}
+    dropdown.set_tooltip_text(Some({{ rust.tooltip }}));
+    {%- endif %}
+    dropdown
+}"""
+
+[[component]]
+name = "TextView"
+kind = "widget"
+category = "GTK"
+icon = "memo"
+description = "Multi-line text with scroll bars"
+[component.properties.text]
+type = "text"
+category = "Appearance"
+[component.properties.editable]
+type = "bool"
+default = true
+category = "Behavior"
+[component.properties.wrap]
+type = "bool"
+default = true
+category = "Appearance"
+description = "Wrap long lines at word boundaries"
+[component.properties.monospace]
+type = "bool"
+category = "Appearance"
+[component.events.on_change]
+params = [{ name = "text", type = "&str" }]
+[component.codegen]
+type = "gtk4::TextView"
+init = """{
+    use gtk4::prelude::*;
+    let view = gtk4::TextView::new();
+    view.buffer().set_text({{ rust.text }});
+    view.set_editable({{ rust.editable }});
+    view.set_monospace({{ rust.monospace }});
+    if {{ rust.wrap }} {
+        view.set_wrap_mode(gtk4::WrapMode::WordChar);
+    }
+    view.set_sensitive({{ rust.enabled }});
+    view.set_visible({{ rust.visible }});
+    {%- if props.tooltip %}
+    view.set_tooltip_text(Some({{ rust.tooltip }}));
+    {%- endif %}
+    view
+}"""
+
+[[component]]
+name = "Frame"
+kind = "container"
+category = "GTK"
+icon = "frame"
+description = "Container with a border and a title"
+[component.properties.title]
+type = "text"
+default = "Frame"
+category = "Appearance"
+[component.codegen]
+type = "gtk4::Frame"
+init = """{
+    use gtk4::prelude::*;
+    let frame = gtk4::Frame::new({% if props.title %}Some({{ rust.title }}){% else %}None{% endif %});
+    frame.set_sensitive({{ rust.enabled }});
+    frame.set_visible({{ rust.visible }});
+    {%- if props.tooltip %}
+    frame.set_tooltip_text(Some({{ rust.tooltip }}));
+    {%- endif %}
+    frame
+}"""
+
+[[component]]
+name = "Image"
+kind = "widget"
+category = "GTK"
+icon = "image"
+description = "Picture from a file (PNG, JPEG, SVG …)"
+[component.properties.file]
+type = "text"
+category = "Appearance"
+description = "Path of the picture, relative to the working directory"
+[component.properties.pixel_size]
+type = "int"
+min = 0
+default = 64
+category = "Appearance"
+description = "Size in pixels (0 = natural size)"
+[component.codegen]
+type = "gtk4::Image"
+init = """{
+    use gtk4::prelude::*;
+    let image = gtk4::Image::from_file({{ rust.file }});
+    {%- if props.pixel_size > 0 %}
+    image.set_pixel_size({{ props.pixel_size }});
+    {%- endif %}
+    image.set_sensitive({{ rust.enabled }});
+    image.set_visible({{ rust.visible }});
+    {%- if props.tooltip %}
+    image.set_tooltip_text(Some({{ rust.tooltip }}));
+    {%- endif %}
+    image
+}"""
+
+[[component]]
+name = "Separator"
+kind = "widget"
+category = "GTK"
+icon = "separator"
+description = "A line between widgets"
+[component.properties.vertical]
+type = "bool"
+category = "Appearance"
+[component.codegen]
+type = "gtk4::Separator"
+init = """{
+    use gtk4::prelude::*;
+    let separator = gtk4::Separator::new(if {{ rust.vertical }} {
+        gtk4::Orientation::Vertical
+    } else {
+        gtk4::Orientation::Horizontal
+    });
+    separator.set_sensitive({{ rust.enabled }});
+    separator.set_visible({{ rust.visible }});
+    {%- if props.tooltip %}
+    separator.set_tooltip_text(Some({{ rust.tooltip }}));
+    {%- endif %}
+    separator
+}"""
+
+[[component]]
+name = "LinkButton"
+kind = "widget"
+category = "GTK"
+icon = "link"
+description = "Opens a web address in the browser"
+[component.properties.uri]
+type = "text"
+default = "https://example.org"
+category = "Behavior"
+[component.properties.caption]
+type = "text"
+category = "Appearance"
+description = "Text (empty = the address)"
+[component.codegen]
+type = "gtk4::LinkButton"
+init = """{
+    use gtk4::prelude::*;
+    let link = gtk4::LinkButton::new({{ rust.uri }});
+    {%- if props.caption %}
+    link.set_label({{ rust.caption }});
+    {%- endif %}
+    link.set_sensitive({{ rust.enabled }});
+    link.set_visible({{ rust.visible }});
+    {%- if props.tooltip %}
+    link.set_tooltip_text(Some({{ rust.tooltip }}));
+    {%- endif %}
+    link
+}"""

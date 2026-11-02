@@ -17,7 +17,8 @@ Jedes Pack ist ein Ordner mit einer `pack.toml`; Codegen-Templates stehen im Abs
 
 ## Neues Pack / new pack
 
-1. Ordner `components/<name>/` mit `pack.toml` anlegen – Vorlage: `sqlx/pack.toml`.
+1. Ordner `components/<name>/` mit `pack.toml` anlegen – Vorlage: `sqlx/pack.toml`. Symbol: `icon = "…"`,
+   eigenes als `icons/<name>.png` (48 × 48 px) im Pack-Ordner, sonst aus dem Satz der IDE.
 2. Schema-Referenz: Modul-Doku von `tdr_core::pack` (`cargo doc -p tdr-core --open`).
 3. Prüfen / check: `cargo run -p tdr-core --example check_packs -- components`
 

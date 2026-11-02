@@ -54,6 +54,8 @@
 //! The backend's `run` template gets `forms` (list of `{name, struct,
 //! data_module}`), `app` (the variable holding the `App`) and `runtime`
 //! (the runtime variable or none). It must evaluate to `Result<(), Error>`.
+//! The optional `setup` template gets the same context; its statements run
+//! first in `run()`, before `App::init` (e.g. `gtk4::init()?;`).
 //!
 //! Every rendered piece is parsed with `syn`; errors are reported for the
 //! component and template part concerned.
@@ -1438,13 +1440,33 @@ fn app_file(
         rendered
     });
     let ui = ui.unwrap_or_else(|| "Ok(())".to_owned());
+    let setup = backend
+        .and_then(|b| b.setup.as_ref())
+        .and_then(|template| {
+            let context = minijinja::context! {
+                forms => forms.iter().map(form_data).collect::<Vec<_>>(),
+                app => "app",
+                runtime => runtime_var,
+            };
+            let mut issues = Vec::new();
+            let rendered = render(env, "setup", template, &context, &mut issues).filter(|text| {
+                let parsed = syn::parse_str::<syn::Block>(&format!("{{ {text} }}")).map(drop);
+                check_rust(&mut issues, "setup", text, parsed);
+                issues.is_empty()
+            });
+            for issue in issues {
+                out.error(None, issue);
+            }
+            rendered
+        })
+        .unwrap_or_default();
 
     code.push_str("/// Creates the application, calls `started` in `main.rs` and runs the UI.\n");
     match start {
         Start::Entry(entry) => {
             let _ = write!(
                 code,
-                "{entry}\npub async fn run() -> Result<(), Error> {{\n\
+                "{entry}\npub async fn run() -> Result<(), Error> {{\n{setup}\n\
                  let mut app = App::init().await?;\n\
                  crate::started(&mut app).await?;\n{ui}\n}}\n"
             );
@@ -1452,7 +1474,7 @@ fn app_file(
         Start::Runtime(runtime) => {
             let _ = write!(
                 code,
-                "pub fn run() -> Result<(), Error> {{\n\
+                "pub fn run() -> Result<(), Error> {{\n{setup}\n\
                  let runtime = {runtime};\n\
                  let mut app = runtime.block_on(App::init())?;\n\
                  crate::started(&mut app)?;\n{ui}\n}}\n"
@@ -1461,7 +1483,7 @@ fn app_file(
         Start::Plain => {
             let _ = write!(
                 code,
-                "pub fn run() -> Result<(), Error> {{\n\
+                "pub fn run() -> Result<(), Error> {{\n{setup}\n\
                  let mut app = App::init()?;\n\
                  crate::started(&mut app)?;\n{ui}\n}}\n"
             );
@@ -1621,7 +1643,7 @@ fn form_gen_file(
         let context = minijinja::context! {
             form => form_data(form),
             root => form.root.as_ref().map(|r| data.widget(r)),
-            widgets => form.widgets().into_iter().map(|w| data.node(w, Vec::new(), Some(w))).collect::<Vec<_>>(),
+            widgets => form.widgets().into_iter().map(|w| data.widget(w)).collect::<Vec<_>>(),
             components => form.components.iter().map(|c| data.node(c, Vec::new(), None)).collect::<Vec<_>>(),
         };
         let mut issues = Vec::new();

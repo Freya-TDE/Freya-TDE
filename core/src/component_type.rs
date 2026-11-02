@@ -178,6 +178,12 @@ impl ComponentType {
         }
     }
 
+    /// Icon name, e.g. `"button"` (the IDE's icon set or the pack's `icons/<name>.png`).
+    pub fn with_icon(mut self, icon: impl Into<String>) -> Self {
+        self.icon = Some(icon.into());
+        self
+    }
+
     pub fn with_category(mut self, category: impl Into<String>) -> Self {
         self.category = category.into();
         self

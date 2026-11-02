@@ -9,6 +9,9 @@
 //! | `core/Edit` | widget | `on_change`, `on_submit` |
 //! | `core/CheckBox` | widget | `on_toggle` |
 //!
+//! Icons: the lower-case type name (`form`, `container`, `label`, `button`,
+//! `edit`, `checkbox`).
+//!
 //! Every backend brings its own palette on top of these; backends may also
 //! add backend-specific properties to them ([`crate::TypeRegistry::extend`]).
 
@@ -42,8 +45,8 @@ pub fn check_box() -> TypeRef {
     TypeRef::core("CheckBox")
 }
 
-/// Properties every core widget has.
-fn common() -> Vec<PropertyDef> {
+/// Properties every widget has (core widgets and widgets of backend packs).
+pub(crate) fn common() -> Vec<PropertyDef> {
     vec![
         PropertyDef::new("enabled", PropertyType::Bool, true)
             .with_category("Behavior")
@@ -58,7 +61,9 @@ fn common() -> Vec<PropertyDef> {
 }
 
 fn widget(type_ref: TypeRef, container: bool, description: &str) -> ComponentType {
+    let icon = type_ref.name.to_lowercase();
     ComponentType::new(type_ref, TypeKind::Widget { container })
+        .with_icon(icon)
         .with_category("Standard")
         .with_description(description)
         .with_properties(common())

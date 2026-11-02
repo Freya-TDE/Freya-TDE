@@ -8,11 +8,11 @@ use rncl::prelude::*;
 use tdr_core::TypeRef;
 use tdr_designer::palette;
 
-use super::{Ide, with, with0};
+use super::{Ide, icons, with, with0};
 use crate::desktop::window;
 
 const MARGIN: i32 = 6;
-const ROW: i32 = 30;
+const ROW: i32 = 34;
 const STATUS: i32 = 24;
 const BRANCH: i32 = 200;
 
@@ -126,6 +126,7 @@ impl MainWindow {
         pointer
             .widget()
             .set_tool_tip("Auswählen statt platzieren (Esc)");
+        pointer.widget().set_image(icons::icon("pointer").as_ref());
         let tabs = RnclTabView::new(&window);
         let status = RnclLabel::new(&window, "");
         let branch = RnclLabel::new(&window, "");
@@ -141,11 +142,11 @@ impl MainWindow {
     }
 
     fn layout(&self, width: i32, height: i32) {
-        self.pointer.set_geometry(MARGIN, MARGIN + 22, 80, ROW);
+        self.pointer.set_geometry(MARGIN, MARGIN + 22, 96, ROW);
         self.tabs.set_geometry(
-            MARGIN + 86,
+            MARGIN + 102,
             MARGIN,
-            width - 2 * MARGIN - 86,
+            width - 2 * MARGIN - 102,
             height - 2 * MARGIN - STATUS,
         );
         self.status.set_geometry(
@@ -177,8 +178,14 @@ impl MainWindow {
             let session = ide.session();
             let backend = session.document().project().backend.clone();
             let mut items = palette(session.document().registry(), &backend);
-            // Wie bei Delphi: die Standard-Steuerelemente zuerst.
-            items.sort_by_key(|i| i.category != "Standard");
+            // Wie bei Delphi: die Standard-Steuerelemente zuerst, dann die
+            // Palette des UI-Backends, dann die Komponenten-Packs.
+            items.sort_by_key(|i| {
+                (
+                    i.category != "Standard",
+                    !matches!(i.type_ref.origin, tdr_core::Origin::Backend(_)),
+                )
+            });
             (backend, items)
         };
         let _ = backend;
@@ -224,16 +231,19 @@ impl MainWindow {
                 x = 4;
             }
             let page = page.as_ref().expect("page");
-            let button = RnclButton::new(page, &item.type_ref.name);
-            button.widget().adjust_size();
-            let width = button.size().width.max(70);
+            // Wie Lazarus: Symbol, der Name steht im Tooltip.
+            let button = RnclButton::new(page, "");
+            button
+                .widget()
+                .set_image(Some(&icons::icon_or_fallback(item.icon.as_deref())));
+            let width = ROW + 6;
             button.set_geometry(x, 6, width, ROW);
             on_page.borrow_mut().push(button.clone());
             x += width + 4;
             let tip = if item.description.is_empty() {
-                item.type_ref.to_string()
+                item.type_ref.name.clone()
             } else {
-                format!("{} – {}", item.type_ref, item.description)
+                format!("{} – {}", item.type_ref.name, item.description)
             };
             button.widget().set_tool_tip(&tip);
             let type_ref = item.type_ref.clone();
@@ -250,12 +260,15 @@ impl MainWindow {
         let armed = session.armed().cloned();
         drop(session);
         for (button, type_ref) in self.buttons.borrow().iter() {
-            let label = if Some(type_ref) == armed.as_ref() {
-                format!("▶ {}", type_ref.name)
+            // Der gewählte Typ ist hinterlegt (wie ein gedrückter Knopf).
+            let css = if Some(type_ref) == armed.as_ref() {
+                "background: #9ec3f0"
             } else {
-                type_ref.name.clone()
+                ""
             };
-            button.set_text(&label);
+            if button.widget().style_sheet() != css {
+                button.widget().set_style_sheet(css);
+            }
         }
         if let Some(armed) = armed {
             self.set_status(&format!(

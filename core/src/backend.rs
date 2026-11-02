@@ -56,6 +56,11 @@ pub struct BackendDescriptor {
     /// loop (`run` returns after `started`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub run: Option<String>,
+    /// Template for statements at the start of `run()`, before `App::init`
+    /// – for toolkits whose widgets can only be created after the toolkit
+    /// was initialised (e.g. `gtk4::init()?;`). Same context as `run`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub setup: Option<String>,
 }
 
 impl BackendDescriptor {
@@ -68,6 +73,7 @@ impl BackendDescriptor {
             cargo: Vec::new(),
             form: None,
             run: None,
+            setup: None,
         }
     }
 }

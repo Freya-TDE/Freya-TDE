@@ -55,25 +55,11 @@ pub fn shapes(primitives: &[Primitive], background: tdr_core::Color) -> Vec<Shap
                 to: Point::new(to.x, to.y),
                 color: color(*c, background),
             }),
-            // Symbol-Platzhalter: Kästchen mit dem Anfangsbuchstaben des Symbols.
-            Primitive::Icon { rect: r, name } => {
-                out.push(Shape::Rect {
-                    rect: rect(*r),
-                    fill: Some(Color::rgb(120, 130, 150)),
-                    stroke: None,
-                    radius: 5,
-                    dashed: false,
-                });
-                let letter: String = name.chars().take(1).flat_map(char::to_uppercase).collect();
-                out.push(Shape::Text {
-                    x: r.x + r.width / 2 - 5,
-                    y: r.y + r.height / 2 - 9,
-                    text: letter,
-                    color: Color::rgb(255, 255, 255),
-                    size: 15,
-                    bold: true,
-                });
-            }
+            // Das Symbol des Typs (eingebaut oder aus dem Pack).
+            Primitive::Icon { rect: r, name } => out.push(Shape::Image {
+                rect: rect(*r),
+                image: super::icons::icon_or_fallback(Some(name)),
+            }),
         }
     }
     out

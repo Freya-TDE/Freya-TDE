@@ -158,7 +158,8 @@ impl Painter<'_> {
                 dashed: true,
             });
         } else {
-            // A backend's own widget: a box with its type name or caption.
+            // A backend's own widget: a box with its icon and its type name
+            // or caption (the real look comes from the debug run).
             let (control, border) = (c.control, c.control_border);
             self.out.push(rect(r, Some(control), Some(border), 0));
             let label = if caption.is_empty() {
@@ -166,7 +167,23 @@ impl Painter<'_> {
             } else {
                 caption
             };
-            self.text_centered(r, &label, text_color);
+            let icon = self
+                .props
+                .registry
+                .get(type_ref)
+                .and_then(|t| t.icon.clone());
+            let size = (r.height - 8).min(24);
+            match icon {
+                Some(name) if size >= 12 && r.width >= size + 8 => {
+                    let at = Rect::new(r.x + 6, r.y + (r.height - size) / 2, size, size);
+                    self.out.push(Primitive::Icon { rect: at, name });
+                    let x = at.right() + 6;
+                    if r.right() - x > 8 {
+                        self.text_in(r, x, &label, text_color, false);
+                    }
+                }
+                _ => self.text_centered(r, &label, text_color),
+            }
         }
 
         // Hidden widgets stay visible in the designer, dimmed.

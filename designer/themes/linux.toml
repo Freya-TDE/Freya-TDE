@@ -53,3 +53,59 @@ padding-x = 0
 height = 60
 min-width = 100
 padding-x = 0
+
+# --- GTK 4 (widgets/gtk4) – sieht auf allen Systemen gleich aus / looks the same everywhere
+[widgets."backend:gtk4/RadioButton"]
+height = 24
+min-width = 24
+padding-x = 0
+
+[widgets."backend:gtk4/Switch"]
+height = 26
+min-width = 48
+padding-x = 0
+
+[widgets."backend:gtk4/SpinButton"]
+height = 34
+min-width = 120
+padding-x = 8
+
+[widgets."backend:gtk4/Scale"]
+height = 30
+min-width = 120
+padding-x = 0
+
+[widgets."backend:gtk4/ProgressBar"]
+height = 20
+min-width = 120
+padding-x = 0
+
+[widgets."backend:gtk4/DropDown"]
+height = 34
+min-width = 120
+padding-x = 10
+
+[widgets."backend:gtk4/TextView"]
+height = 100
+min-width = 160
+padding-x = 6
+
+[widgets."backend:gtk4/Frame"]
+height = 80
+min-width = 120
+padding-x = 0
+
+[widgets."backend:gtk4/Image"]
+height = 64
+min-width = 64
+padding-x = 0
+
+[widgets."backend:gtk4/Separator"]
+height = 5
+min-width = 20
+padding-x = 0
+
+[widgets."backend:gtk4/LinkButton"]
+height = 34
+min-width = 60
+padding-x = 14

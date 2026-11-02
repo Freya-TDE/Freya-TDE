@@ -9,6 +9,7 @@ mod debugger;
 mod debugging;
 mod designer;
 mod git_window;
+pub mod icons;
 mod inspector;
 mod main_window;
 pub mod panel;
@@ -53,8 +54,20 @@ use project::ProjectWindow;
 use shortcuts::ShortcutsWindow;
 use structure::StructureWindow;
 
-/// Backend of new projects until real backend packs exist.
-const DEFAULT_BACKEND: &str = "none";
+/// Backend of new projects if its pack is loaded (`widgets/gtk4`), else
+/// [`NO_BACKEND`].
+const DEFAULT_BACKEND: &str = "gtk4";
+/// Projects without UI backend (only non-visual components).
+const NO_BACKEND: &str = "none";
+
+/// The backend for a new project: GTK 4 if available.
+fn default_backend(registry: &TypeRegistry) -> &'static str {
+    if registry.backend(DEFAULT_BACKEND).is_some() {
+        DEFAULT_BACKEND
+    } else {
+        NO_BACKEND
+    }
+}
 
 /// At most this many completion proposals are shown.
 const MAX_COMPLETIONS: usize = 100;
@@ -94,6 +107,9 @@ fn full_registry(dirs: &[PathBuf]) -> (TypeRegistry, Vec<String>) {
     for dir in dirs {
         let (packs, _) = load_all(dir);
         for pack in packs {
+            if let Some(dir) = &pack.dir {
+                icons::add_pack_dir(dir);
+            }
             if pack.register(&mut registry).is_ok()
                 && pack.info.kind == tdr_core::pack::PackKind::Components
             {
@@ -213,8 +229,9 @@ impl Ide {
     pub fn start(project: Option<&Path>) -> Rc<Self> {
         let pack_dirs = pack_dirs();
         let (registry, packs) = full_registry(&pack_dirs);
-        let session = Session::untitled("projekt1", DEFAULT_BACKEND, packs, registry)
-            .expect("valid project name");
+        let backend = default_backend(&registry);
+        let session =
+            Session::untitled("projekt1", backend, packs, registry).expect("valid project name");
         let ide = Rc::new_cyclic(|me| Self {
             me: me.clone(),
             session: RefCell::new(session),
@@ -1590,7 +1607,8 @@ impl Ide {
             return;
         }
         let (registry, packs) = full_registry(&self.pack_dirs);
-        match Session::untitled("projekt1", DEFAULT_BACKEND, packs, registry) {
+        let backend = default_backend(&registry);
+        match Session::untitled("projekt1", backend, packs, registry) {
             Ok(session) => {
                 *self.session.borrow_mut() = session;
                 *self.path.borrow_mut() = None;
@@ -1740,7 +1758,7 @@ impl Ide {
                 &mut *self.session.borrow_mut(),
                 Session::untitled(
                     "park",
-                    DEFAULT_BACKEND,
+                    NO_BACKEND,
                     Vec::new(),
                     TypeRegistry::with_builtins(),
                 )

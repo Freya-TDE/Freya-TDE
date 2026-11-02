@@ -4,8 +4,8 @@
 //! `harness = false`. Linux without display: `xvfb-run cargo test`.
 
 use rncl::prelude::*;
-use ruf::{Key, Modifiers};
-use tdr_core::{ComponentName, builtin};
+use ruf::{Key, Modifiers, Shape};
+use tdr_core::{ComponentName, TypeRef, builtin};
 
 fn name(n: &str) -> ComponentName {
     ComponentName::new(n).unwrap()
@@ -110,6 +110,46 @@ fn main() {
     });
     assert!(ide.session().form().unwrap().contains(&name("button1")));
     println!("test delete_and_undo ... ok");
+
+    // Neue Projekte nutzen GTK 4: die Palette hat dessen Widgets, ein
+    // Schalter lässt sich platzieren und erscheint mit Symbol im Designer.
+    let switch = TypeRef::backend("gtk4", "Switch");
+    {
+        let session = ide.session();
+        assert_eq!(session.document().project().backend, "gtk4");
+        let items = tdr_designer::palette(session.document().registry(), "gtk4");
+        assert!(
+            items
+                .iter()
+                .any(|i| i.type_ref == switch && i.icon.as_deref() == Some("switch"))
+        );
+    }
+    let images_before = surface
+        .shapes()
+        .iter()
+        .filter(|s| matches!(s, Shape::Image { .. }))
+        .count();
+    ide.arm(Some(switch.clone()));
+    mouse(&surface, MouseAction::Pressed, spot);
+    mouse(&surface, MouseAction::Released, spot);
+    assert_eq!(ide.session().selection(), [name("switch1")]);
+    let images = surface
+        .shapes()
+        .iter()
+        .filter(|s| matches!(s, Shape::Image { .. }))
+        .count();
+    assert_eq!(
+        images,
+        images_before + 1,
+        "Symbol des Schalters im Designer"
+    );
+    surface.simulate_key(KeyEvent {
+        key: Key::Delete,
+        modifiers: Modifiers::default(),
+        text: None,
+    });
+    assert!(!ide.session().form().unwrap().contains(&name("switch1")));
+    println!("test gtk4_palette ... ok");
 
     // Befehle als JSON (Skripte, KI).
     let count = ide

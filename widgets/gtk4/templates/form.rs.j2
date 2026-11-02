@@ -1,0 +1,200 @@
+{#- GTK 4: layout and events of a form, appended to <form>.gen.rs.
+    Containers get an inner layout widget (Box, Grid, Stack or Fixed) built
+    from the designer's layout; events call the handlers in <form>.rs. -#}
+{%- set containers = ["core/Form", "core/Container", "backend:gtk4/Frame"] %}
+{#- Wie die Theme-Tabelle des Designers (designer/themes/linux.toml): Rand 12, Abstand 8. -#}
+{%- set default_layout = {"kind": "vertical", "spacing": 8, "padding": {"left": 12, "top": 12, "right": 12, "bottom": 12}} %}
+{%- if root %}
+#[allow(unused_imports)]
+use gtk4::prelude::*;
+
+impl {{ form.struct }} {
+    /// Puts the widgets into their containers, as laid out in the designer.
+    fn build_ui(&self) {
+    {%- for w in widgets if w.field and w.type in containers %}
+        {%- set l = w.layout or default_layout %}
+        {
+            {%- if l.kind == "horizontal" %}
+            let layout = gtk4::Box::new(gtk4::Orientation::Horizontal, {{ l.spacing }});
+            {%- elif l.kind == "grid" %}
+            let layout = gtk4::Grid::new();
+            layout.set_row_spacing({{ l.spacing }});
+            layout.set_column_spacing({{ l.spacing }});
+            {%- elif l.kind == "stack" %}
+            let layout = gtk4::Stack::new();
+            {%- elif l.kind == "absolute" %}
+            let layout = gtk4::Fixed::new();
+            {%- else %}
+            let layout = gtk4::Box::new(gtk4::Orientation::Vertical, {{ l.spacing }});
+            {%- endif %}
+            layout.set_margin_start({{ l.padding.left }});
+            layout.set_margin_top({{ l.padding.top }});
+            layout.set_margin_end({{ l.padding.right }});
+            layout.set_margin_bottom({{ l.padding.bottom }});
+            {%- set radios = w.children | selectattr("type", "eq", "backend:gtk4/RadioButton") | selectattr("field") | list %}
+            {%- for c in w.children if c.field %}
+            {
+                {%- if c.type == "backend:gtk4/TextView" %}
+                let scrolled = gtk4::ScrolledWindow::new();
+                scrolled.set_child(Some(&self.{{ c.name }}));
+                scrolled.set_min_content_height(80);
+                let child: gtk4::Widget = scrolled.upcast();
+                {%- else %}
+                let child: gtk4::Widget = self.{{ c.name }}.clone().upcast();
+                {%- endif %}
+                {%- set p = c.placement %}
+                {%- if l.kind == "absolute" %}
+                {%- if p and p.kind == "absolute" %}
+                child.set_size_request({{ p.width }}, {{ p.height }});
+                layout.put(&child, {{ p.x }} as f64, {{ p.y }} as f64);
+                {%- else %}
+                layout.put(&child, 0.0, 0.0);
+                {%- endif %}
+                {%- elif l.kind == "stack" %}
+                layout.add_child(&child);
+                {%- else %}
+                {%- set align = p.align if p and p.kind == "layout" else "Fill" %}
+                {%- set stretch = "true" if (p.stretch if p and p.kind == "layout" else 0) > 0 else "false" %}
+                {%- if l.kind == "horizontal" %}
+                {%- if align != "Fill" %}
+                child.set_valign(gtk4::Align::{{ align }});
+                {%- endif %}
+                child.set_hexpand({{ stretch }});
+                layout.append(&child);
+                {%- elif l.kind == "grid" %}
+                {%- if align != "Fill" %}
+                child.set_halign(gtk4::Align::{{ align }});
+                {%- endif %}
+                {%- if align != "Fill" %}
+                child.set_valign(gtk4::Align::{{ align }});
+                {%- endif %}
+                child.set_hexpand({{ stretch }});
+                {%- set columns = l.columns or 1 %}
+                {%- if p and p.cell %}
+                layout.attach(&child, {{ p.cell.column }} as i32, {{ p.cell.row }} as i32, {{ p.cell.column_span }} as i32, {{ p.cell.row_span }} as i32);
+                {%- else %}
+                layout.attach(&child, {{ loop.index0 % columns }}, {{ loop.index0 // columns }}, 1, 1);
+                {%- endif %}
+                {%- else %}
+                {%- if align != "Fill" %}
+                child.set_halign(gtk4::Align::{{ align }});
+                {%- endif %}
+                child.set_vexpand({{ stretch }});
+                layout.append(&child);
+                {%- endif %}
+                {%- endif %}
+            }
+            {%- if c.type == "backend:gtk4/RadioButton" and radios and c.name != radios[0].name %}
+            self.{{ c.name }}.set_group(Some(&self.{{ radios[0].name }}));
+            {%- endif %}
+            {%- endfor %}
+            {%- if w.type == "core/Container" %}
+            layout.set_hexpand(true);
+            layout.set_vexpand(true);
+            self.{{ w.name }}.append(&layout);
+            {%- else %}
+            self.{{ w.name }}.set_child(Some(&layout));
+            {%- endif %}
+        }
+    {%- endfor %}
+    }
+
+    /// Calls `f` with the form, unless it is gone or busy (a handler that
+    /// changes a widget can trigger another event of the same form).
+    #[allow(dead_code)]
+    fn freya_call(
+        form: &std::rc::Weak<std::cell::RefCell<Self>>,
+        f: impl FnOnce(&mut Self),
+    ) {
+        if let Some(form) = form.upgrade() {
+            if let Ok(mut form) = form.try_borrow_mut() {
+                f(&mut form);
+            }
+        }
+    }
+
+    /// Builds the layout, connects the events and – for the main form –
+    /// shows the window; closing the main form ends `main_loop`.
+    pub fn start(
+        this: &std::rc::Rc<std::cell::RefCell<Self>>,
+        main_loop: Option<gtk4::glib::MainLoop>,
+    ) {
+        this.borrow().build_ui();
+        let form = this.borrow();
+        let weak = std::rc::Rc::downgrade(this);
+        let _ = &weak;
+    {%- for w in widgets if w.field %}
+    {%- for event, handler in w.events | items if handler and w.type != "core/Form" %}
+    {%- set key = w.type ~ "." ~ event %}
+        {
+            let weak = weak.clone();
+        {%- if key in ["core/Button.on_click"] %}
+            form.{{ w.name }}.connect_clicked(move |_| Self::freya_call(&weak, |f| f.{{ handler }}()));
+        {%- elif key == "core/Edit.on_change" %}
+            form.{{ w.name }}.connect_changed(move |edit| {
+                let text = edit.text();
+                Self::freya_call(&weak, |f| f.{{ handler }}(&text));
+            });
+        {%- elif key == "core/Edit.on_submit" %}
+            form.{{ w.name }}.connect_activate(move |_| Self::freya_call(&weak, |f| f.{{ handler }}()));
+        {%- elif key in ["core/CheckBox.on_toggle", "backend:gtk4/RadioButton.on_toggle"] %}
+            form.{{ w.name }}.connect_toggled(move |check| {
+                let checked = check.is_active();
+                Self::freya_call(&weak, |f| f.{{ handler }}(checked));
+            });
+        {%- elif key == "backend:gtk4/Switch.on_toggle" %}
+            form.{{ w.name }}.connect_active_notify(move |switch| {
+                let active = switch.is_active();
+                Self::freya_call(&weak, |f| f.{{ handler }}(active));
+            });
+        {%- elif key in ["backend:gtk4/SpinButton.on_change", "backend:gtk4/Scale.on_change"] %}
+            form.{{ w.name }}.connect_value_changed(move |input| {
+                let value = input.value();
+                Self::freya_call(&weak, |f| f.{{ handler }}(value));
+            });
+        {%- elif key == "backend:gtk4/DropDown.on_select" %}
+            form.{{ w.name }}.connect_selected_notify(move |dropdown| {
+                let index = dropdown.selected();
+                Self::freya_call(&weak, |f| f.{{ handler }}(index));
+            });
+        {%- elif key == "backend:gtk4/TextView.on_change" %}
+            form.{{ w.name }}.buffer().connect_changed(move |buffer| {
+                let text = buffer.text(&buffer.start_iter(), &buffer.end_iter(), false);
+                Self::freya_call(&weak, |f| f.{{ handler }}(&text));
+            });
+        {%- endif %}
+        }
+    {%- endfor %}
+    {%- endfor %}
+        // Schließen: `on_close` darf es verhindern; das Hauptformular beendet
+        // das Programm.
+        {
+            let weak = weak.clone();
+            form.{{ root.name }}.connect_close_request(move |_| {
+                #[allow(unused_mut)]
+                let mut close = true;
+            {%- if root.events.on_close %}
+                Self::freya_call(&weak, |f| close = f.{{ root.events.on_close }}());
+            {%- endif %}
+                if !close {
+                    return gtk4::glib::Propagation::Stop;
+                }
+                if let Some(main_loop) = &main_loop {
+                    main_loop.quit();
+                }
+                gtk4::glib::Propagation::Proceed
+            });
+        }
+        drop(form);
+    {%- if root.events.on_create %}
+        Self::freya_call(&weak, |f| f.{{ root.events.on_create }}());
+    {%- endif %}
+    }
+
+    /// Shows the form's window.
+    #[allow(dead_code)]
+    pub fn show(&self) {
+        self.{{ root.name }}.present();
+    }
+}
+{%- endif %}
