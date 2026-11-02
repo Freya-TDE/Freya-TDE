@@ -142,8 +142,8 @@ Generierter Code gehört dem Nutzer. Jedes Plugin deklariert die Lizenz seines e
 
 ## Offene Punkte
 
-- Panel: Probleme, Ausgabe und Terminal erledigt (`freya_td::terminal`; Texteingabe über die Eingabemethode des Systems, RUF `on_text_input`). Später: mehrere Terminals, Debugger mit Debug-Konsole.
-- Nächste Schritte (27.10.2026, in dieser Reihenfolge): 1. ~~Terminal-Eingabe mit toten Tasten/Eingabemethoden~~ (erledigt 02.11.2026), 2. ~~Git-Änderungsmarken am Rand des Code-Editors~~ (erledigt 02.11.2026; Vergleich mit dem Index wie VS Code, `git::line_changes`), 3. ~~Projekt-Manager~~ (erledigt 02.11.2026), 4. mehrere Terminals, 5. Debugger mit Debug-Konsole (DAP).
+- Panel: Probleme, Ausgabe und Terminal erledigt (`freya_td::terminal`; Texteingabe über die Eingabemethode des Systems, RUF `on_text_input`). Mehrere Terminals erledigt (02.11.2026, Reiter je Shell). Später: Debugger mit Debug-Konsole.
+- Nächste Schritte (27.10.2026, in dieser Reihenfolge): 1. ~~Terminal-Eingabe mit toten Tasten/Eingabemethoden~~ (erledigt 02.11.2026), 2. ~~Git-Änderungsmarken am Rand des Code-Editors~~ (erledigt 02.11.2026; Vergleich mit dem Index wie VS Code, `git::line_changes`), 3. ~~Projekt-Manager~~ (erledigt 02.11.2026), 4. ~~mehrere Terminals~~ (erledigt 02.11.2026), 5. Debugger mit Debug-Konsole (DAP).
 - Schritt 6c.3: Projektfenster, Git-Fenster und Änderungsmarken erledigt; offen sind „Commit & Create Pull Request“ (mit `gh`).
 - Erstes echtes UI-Backend-Pack (z. B. egui oder nativ) in `widgets/`.
 - Ideen aus `notes/gedanken.txt` (26.10.2026), noch einzuplanen:

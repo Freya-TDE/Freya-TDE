@@ -58,8 +58,37 @@ pub struct PanelWindow {
     output_channel: RefCell<String>,
     /// Set while the channel list is refilled (its signal must not switch).
     updating: Cell<bool>,
-    pub terminal: TerminalView,
+    pub terminals: Terminals,
     timer: Timer,
+}
+
+/// The terminal tab: buttons for a new terminal and for ending the visible
+/// one, below them one tab per terminal (each its own shell).
+pub struct Terminals {
+    pub tabs: RnclTabView,
+    add: RnclButton,
+    close: RnclButton,
+    /// One view per inner tab, in tab order.
+    pub views: RefCell<Vec<Rc<TerminalView>>>,
+    /// Number for the next terminal's title ("1: bash", "2: bash" …).
+    next: Cell<usize>,
+}
+
+impl Terminals {
+    /// The visible terminal, if there is one.
+    pub fn active(&self) -> Option<Rc<TerminalView>> {
+        let index = self.tabs.current_index();
+        let views = self.views.borrow();
+        usize::try_from(index)
+            .ok()
+            .and_then(|i| views.get(i))
+            .or(views.first())
+            .cloned()
+    }
+
+    pub fn count(&self) -> usize {
+        self.views.borrow().len()
+    }
 }
 
 fn terminal_menu() -> Menu {
@@ -69,6 +98,9 @@ fn terminal_menu() -> Menu {
         .separator()
         .item("term.clear", "Leeren", None)
         .item("term.restart", "Neu starten", None)
+        .separator()
+        .item("term.new", "Neues Terminal", None)
+        .item("term.close", "Terminal beenden", None)
 }
 
 fn placeholder(page: &RnclPanel, text: &str) -> RnclLabel {
@@ -105,7 +137,15 @@ impl PanelWindow {
         text.set_read_only(true);
         text.set_monospace(true);
 
-        let terminal_view = TerminalView::build(&terminal);
+        let terminals = Terminals {
+            add: RnclButton::new(&terminal, "+ Neu"),
+            close: RnclButton::new(&terminal, "✕ Beenden"),
+            tabs: RnclTabView::new(&terminal),
+            views: RefCell::new(Vec::new()),
+            next: Cell::new(1),
+        };
+        terminals.add.set_tool_tip("Neues Terminal");
+        terminals.close.set_tool_tip("Sichtbares Terminal beenden");
         placeholder(
             &debug,
             "Die Debug-Konsole folgt zusammen mit dem Debugger (Haltepunkte, Variablen).",
@@ -146,9 +186,15 @@ impl PanelWindow {
             });
         }
         {
-            let canvas = terminal_view.canvas.clone();
+            let (add, close, inner) = (
+                terminals.add.clone(),
+                terminals.close.clone(),
+                terminals.tabs.clone(),
+            );
             terminal.widget().on_resized(move |width, height| {
-                canvas.set_geometry(0, 0, width, height);
+                add.set_geometry(MARGIN, MARGIN, 80, ROW - 4);
+                close.set_geometry(80 + 2 * MARGIN, MARGIN, 110, ROW - 4);
+                inner.set_geometry(0, ROW + MARGIN, width, (height - ROW - MARGIN).max(0));
             });
         }
         Self {
@@ -166,7 +212,7 @@ impl PanelWindow {
             output_seen: Cell::new(u64::MAX),
             output_channel: RefCell::new(String::new()),
             updating: Cell::new(false),
-            terminal: terminal_view,
+            terminals,
             timer: Timer::new(),
         }
     }
@@ -398,7 +444,11 @@ pub fn connect(ide: &Rc<Ide>) {
         }
         match ide.panel.current_tab() {
             Tab::Output => ide.panel.refresh_output(ide),
-            Tab::Terminal => ide.panel.terminal.redraw(),
+            Tab::Terminal => {
+                if let Some(view) = ide.panel.terminals.active() {
+                    view.redraw();
+                }
+            }
             _ => {}
         }
     }));
@@ -411,42 +461,123 @@ pub fn connect(ide: &Rc<Ide>) {
                 ide.start_terminal();
             }
         }));
-    let canvas = &panel.terminal.canvas;
-    let weak = Rc::downgrade(ide);
-    canvas.widget().on_resized(move |_, _| {
-        if let Some(ide) = weak.upgrade() {
-            ide.panel.terminal.resized();
+    let terminals = &panel.terminals;
+    terminals.add.on_clicked(with0(ide, |ide| {
+        ide.new_terminal();
+    }));
+    terminals
+        .close
+        .on_clicked(with0(ide, |ide| ide.close_terminal()));
+    terminals
+        .tabs
+        .on_current_index_changed(with(ide, |ide, _index: i32| {
+            if let Some(view) = ide.panel.terminals.active() {
+                view.resized();
+                view.redraw();
+                view.canvas.widget().focus();
+            }
+        }));
+    panel
+        .window
+        .on_menu(with(ide, |ide, id: String| match id.as_str() {
+            "term.copy" => {
+                if let Some(view) = ide.panel.terminals.active() {
+                    view.copy();
+                }
+            }
+            "term.paste" => ide.terminal_paste(),
+            "term.clear" => {
+                if let Some(view) = ide.panel.terminals.active() {
+                    view.clear();
+                }
+            }
+            "term.restart" => ide.restart_terminal(),
+            "term.new" => {
+                ide.new_terminal();
+            }
+            "term.close" => ide.close_terminal(),
+            _ => {}
+        }));
+}
+
+/// Adds a terminal tab with its own view and wires it; returns its view.
+/// The shell is started by the caller.
+pub(super) fn add_terminal(ide: &Rc<Ide>) -> Rc<TerminalView> {
+    let terminals = &ide.panel.terminals;
+    let number = terminals.next.get();
+    terminals.next.set(number + 1);
+    let page = terminals
+        .tabs
+        .add_tab(&format!("{number}: {}", shell_name()));
+    let view = Rc::new(TerminalView::build(&page));
+    {
+        let canvas = view.canvas.clone();
+        page.widget().on_resized(move |width, height| {
+            canvas.set_geometry(0, 0, width, height);
+        });
+    }
+    let weak = Rc::downgrade(&view);
+    view.canvas.widget().on_resized(move |_, _| {
+        if let Some(view) = weak.upgrade() {
+            view.resized();
         }
     });
-    canvas.on_mouse(with(ide, |ide, event: MouseEvent| {
-        if ide.panel.terminal.mouse(event) {
-            ide.panel
-                .terminal
-                .canvas
-                .widget()
-                .popup_menu(&terminal_menu(), event.x, event.y);
-        }
-    }));
-    canvas.on_key(with(ide, |ide, event: KeyEvent| {
-        match ide.panel.terminal.key(event) {
+    let weak = Rc::downgrade(&view);
+    view.canvas
+        .on_mouse(with(ide, move |_ide, event: MouseEvent| {
+            if let Some(view) = weak.upgrade()
+                && view.mouse(event)
+            {
+                view.canvas
+                    .widget()
+                    .popup_menu(&terminal_menu(), event.x, event.y);
+            }
+        }));
+    let weak = Rc::downgrade(&view);
+    view.canvas.on_key(with(ide, move |ide, event: KeyEvent| {
+        let Some(view) = weak.upgrade() else { return };
+        match view.key(event) {
             Some(true) => ide.terminal_paste(),
             Some(false) => ide.restart_terminal(),
             None => {}
         }
-        ide.panel.terminal.redraw();
+        view.redraw();
     }));
     // Getippter Text über die Eingabemethode (tote Tasten, Akzente, IME).
-    canvas.on_text_input(with(ide, |ide, text: String| {
-        ide.panel.terminal.text_input(&text);
-        ide.panel.terminal.redraw();
-    }));
-    panel
-        .window
-        .on_menu(with(ide, |ide, id: String| match id.as_str() {
-            "term.copy" => ide.panel.terminal.copy(),
-            "term.paste" => ide.terminal_paste(),
-            "term.clear" => ide.panel.terminal.clear(),
-            "term.restart" => ide.restart_terminal(),
-            _ => {}
-        }));
+    let weak = Rc::downgrade(&view);
+    view.canvas.on_text_input(move |text: String| {
+        if let Some(view) = weak.upgrade() {
+            view.text_input(&text);
+            view.redraw();
+        }
+    });
+    terminals.views.borrow_mut().push(view.clone());
+    terminals
+        .tabs
+        .set_current_index(terminals.tabs.tab_count() - 1);
+    view
+}
+
+/// Removes the visible terminal tab (the caller ends its shell first).
+pub(super) fn remove_terminal(terminals: &Terminals) -> Option<Rc<TerminalView>> {
+    let index = terminals.tabs.current_index();
+    let i = usize::try_from(index).ok()?;
+    if i >= terminals.count() {
+        return None;
+    }
+    let view = terminals.views.borrow_mut().remove(i);
+    terminals.tabs.remove_tab(index);
+    Some(view)
+}
+
+/// The shell's program name for tab titles ("bash", "zsh", "cmd" …).
+fn shell_name() -> String {
+    let var = if cfg!(windows) { "COMSPEC" } else { "SHELL" };
+    std::env::var_os(var)
+        .and_then(|shell| {
+            std::path::Path::new(&shell)
+                .file_stem()
+                .map(|s| s.to_string_lossy().into_owned())
+        })
+        .unwrap_or_else(|| if cfg!(windows) { "cmd" } else { "sh" }.into())
 }

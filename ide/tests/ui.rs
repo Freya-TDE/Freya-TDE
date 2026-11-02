@@ -391,6 +391,25 @@ fn main() {
         );
         println!("test terminal ... ok");
         passed += 1;
+
+        // Zweites Terminal: eigene Shell, eigener Bildschirm.
+        assert_eq!(ide.terminal_count(), 1);
+        assert_eq!(ide.new_terminal(), 1);
+        ide.terminal_run("echo zwei-$((1+1))");
+        assert!(
+            pump_until(20, || ide.terminal_text().contains("zwei-2")),
+            "{}",
+            ide.terminal_text()
+        );
+        assert!(!ide.terminal_text().contains("freya-42"));
+        assert!(ide.select_terminal(0));
+        assert!(ide.terminal_text().contains("freya-42"));
+        assert!(!ide.select_terminal(5));
+        ide.close_terminal();
+        assert_eq!(ide.terminal_count(), 1);
+        assert!(ide.terminal_text().contains("zwei-2"));
+        println!("test terminals ... ok");
+        passed += 1;
     }
 
     Application::process_events();

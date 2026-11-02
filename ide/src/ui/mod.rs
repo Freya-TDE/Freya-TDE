@@ -1152,10 +1152,16 @@ impl Ide {
             .unwrap_or_else(|| PathBuf::from("."))
     }
 
-    /// Shows the terminal tab and starts the shell if none is running.
+    /// Starts the shell of the visible terminal if it is not running; opens
+    /// the first terminal if there is none.
     pub fn start_terminal(&self) {
         let dir = self.terminal_dir();
-        self.panel.terminal.ensure_started(&dir);
+        match self.panel.terminals.active() {
+            Some(view) => view.ensure_started(&dir),
+            None => {
+                self.new_terminal();
+            }
+        }
     }
 
     pub fn show_terminal(&self) {
@@ -1163,36 +1169,77 @@ impl Ide {
         self.start_terminal();
     }
 
+    /// Opens another terminal (own shell, own tab) in the project folder and
+    /// shows it; returns its index.
+    pub fn new_terminal(&self) -> usize {
+        let Some(ide) = self.me.upgrade() else {
+            return 0;
+        };
+        let view = panel::add_terminal(&ide);
+        view.ensure_started(&self.terminal_dir());
+        view.canvas.widget().focus();
+        self.panel.terminals.count() - 1
+    }
+
+    /// Ends the shell of the visible terminal and removes its tab.
+    pub fn close_terminal(&self) {
+        if let Some(view) = panel::remove_terminal(&self.panel.terminals)
+            && let Some(terminal) = view.terminal().as_ref()
+        {
+            terminal.kill();
+        }
+    }
+
+    /// Number of open terminals.
+    pub fn terminal_count(&self) -> usize {
+        self.panel.terminals.count()
+    }
+
+    /// Shows terminal `index` (0-based); false if there is none.
+    pub fn select_terminal(&self, index: usize) -> bool {
+        if index >= self.terminal_count() {
+            return false;
+        }
+        self.show_panel(Tab::Terminal);
+        self.panel.terminals.tabs.set_current_index(index as i32);
+        true
+    }
+
     fn restart_terminal(&self) {
         let dir = self.terminal_dir();
-        self.panel.terminal.restart(&dir);
+        if let Some(view) = self.panel.terminals.active() {
+            view.restart(&dir);
+        }
     }
 
     fn terminal_paste(&self) {
         let weak = self.me.clone();
         ruf::clipboard::read_text(move |text| {
-            if let (Some(ide), Some(text)) = (weak.upgrade(), text) {
-                ide.panel.terminal.paste(&text);
+            if let (Some(ide), Some(text)) = (weak.upgrade(), text)
+                && let Some(view) = ide.panel.terminals.active()
+            {
+                view.paste(&text);
             }
         });
     }
 
-    /// Types `command` and Enter into the terminal (starting it if needed)
-    /// – for scripts and an AI.
+    /// Types `command` and Enter into the visible terminal (starting one if
+    /// needed) – for scripts and an AI.
     pub fn terminal_run(&self, command: &str) {
         self.show_terminal();
-        if let Some(t) = self.panel.terminal.terminal().as_ref() {
+        if let Some(view) = self.panel.terminals.active()
+            && let Some(t) = view.terminal().as_ref()
+        {
             t.write_text(&format!("{command}\r"));
         }
     }
 
-    /// The visible text of the terminal (empty if it never ran).
+    /// The visible text of the visible terminal (empty if none ran).
     pub fn terminal_text(&self) -> String {
         self.panel
-            .terminal
-            .terminal()
-            .as_ref()
-            .map(|t| t.text())
+            .terminals
+            .active()
+            .and_then(|view| view.terminal().as_ref().map(|t| t.text()))
             .unwrap_or_default()
     }
 
