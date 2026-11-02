@@ -12,6 +12,7 @@ pub mod git;
 pub mod lsp;
 pub mod output;
 pub mod problems;
+pub mod projects;
 pub mod session;
 pub mod terminal;
 pub mod ui;

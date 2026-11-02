@@ -426,6 +426,34 @@ fn git_round_trip() {
     let cloned = Git::clone(&remote.to_string_lossy(), &base.join("cloned"), None).unwrap();
     assert!(cloned.root().join("LICENSE").is_file());
 
+    // Persönliche Angaben in .git/config: setzen, Vorschau, wieder entfernen.
+    use freya_td::git::Identity;
+    let state = git.identity().unwrap();
+    assert_eq!(state.local, Identity::default());
+    assert_eq!(state.effective.name.as_deref(), Some("Test"));
+    let mine = Identity {
+        name: Some("Anna".into()),
+        email: None,
+        signing_key: Some("ABCD1234".into()),
+        sign_commits: Some(false),
+    };
+    let preview = git.preview(&GitOp::SetIdentity(mine.clone())).unwrap();
+    assert_eq!(
+        preview.commands,
+        [
+            vec!["config", "--local", "user.name", "Anna"],
+            vec!["config", "--local", "user.signingkey", "ABCD1234"],
+            vec!["config", "--local", "commit.gpgsign", "false"],
+        ]
+    );
+    git.run(&GitOp::SetIdentity(mine.clone())).unwrap();
+    let state = git.identity().unwrap();
+    assert_eq!(state.local, mine);
+    assert_eq!(state.effective.name.as_deref(), Some("Anna"));
+    assert_eq!(state.effective.email.as_deref(), Some("test@example.com"));
+    git.run(&GitOp::SetIdentity(Identity::default())).unwrap();
+    assert_eq!(git.identity().unwrap().local, Identity::default());
+
     // Pfade relativ zum Repository.
     assert_eq!(
         git.relative(&dir.join("src/main.rs")).as_deref(),

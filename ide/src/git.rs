@@ -300,40 +300,38 @@ pub fn line_changes(old: &str, new: &str) -> Vec<LineChange> {
     let a_mid = &a[prefix..a.len() - suffix];
     let b_mid = &b[prefix..b.len() - suffix];
     // Paare gleicher Zeilen (Index in a_mid, Index in b_mid).
-    let matches: Vec<(usize, usize)> = if a_mid.is_empty()
-        || b_mid.is_empty()
-        || a_mid.len() * b_mid.len() > DIFF_LIMIT
-    {
-        Vec::new()
-    } else {
-        let (n, m) = (a_mid.len(), b_mid.len());
-        // lcs[i][j]: Länge der LCS von a_mid[i..] und b_mid[j..].
-        let mut lcs = vec![0u32; (n + 1) * (m + 1)];
-        let at = |i: usize, j: usize| i * (m + 1) + j;
-        for i in (0..n).rev() {
-            for j in (0..m).rev() {
-                lcs[at(i, j)] = if a_mid[i] == b_mid[j] {
-                    lcs[at(i + 1, j + 1)] + 1
+    let matches: Vec<(usize, usize)> =
+        if a_mid.is_empty() || b_mid.is_empty() || a_mid.len() * b_mid.len() > DIFF_LIMIT {
+            Vec::new()
+        } else {
+            let (n, m) = (a_mid.len(), b_mid.len());
+            // lcs[i][j]: Länge der LCS von a_mid[i..] und b_mid[j..].
+            let mut lcs = vec![0u32; (n + 1) * (m + 1)];
+            let at = |i: usize, j: usize| i * (m + 1) + j;
+            for i in (0..n).rev() {
+                for j in (0..m).rev() {
+                    lcs[at(i, j)] = if a_mid[i] == b_mid[j] {
+                        lcs[at(i + 1, j + 1)] + 1
+                    } else {
+                        lcs[at(i + 1, j)].max(lcs[at(i, j + 1)])
+                    };
+                }
+            }
+            let (mut i, mut j) = (0, 0);
+            let mut pairs = Vec::new();
+            while i < n && j < m {
+                if a_mid[i] == b_mid[j] {
+                    pairs.push((i, j));
+                    i += 1;
+                    j += 1;
+                } else if lcs[at(i + 1, j)] >= lcs[at(i, j + 1)] {
+                    i += 1;
                 } else {
-                    lcs[at(i + 1, j)].max(lcs[at(i, j + 1)])
-                };
+                    j += 1;
+                }
             }
-        }
-        let (mut i, mut j) = (0, 0);
-        let mut pairs = Vec::new();
-        while i < n && j < m {
-            if a_mid[i] == b_mid[j] {
-                pairs.push((i, j));
-                i += 1;
-                j += 1;
-            } else if lcs[at(i + 1, j)] >= lcs[at(i, j + 1)] {
-                i += 1;
-            } else {
-                j += 1;
-            }
-        }
-        pairs
-    };
+            pairs
+        };
     // Lücken zwischen den gleichen Zeilen sind die Änderungen.
     let mut changes = Vec::new();
     let (mut i, mut j) = (0, 0);
@@ -581,6 +579,61 @@ pub enum GitOp {
     },
     /// Push all tags.
     PushTags,
+    /// Personal settings in the repository's own `.git/config` (`None` =
+    /// remove the local value, the global one applies again).
+    SetIdentity(Identity),
+}
+
+/// Personal Git settings of a repository (its local `.git/config`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Identity {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
+    /// GPG key id (or SSH key) for signing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signing_key: Option<String>,
+    /// Sign commits (`commit.gpgsign`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sign_commits: Option<bool>,
+}
+
+/// The identity of a repository: what is set locally and what applies
+/// (local, else global).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub struct IdentityState {
+    pub local: Identity,
+    pub effective: Identity,
+}
+
+/// The `git config` keys of [`Identity`].
+const IDENTITY_KEYS: [&str; 4] = [
+    "user.name",
+    "user.email",
+    "user.signingkey",
+    "commit.gpgsign",
+];
+
+impl Identity {
+    fn values(&self) -> [Option<String>; 4] {
+        [
+            self.name.clone(),
+            self.email.clone(),
+            self.signing_key.clone(),
+            self.sign_commits.map(|b| b.to_string()),
+        ]
+    }
+
+    fn from_values(values: [Option<String>; 4]) -> Self {
+        let [name, email, signing_key, sign] = values;
+        Self {
+            name,
+            email,
+            signing_key,
+            sign_commits: sign.map(|s| matches!(s.as_str(), "true" | "yes" | "on" | "1")),
+        }
+    }
 }
 
 /// Which branches the log (graph) shows.
@@ -1014,6 +1067,24 @@ impl Git {
     pub fn tags(&self) -> Result<Vec<String>, GitError> {
         let text = self.git(&["tag", "--sort=-creatordate"], None)?.check()?;
         Ok(text.lines().map(str::to_owned).collect())
+    }
+
+    /// Personal settings: local (`.git/config`) and effective values.
+    pub fn identity(&self) -> Result<IdentityState, GitError> {
+        let read = |scope: Option<&str>, key: &str| -> Option<String> {
+            let mut args = vec!["config"];
+            args.extend(scope);
+            args.extend(["--get", key]);
+            self.git(&args, None)
+                .ok()
+                .filter(|o| o.success)
+                .map(|o| o.stdout.trim().to_owned())
+                .filter(|v| !v.is_empty())
+        };
+        Ok(IdentityState {
+            local: Identity::from_values(IDENTITY_KEYS.map(|k| read(Some("--local"), k))),
+            effective: Identity::from_values(IDENTITY_KEYS.map(|k| read(None, k))),
+        })
     }
 
     /// Names of the remotes (`origin` …).
@@ -1471,6 +1542,20 @@ impl Git {
                     ));
                 }
                 commands.push(cmd(&["tag", "-d", name], &[]));
+            }
+            GitOp::SetIdentity(identity) => {
+                let local = self.identity()?.local.values();
+                for ((key, new), old) in IDENTITY_KEYS.iter().zip(identity.values()).zip(local) {
+                    match (new, old) {
+                        (Some(new), old) if old.as_ref() != Some(&new) => {
+                            commands.push(cmd(&["config", "--local", key, &new], &[]));
+                        }
+                        (None, Some(_)) => {
+                            commands.push(cmd(&["config", "--local", "--unset", key], &[]));
+                        }
+                        _ => {}
+                    }
+                }
             }
             GitOp::PushTags => match remote()? {
                 Some(remote) => commands.push(cmd(&["push", &remote, "--tags"], &[])),

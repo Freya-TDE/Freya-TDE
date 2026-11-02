@@ -89,7 +89,7 @@ pub use event::{EventDef, EventParam, Events};
 pub use form::Form;
 pub use name::{ComponentName, ComponentPath, HandlerName, is_rust_identifier};
 pub use platform::Platform;
-pub use project_file::{ProjectFile, is_package_name};
+pub use project_file::{GitSettings, ProjectFile, is_package_name};
 pub use property::{Properties, PropertyDef, PropertyValue};
 pub use registry::TypeRegistry;
 pub use type_ref::{Origin, TypeRef};

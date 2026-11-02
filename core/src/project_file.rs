@@ -33,10 +33,38 @@ pub struct ProjectFile {
     /// directory (e.g. `"src/customers.ftdr"`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub forms: Vec<String>,
+    /// Freya-TD generates code (`main.rs`, `*.gen.rs`, `Cargo.toml`).
+    /// `false` for projects made from an existing Cargo project: they are
+    /// only managed (code, build, terminal, Git), nothing is generated.
+    #[serde(default = "yes", skip_serializing_if = "is_yes")]
+    pub generate: bool,
+    /// Git settings shared with everyone working on the project (personal
+    /// ones such as the signing key live in the repository's `.git/config`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub git: Option<GitSettings>,
+}
+
+/// Shared Git settings of a project.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GitSettings {
+    /// URL of the main remote (e.g. `git@github.com:me/app.git`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remote: Option<String>,
+    /// The main branch (e.g. `main`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
 }
 
 fn current_format() -> u32 {
     ProjectFile::FORMAT
+}
+
+fn yes() -> bool {
+    true
+}
+
+fn is_yes(value: &bool) -> bool {
+    *value
 }
 
 /// Is `name` usable as a Cargo package name?
@@ -70,6 +98,8 @@ impl ProjectFile {
             platforms: Vec::new(),
             packs: Vec::new(),
             forms: Vec::new(),
+            generate: true,
+            git: None,
         })
     }
 
@@ -105,6 +135,21 @@ mod tests {
         let text = project.to_ron().unwrap();
         assert_eq!(ProjectFile::from_ron(&text).unwrap(), project);
         assert!(ProjectFile::new("2fast", "1.99", "egui").is_err());
+        // Neue Felder: Standardwerte stehen nicht in der Datei, alte Dateien bleiben gültig.
+        let plain = ProjectFile::new("plain", "1.99", "none").unwrap();
+        let text = plain.to_ron().unwrap();
+        assert!(
+            !text.contains("generate") && !text.contains("git"),
+            "{text}"
+        );
+        let mut managed = plain.clone();
+        managed.generate = false;
+        managed.git = Some(GitSettings {
+            remote: Some("git@example.com:me/app.git".into()),
+            branch: Some("main".into()),
+        });
+        let back = ProjectFile::from_ron(&managed.to_ron().unwrap()).unwrap();
+        assert_eq!(back, managed);
         assert!(ProjectFile::new("my app", "1.99", "egui").is_err());
     }
 }

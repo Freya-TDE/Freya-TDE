@@ -50,7 +50,9 @@ Für Automatisierung (Tests, KI): `Ide::run_commands` (JSON-Befehle),
 `Ide::open_project_file`, `git` (Status, Log, Diff, Graph als Daten; Git-Befehle als JSON
 mit Vorschau: `Git::preview`, `Git::run`), `Ide::repo`, `Ide::git_status`, `Ide::git_changes`,
 `Ide::git_preview`, `Ide::git_run`, `problems`/`Ide::problems` (alle Probleme als Daten),
-`output`/`Ide::output` (Ausgabekanäle), `terminal` (Shell im Pseudo-Terminal ohne
+`output`/`Ide::output` (Ausgabekanäle), `projects` (globale Projektliste mit Haupt- und
+Unterprojekten, Suche nach Unterprojekten, „Projekt aus Cargo.toml erstellen“ mit Vorschau),
+`git::Identity`/`GitOp::SetIdentity` (Autor, E-Mail, Signierschlüssel in `.git/config`), `terminal` (Shell im Pseudo-Terminal ohne
 Oberfläche), `Ide::terminal_run`, `Ide::terminal_text`.
 *Automation (tests, AI): `Ide::run_commands`, `Ide::design_surface`, `Ide::screenshots`,
 `Ide::code_text`/`set_code_text`/`code_marks`, `lsp::LspClient`, `files` (file tree and file

@@ -482,6 +482,12 @@ impl Session {
         let dir = self
             .project_dir()
             .ok_or("Das Projekt ist noch nicht gespeichert.")?;
+        if !self.doc.project().generate {
+            return Err(
+                "Dieses Projekt wird nur verwaltet (aus einer Cargo.toml erstellt); Freya-TD erzeugt dafür keinen Code."
+                    .to_owned(),
+            );
+        }
         self.doc.save(Some(&dir)).map_err(|e| e.to_string())?;
         let generation = self.generation().expect("saved project");
         let written = codegen::write(&dir, &generation).map_err(|e| e.to_string())?;
