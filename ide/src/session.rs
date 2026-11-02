@@ -77,6 +77,9 @@ pub struct Session {
     platform: Platform,
     theme: Theme,
     press: Option<Press>,
+    /// The forms of a new, never saved project as created (the automatic
+    /// first form is no change of the user's).
+    untitled_forms: Option<Vec<Form>>,
 }
 
 /// The platform whose look the designer shows by default.
@@ -108,6 +111,19 @@ impl Session {
             armed: None,
             platform,
             press: None,
+            untitled_forms: None,
+        }
+    }
+
+    /// Changes worth asking about before closing: a saved project changed
+    /// since its last save, a new one changed since it was created.
+    pub fn is_modified(&self) -> bool {
+        if !self.doc.is_dirty() {
+            return false;
+        }
+        match &self.untitled_forms {
+            Some(forms) if self.doc.dir().is_none() => self.doc.forms() != forms.as_slice(),
+            _ => true,
         }
     }
 
@@ -127,7 +143,9 @@ impl Session {
             data_module: false,
         })
         .map_err(|e| e.to_string())?;
-        Ok(Self::new(doc))
+        let mut session = Self::new(doc);
+        session.untitled_forms = Some(session.doc.forms().to_vec());
+        Ok(session)
     }
 
     /// Like [`Session::untitled`], saved to `dir` right away.

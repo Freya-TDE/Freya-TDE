@@ -123,6 +123,35 @@ fn non_visual_components_go_to_the_tray() {
 }
 
 #[test]
+fn unchanged_projects_need_no_question() {
+    // Das leere Startprojekt (mit dem automatischen ersten Formular).
+    let mut s = Session::untitled(
+        "projekt1",
+        "plain",
+        Vec::new(),
+        TypeRegistry::with_builtins(),
+    )
+    .unwrap();
+    assert!(!s.is_modified(), "nichts getan – nichts zu verwerfen");
+    s.arm(Some(builtin::button()));
+    s.press(empty_spot(&s), false).unwrap();
+    assert!(s.is_modified());
+    assert!(s.undo());
+    assert!(!s.is_modified(), "rückgängig gemacht: wieder wie am Anfang");
+
+    // Ein gespeichertes Projekt: frisch geöffnet unverändert, dann geändert.
+    let dir = std::env::temp_dir().join(format!("freya-modified-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    Session::create(&dir, "shop", "plain", TypeRegistry::with_builtins()).unwrap();
+    let (mut opened, _) = Session::open(&dir.join("shop.ptdr"), &[]).unwrap();
+    assert!(!opened.is_modified());
+    opened.arm(Some(builtin::button()));
+    opened.press(empty_spot(&opened), false).unwrap();
+    assert!(opened.is_modified());
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
 fn new_project_is_saved() {
     let dir = std::env::temp_dir().join(format!("freya-new-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);

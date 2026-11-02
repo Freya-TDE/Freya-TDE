@@ -1460,12 +1460,8 @@ impl Ide {
     }
 
     fn confirm_discard(&self) -> bool {
-        let parked_dirty = self
-            .parked
-            .borrow()
-            .iter()
-            .any(|(_, s)| s.document().is_dirty());
-        !(self.session.borrow().document().is_dirty() || self.code.has_unsaved() || parked_dirty)
+        let parked_dirty = self.parked.borrow().iter().any(|(_, s)| s.is_modified());
+        !(self.session.borrow().is_modified() || self.code.has_unsaved() || parked_dirty)
             || dialog::confirm(
                 Some(self.main.window.widget()),
                 "Ungespeicherte Änderungen",
@@ -1688,7 +1684,7 @@ impl Ide {
                 )
         };
         if self.path.borrow().as_deref() == Some(path) {
-            if !ask(self.session().document().is_dirty()) {
+            if !ask(self.session().is_modified()) {
                 return;
             }
             if let Some(main) = self.main_project() {
@@ -1697,7 +1693,7 @@ impl Ide {
         }
         let index = self.parked.borrow().iter().position(|(p, _)| p == path);
         if let Some(index) = index {
-            let dirty = self.parked.borrow()[index].1.document().is_dirty();
+            let dirty = self.parked.borrow()[index].1.is_modified();
             if !ask(dirty) {
                 return;
             }
@@ -2353,11 +2349,7 @@ impl Ide {
     /// Title for the main window: project, path, unsaved mark.
     fn title(&self) -> String {
         let session = self.session.borrow();
-        let dirty = if session.document().is_dirty() {
-            " *"
-        } else {
-            ""
-        };
+        let dirty = if session.is_modified() { " *" } else { "" };
         let path = self
             .path
             .borrow()
