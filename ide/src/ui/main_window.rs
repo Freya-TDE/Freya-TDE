@@ -38,6 +38,13 @@ fn menu_bar() -> MenuBar {
                 .item("file.open", "Projekt öffnen …", Some("Ctrl+O"))
                 .item("file.save", "Speichern", Some("Ctrl+S"))
                 .separator()
+                .item("file.projects", "Projekt-Manager", None)
+                .item(
+                    "file.from_cargo",
+                    "Projekt aus Cargo.toml erstellen …",
+                    None,
+                )
+                .separator()
                 .item("file.quit", "Beenden", Some("Ctrl+Q")),
         ),
         (
@@ -247,6 +254,15 @@ pub fn connect(ide: &Rc<Ide>) {
             "file.open" => {
                 ide.open_dialog();
                 ide.main.build_palette(ide);
+            }
+            "file.projects" => {
+                ide.project.show_manager();
+                ide.show_window(window::PROJECT);
+            }
+            "file.from_cargo" => {
+                ide.project.show_manager();
+                ide.show_window(window::PROJECT);
+                ide.project.menu_from_main(ide, "pm.cargo");
             }
             "file.save" => {
                 ide.save();

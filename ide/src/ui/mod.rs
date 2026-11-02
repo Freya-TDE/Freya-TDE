@@ -10,6 +10,7 @@ mod inspector;
 mod main_window;
 pub mod panel;
 mod project;
+mod project_manager;
 mod structure;
 mod terminal_view;
 
@@ -32,6 +33,7 @@ use crate::git::{After, Git, GitError, GitOp, LogRefs, Preview, Status};
 use crate::lsp::{DiagnosticSeverity, LspClient, LspEvent};
 use crate::output::{Output, channel};
 use crate::problems::{Problem, ProblemSeverity, ProblemSource};
+use crate::projects::{CargoProject, ProjectError, ProjectList, ProjectNode};
 use crate::session::{Changes, Session};
 
 use code::CodeWindow;
@@ -113,6 +115,14 @@ pub struct Ide {
     session: RefCell<Session>,
     /// The `.ptdr` file; `None` while the project is unsaved.
     path: RefCell<Option<PathBuf>>,
+    /// The user's global project list and where it is stored.
+    projects: RefCell<ProjectList>,
+    projects_file: Option<PathBuf>,
+    /// The open main project (its `.ptdr`).
+    main_project: RefCell<Option<PathBuf>>,
+    /// Further open projects (subprojects of the main project) that are
+    /// not active; the active one is `session`/`path`.
+    parked: RefCell<Vec<(PathBuf, Session)>>,
     pack_dirs: Vec<PathBuf>,
     desktop: RefCell<Desktop>,
     /// Set while windows are refilled (their signals must not edit).
@@ -194,6 +204,14 @@ impl Ide {
             me: me.clone(),
             session: RefCell::new(session),
             path: RefCell::new(None),
+            projects: RefCell::new(
+                ProjectList::default_path()
+                    .map(|p| ProjectList::load(&p))
+                    .unwrap_or_default(),
+            ),
+            projects_file: ProjectList::default_path(),
+            main_project: RefCell::new(None),
+            parked: RefCell::new(Vec::new()),
             pack_dirs,
             desktop: RefCell::new(Desktop::load()),
             refreshing: Cell::new(false),
@@ -1442,7 +1460,12 @@ impl Ide {
     }
 
     fn confirm_discard(&self) -> bool {
-        !(self.session.borrow().document().is_dirty() || self.code.has_unsaved())
+        let parked_dirty = self
+            .parked
+            .borrow()
+            .iter()
+            .any(|(_, s)| s.document().is_dirty());
+        !(self.session.borrow().document().is_dirty() || self.code.has_unsaved() || parked_dirty)
             || dialog::confirm(
                 Some(self.main.window.widget()),
                 "Ungespeicherte Änderungen",
@@ -1459,6 +1482,8 @@ impl Ide {
             Ok(session) => {
                 *self.session.borrow_mut() = session;
                 *self.path.borrow_mut() = None;
+                *self.main_project.borrow_mut() = None;
+                self.parked.borrow_mut().clear();
                 self.refresh(Changes {
                     model: true,
                     selection: true,
@@ -1481,10 +1506,15 @@ impl Ide {
         }
     }
 
+    /// Opens a project without asking (the caller asked already, or it is
+    /// the start).
     fn open_path(&self, path: &Path) {
-        // Relativ angegeben (`freya-td app.ptdr`): der Projektordner wäre leer.
-        let path = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
-        let path = path.as_path();
+        self.open_project_with(path, false);
+    }
+
+    /// Loads a project as the active one (the previous active one is
+    /// dropped – callers park or confirm it first).
+    fn load_active(&self, path: &Path) -> bool {
         match Session::open(path, &self.pack_dirs) {
             Ok((session, report)) => {
                 *self.session.borrow_mut() = session;
@@ -1501,13 +1531,225 @@ impl Ide {
                     selection: true,
                 });
                 self.ensure_lsp();
+                true
             }
-            Err(e) => dialog::error(
-                Some(self.main.window.widget()),
-                "Projekt öffnen",
-                &e.to_string(),
-            ),
+            Err(e) => {
+                dialog::error(
+                    Some(self.main.window.widget()),
+                    "Projekt öffnen",
+                    &e.to_string(),
+                );
+                false
+            }
         }
+    }
+
+    // --- Projects (project manager) -------------------------------------------------
+
+    fn save_projects(&self) {
+        if let Some(file) = &self.projects_file
+            && let Err(e) = self.projects.borrow().save(file)
+        {
+            self.set_status(&format!("Projektliste nicht gespeichert: {e}"));
+        }
+    }
+
+    /// The open projects: the active one first, then the parked ones.
+    pub fn open_projects(&self) -> Vec<PathBuf> {
+        let mut open: Vec<PathBuf> = self.path.borrow().iter().cloned().collect();
+        open.extend(self.parked.borrow().iter().map(|(p, _)| p.clone()));
+        open
+    }
+
+    /// The active project's `.ptdr` (`None` while it is unsaved).
+    pub fn active_project(&self) -> Option<PathBuf> {
+        self.path.borrow().clone()
+    }
+
+    /// The open main project's `.ptdr`.
+    pub fn main_project(&self) -> Option<PathBuf> {
+        self.main_project.borrow().clone()
+    }
+
+    /// All projects of the list as a tree (open ones marked).
+    pub fn project_tree(&self) -> Vec<ProjectNode> {
+        self.projects.borrow().tree(&self.open_projects())
+    }
+
+    pub fn project_list(&self) -> ProjectList {
+        self.projects.borrow().clone()
+    }
+
+    /// Opens a project: a main project closes all others (asking about
+    /// unsaved changes); a subproject also opens (or keeps) its main
+    /// project and becomes the active one.
+    pub fn open_project(&self, path: &Path) {
+        self.open_project_with(path, true);
+    }
+
+    fn open_project_with(&self, path: &Path, ask: bool) {
+        // Relativ angegeben (`freya-td app.ptdr`): der Projektordner wäre leer.
+        let path = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
+        if self.open_projects().contains(&path) {
+            self.activate_project(&path);
+            return;
+        }
+        let main = self.projects.borrow().main_of(&path);
+        let main = if main.is_file() { main } else { path.clone() };
+        if self.main_project().as_ref() != Some(&main) {
+            if ask && !self.confirm_discard() {
+                return;
+            }
+            self.parked.borrow_mut().clear();
+            if !self.load_active(&main) {
+                return;
+            }
+            *self.main_project.borrow_mut() = Some(main.clone());
+            {
+                let mut list = self.projects.borrow_mut();
+                if list.get(&main).is_none() {
+                    let _ = list.add(&main, None);
+                }
+                list.discover(&main);
+            }
+            self.save_projects();
+        }
+        if path != main {
+            self.open_subproject(&path);
+        }
+        self.project.refresh(self);
+    }
+
+    /// Opens a subproject of the open main project as the active one.
+    fn open_subproject(&self, path: &Path) {
+        let previous = (
+            self.path.borrow().clone(),
+            std::mem::replace(
+                &mut *self.session.borrow_mut(),
+                Session::untitled(
+                    "park",
+                    DEFAULT_BACKEND,
+                    Vec::new(),
+                    TypeRegistry::with_builtins(),
+                )
+                .expect("valid name"),
+            ),
+        );
+        if self.load_active(path) {
+            if let (Some(p), session) = previous {
+                self.parked.borrow_mut().push((p, session));
+            }
+        } else {
+            // Zurück zum bisherigen Projekt.
+            let (p, session) = previous;
+            *self.session.borrow_mut() = session;
+            *self.path.borrow_mut() = p;
+        }
+    }
+
+    /// Makes an open project the active one (designer, code, build, Git).
+    pub fn activate_project(&self, path: &Path) {
+        if self.path.borrow().as_deref() == Some(path) {
+            return;
+        }
+        let index = self.parked.borrow().iter().position(|(p, _)| p == path);
+        let Some(index) = index else {
+            return;
+        };
+        let (target, session) = self.parked.borrow_mut().remove(index);
+        let previous_session = std::mem::replace(&mut *self.session.borrow_mut(), session);
+        let previous_path = self.path.replace(Some(target));
+        if let Some(p) = previous_path {
+            self.parked.borrow_mut().push((p, previous_session));
+        }
+        self.refresh(Changes {
+            model: true,
+            selection: true,
+        });
+        self.ensure_lsp();
+        self.git_refresh(true);
+        self.project.refresh(self);
+    }
+
+    /// Closes an open subproject (the main project closes with „Neu“ or by
+    /// opening another main project).
+    pub fn close_project(&self, path: &Path) {
+        if self.main_project().as_deref() == Some(path) {
+            self.set_status("Das Hauptprojekt schließt beim Öffnen eines anderen Projekts.");
+            return;
+        }
+        let parent = Some(self.main.window.widget());
+        let ask = |dirty: bool| {
+            !dirty
+                || dialog::confirm(
+                    parent,
+                    "Projekt schließen",
+                    "Das Projekt hat ungespeicherte Änderungen. Verwerfen?",
+                )
+        };
+        if self.path.borrow().as_deref() == Some(path) {
+            if !ask(self.session().document().is_dirty()) {
+                return;
+            }
+            if let Some(main) = self.main_project() {
+                self.activate_project(&main);
+            }
+        }
+        let index = self.parked.borrow().iter().position(|(p, _)| p == path);
+        if let Some(index) = index {
+            let dirty = self.parked.borrow()[index].1.document().is_dirty();
+            if !ask(dirty) {
+                return;
+            }
+            self.parked.borrow_mut().remove(index);
+        }
+        self.project.refresh(self);
+    }
+
+    /// Changes the project list (add, assign, hide, remove) and saves it.
+    pub fn edit_projects(
+        &self,
+        f: impl FnOnce(&mut ProjectList) -> Result<(), ProjectError>,
+    ) -> Result<(), ProjectError> {
+        let result = f(&mut self.projects.borrow_mut());
+        self.save_projects();
+        self.project.refresh(self);
+        result
+    }
+
+    /// „Projekt aus Cargo.toml erstellen“: what would be created.
+    pub fn plan_projects_from_cargo(
+        &self,
+        dir: &Path,
+        with_members: bool,
+    ) -> Result<Vec<CargoProject>, ProjectError> {
+        crate::projects::plan_from_cargo(dir, with_members)
+    }
+
+    /// Creates the planned `.ptdr` files and puts them on the list.
+    pub fn create_projects_from_cargo(
+        &self,
+        plan: &[CargoProject],
+    ) -> Result<Vec<PathBuf>, ProjectError> {
+        let result = crate::projects::create_from_cargo(plan, &mut self.projects.borrow_mut());
+        self.save_projects();
+        self.project.refresh(self);
+        result
+    }
+
+    /// Shared Git settings of the active project (in its `.ptdr`).
+    pub fn set_project_git(&self, git: Option<tdr_core::GitSettings>) -> Result<(), String> {
+        let dir = self
+            .session()
+            .project_dir()
+            .ok_or("Das Projekt ist noch nicht gespeichert.")?;
+        let mut session = self.session.borrow_mut();
+        session.document_mut().set_git(git);
+        session
+            .document_mut()
+            .save(Some(&dir))
+            .map(|_| ())
+            .map_err(|e| e.to_string())
     }
 
     /// Saves; an unsaved project asks for its folder first.
@@ -1531,7 +1773,16 @@ impl Ide {
         match result {
             Ok(_) => {
                 let name = self.session.borrow().document().project().name.clone();
-                *self.path.borrow_mut() = Some(dir.join(format!("{name}.ptdr")));
+                let ptdr = dir.join(format!("{name}.ptdr"));
+                *self.path.borrow_mut() = Some(ptdr.clone());
+                // Erstmals gespeichert: in die Projektliste (als Hauptprojekt).
+                if self.main_project().is_none() {
+                    *self.main_project.borrow_mut() = Some(ptdr.clone());
+                }
+                if self.projects.borrow().get(&ptdr).is_none() {
+                    let _ = self.projects.borrow_mut().add(&ptdr, None);
+                    self.save_projects();
+                }
                 self.main.set_status("Gespeichert.");
                 self.main.refresh(self);
                 self.project.refresh(self);
@@ -1601,8 +1852,22 @@ impl Ide {
             self.main.set_status("Es läuft bereits ein Build.");
             return;
         }
-        let Some(generation) = self.generate_code() else {
-            return;
+        // Nur verwaltete Projekte (aus einer Cargo.toml) bauen ohne Codeerzeugung.
+        let generate = self.session().document().project().generate;
+        let generation = if generate {
+            let Some(generation) = self.generate_code() else {
+                return;
+            };
+            Some(generation)
+        } else {
+            match self.code.save_all() {
+                Ok(saved) => self.lsp_saved(&saved),
+                Err(e) => {
+                    self.main.set_status(&e);
+                    return;
+                }
+            }
+            None
         };
         let Some(dir) = self.session().project_dir() else {
             return;
@@ -1619,7 +1884,7 @@ impl Ide {
             &format!("> cargo build ({})", dir.display()),
         );
         std::thread::spawn(move || {
-            let report = tdr_core::preview::build(&dir, Some(&generation)).unwrap_or_else(|e| {
+            let report = tdr_core::preview::build(&dir, generation.as_ref()).unwrap_or_else(|e| {
                 tdr_core::preview::BuildReport {
                     success: false,
                     messages: vec![tdr_core::preview::BuildMessage {

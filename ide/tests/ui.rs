@@ -341,6 +341,46 @@ fn main() {
         println!("test lsp_marks ... übersprungen (kein rust-analyzer)");
     }
 
+    // Projekt-Manager: Unterprojekt aus Cargo.toml, öffnen, aktivieren, schließen.
+    let shop = ide.active_project().expect("shop ist gespeichert");
+    assert_eq!(ide.main_project().as_ref(), Some(&shop));
+    let helper_dir = project_dir.join("tools/helper");
+    std::fs::create_dir_all(&helper_dir).unwrap();
+    std::fs::write(
+        helper_dir.join("Cargo.toml"),
+        "[package]\nname = \"helper\"\nrust-version = \"1.95\"\n",
+    )
+    .unwrap();
+    let plan = ide.plan_projects_from_cargo(&helper_dir, false).unwrap();
+    assert_eq!(plan[0].name, "helper");
+    let written = ide.create_projects_from_cargo(&plan).unwrap();
+    let helper = written[0].clone();
+    ide.edit_projects(|list| list.set_parent(&helper, Some(&shop)))
+        .unwrap();
+    ide.open_project(&helper);
+    assert_eq!(ide.active_project().as_ref(), Some(&helper));
+    assert_eq!(ide.main_project().as_ref(), Some(&shop));
+    let tree = ide.project_tree();
+    let shop_node = tree.iter().find(|n| n.path == shop).expect("shop im Baum");
+    assert!(shop_node.open);
+    let helper_node = shop_node
+        .children
+        .iter()
+        .find(|n| n.path == helper)
+        .expect("helper unter shop");
+    assert!(helper_node.open);
+    // Nur verwaltet: Code erzeugen verweigert, die Projektdatei bleibt ohne Code.
+    assert!(ide.generate_code().is_none());
+    assert!(!helper_dir.join("src/main.rs").exists());
+    ide.activate_project(&shop);
+    assert_eq!(ide.active_project().as_ref(), Some(&shop));
+    assert!(ide.open_projects().contains(&helper));
+    ide.close_project(&helper);
+    assert_eq!(ide.open_projects(), std::slice::from_ref(&shop));
+    assert!(ide.session().document().project().generate);
+    println!("test project_manager ... ok");
+    passed += 1;
+
     // Terminal im Panel: Befehl schicken, Ergebnis lesen.
     if cfg!(unix) {
         ide.terminal_run("echo freya-$((40+2))");

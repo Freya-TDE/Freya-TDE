@@ -155,6 +155,12 @@ impl Document {
         &self.project
     }
 
+    /// Sets the shared Git settings of the project file (written with the
+    /// next [`Document::save`]).
+    pub fn set_git(&mut self, git: Option<tdr_core::GitSettings>) {
+        self.project.git = git;
+    }
+
     pub fn forms(&self) -> &[Form] {
         &self.forms
     }

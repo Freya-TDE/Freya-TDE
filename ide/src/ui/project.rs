@@ -13,6 +13,7 @@ use rncl::prelude::*;
 use ruf::Timer;
 use ruf::dialog;
 
+use super::project_manager::ProjectManager;
 use super::{Ide, with, with0};
 use crate::files::{self, Entry, EntryKind, FileError, FileOp, Plan, ScanOptions};
 use crate::git::Change;
@@ -139,6 +140,9 @@ fn ct_editor() -> PathBuf {
 
 pub struct ProjectWindow {
     pub window: RnclWindow,
+    /// „Dateien“ and „Projekt-Manager“.
+    tabs: RnclTabView,
+    pub manager: ProjectManager,
     tree: RnclTreeView,
     show_generated: RnclCheckBox,
     show_hidden: RnclCheckBox,
@@ -154,17 +158,30 @@ pub struct ProjectWindow {
 impl ProjectWindow {
     pub fn build() -> Self {
         let window = RnclWindow::new("Projekt");
-        let tree = RnclTreeView::new(&window);
-        let show_generated = RnclCheckBox::new(&window, "Generierte");
+        let tabs = RnclTabView::new(&window);
+        let files = tabs.add_tab("Dateien");
+        let manager = ProjectManager::build(&tabs.add_tab("Projekt-Manager"));
+        let tree = RnclTreeView::new(&files);
+        let show_generated = RnclCheckBox::new(&files, "Generierte");
         show_generated
             .widget()
             .set_tool_tip("Erzeugte Dateien (*.gen.rs) zeigen");
-        let show_hidden = RnclCheckBox::new(&window, "Versteckte");
+        let show_hidden = RnclCheckBox::new(&files, "Versteckte");
         show_hidden
             .widget()
             .set_tool_tip("Dateien und Ordner mit . am Anfang zeigen");
+        {
+            let (t, g, h) = (tree.clone(), show_generated.clone(), show_hidden.clone());
+            files.widget().on_resized(move |width, height| {
+                t.set_geometry(0, 0, width, height - BOTTOM);
+                g.set_geometry(6, height - BOTTOM + 3, 110, BOTTOM - 6);
+                h.set_geometry(122, height - BOTTOM + 3, 110, BOTTOM - 6);
+            });
+        }
         Self {
             window,
+            tabs,
+            manager,
             tree,
             show_generated,
             show_hidden,
@@ -176,11 +193,17 @@ impl ProjectWindow {
     }
 
     fn layout(&self, width: i32, height: i32) {
-        self.tree.set_geometry(0, 0, width, height - BOTTOM);
-        self.show_generated
-            .set_geometry(6, height - BOTTOM + 3, 110, BOTTOM - 6);
-        self.show_hidden
-            .set_geometry(122, height - BOTTOM + 3, 110, BOTTOM - 6);
+        self.tabs.set_geometry(0, 0, width, height);
+    }
+
+    /// A project manager entry chosen in another window's menu.
+    pub fn menu_from_main(&self, ide: &Ide, id: &str) {
+        self.manager.menu(ide, self.window.widget(), id);
+    }
+
+    /// Shows the „Projekt-Manager“ tab.
+    pub fn show_manager(&self) {
+        self.tabs.set_current_index(1);
     }
 
     pub fn options(&self) -> ScanOptions {
@@ -197,6 +220,7 @@ impl ProjectWindow {
 
     /// Rescans the project folder and updates the tree if anything changed.
     pub fn refresh(&self, ide: &Ide) {
+        self.manager.refresh(ide);
         let dir = ide.session().project_dir();
         let root = match &dir {
             Some(dir) => {
@@ -494,6 +518,9 @@ impl ProjectWindow {
     }
 
     fn menu(&self, ide: &Ide, id: &str) {
+        if self.manager.menu(ide, self.window.widget(), id) {
+            return;
+        }
         match id {
             "files.open" => {
                 let target = self.menu_target.borrow().clone();
@@ -551,6 +578,20 @@ pub fn connect(ide: &Rc<Ide>) {
     project
         .window
         .on_menu(with(ide, |ide, id: String| ide.project.menu(ide, &id)));
+    // Projekt-Manager: Doppelklick öffnet bzw. aktiviert, Rechtsklick: Menü.
+    let manager = &project.manager;
+    manager.tree.on_item_activated(with(ide, |ide, id: String| {
+        if !id.is_empty() {
+            ide.open_project(std::path::Path::new(&id));
+        }
+    }));
+    let mut manager_context = with(ide, |ide, (id, x, y): (String, i32, i32)| {
+        let menu = ide.project.manager.context_menu(ide, &id);
+        ide.project.manager.tree.widget().popup_menu(&menu, x, y);
+    });
+    manager
+        .tree
+        .on_context_menu(move |id, x, y| manager_context((id, x, y)));
     // Änderungen außerhalb von Freya-TD (CT-Editor, Git, Dateimanager).
     project
         .timer
