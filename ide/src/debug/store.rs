@@ -183,6 +183,31 @@ impl DebugSettings {
     }
 }
 
+/// How an edit moved lines from `old` to `new`: lines after `after` (1-based)
+/// moved by `delta` – for [`DebugSettings::shift_lines`]. `None` if the
+/// number of lines stayed the same.
+///
+/// ```
+/// use freya_td::debug::line_shift;
+///
+/// // Neue Zeile nach Zeile 2.
+/// assert_eq!(line_shift("a\nb\nc", "a\nb\nneu\nc"), Some((2, 1)));
+/// // Zeile 2 gelöscht.
+/// assert_eq!(line_shift("a\nb\nc", "a\nc"), Some((1, -1)));
+/// assert_eq!(line_shift("a\nb", "a\nB"), None);
+/// ```
+pub fn line_shift(old: &str, new: &str) -> Option<(usize, isize)> {
+    let a: Vec<&str> = old.split('\n').collect();
+    let b: Vec<&str> = new.split('\n').collect();
+    if a.len() == b.len() {
+        return None;
+    }
+    // Bis zur ersten abweichenden Zeile bleibt alles stehen, dahinter
+    // verschiebt sich der Rest um die Differenz.
+    let prefix = a.iter().zip(&b).take_while(|(x, y)| x == y).count();
+    Some((prefix, b.len() as isize - a.len() as isize))
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 struct ProjectEntry {
     /// The `.ptdr` (or project folder).

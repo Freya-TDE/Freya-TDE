@@ -412,6 +412,98 @@ fn main() {
         passed += 1;
     }
 
+    // Debugger: Haltepunkt per Klick in den Rand, F9, Schritt, Ausdruck, Ende.
+    if freya_td::debug::Adapter::find().is_ok() {
+        use freya_td::debug::State;
+        let demo_dir = project_dir.join("tools/dbgdemo");
+        std::fs::create_dir_all(demo_dir.join("src")).unwrap();
+        std::fs::write(
+            demo_dir.join("Cargo.toml"),
+            "[package]\nname = \"dbgdemo\"\nversion = \"0.1.0\"\nedition = \"2024\"\n",
+        )
+        .unwrap();
+        let main_rs = demo_dir.join("src/main.rs");
+        std::fs::write(
+            &main_rs,
+            "fn main() {\n    let x = 41;\n    let y = x + 1;\n    println!(\"y = {y}\");\n}\n",
+        )
+        .unwrap();
+        let main_rs = main_rs.canonicalize().unwrap();
+        let plan = ide.plan_projects_from_cargo(&demo_dir, false).unwrap();
+        let demo = ide.create_projects_from_cargo(&plan).unwrap()[0].clone();
+        ide.open_project(&demo);
+        ide.open_source(&main_rs, 1);
+        ide.click_gutter(&main_rs, 3, 1);
+        assert_eq!(ide.debug_settings().breakpoints.len(), 1);
+        assert_eq!(ide.code_breakpoint_marks(&main_rs)[0].line, 3);
+        // Zeile davor einfügen: der Haltepunkt wandert mit.
+        let text = ide.code_text(&main_rs).unwrap();
+        ide.set_code_text(
+            &main_rs,
+            &text.replacen("fn main() {\n", "fn main() {\n    // neu\n", 1),
+        );
+        assert_eq!(ide.debug_settings().breakpoints[0].line, 4);
+        ide.set_code_text(&main_rs, &text);
+        assert_eq!(ide.debug_settings().breakpoints[0].line, 3);
+        ide.add_watch("x");
+        ide.debug_menu("start.run");
+        let stopped_at = |line| {
+            ide.debug_snapshot()
+                .is_some_and(|s| s.is_stopped() && s.location().is_some_and(|(_, l)| l == line))
+        };
+        assert!(
+            pump_until(180, || stopped_at(3)),
+            "{:?}",
+            ide.debug_snapshot()
+        );
+        assert!(pump_until(20, || ide.code_execution_line(&main_rs) == Some(3)));
+        assert!(pump_until(20, || ide.debug_snapshot().is_some_and(|s| s
+            .watches[0]
+            .value
+            .as_deref()
+            == Some("41"))));
+        ide.debug_menu("start.step_over");
+        assert!(
+            pump_until(30, || stopped_at(4)),
+            "{:?}",
+            ide.debug_snapshot()
+        );
+        assert!(pump_until(20, || ide.code_execution_line(&main_rs) == Some(4)));
+        ide.debug_evaluate("y");
+        assert!(
+            pump_until(20, || ide.debug_console().contains("42")),
+            "{}",
+            ide.debug_console()
+        );
+        // Bildschirmfotos zum Ansehen: FREYA_UI_SHOTS=<ordner>.
+        if let Some(dir) = std::env::var_os("FREYA_UI_SHOTS") {
+            ide.show_shortcuts();
+            pump_until(1, || false);
+            ide.screenshots(std::path::Path::new(&dir));
+        }
+        ide.debug_menu("start.run");
+        assert!(pump_until(30, || ide
+            .debug_snapshot()
+            .is_some_and(|s| s.is_ended())));
+        assert_eq!(
+            ide.debug_snapshot().map(|s| s.state),
+            Some(State::Ended { exit_code: Some(0) })
+        );
+        assert!(pump_until(20, || ide.debug_console().contains("y = 42")));
+        assert!(pump_until(10, || ide
+            .code_execution_line(&main_rs)
+            .is_none()));
+        // Die Haltepunkte bleiben für das Projekt gespeichert.
+        let store = freya_td::debug::DebugStore::load(
+            &freya_td::debug::DebugStore::default_path().unwrap(),
+        );
+        assert_eq!(store.get(&demo).breakpoints.len(), 1);
+        println!("test debugger ... ok");
+        passed += 1;
+    } else {
+        println!("test debugger ... übersprungen (kein lldb-dap/gdb)");
+    }
+
     Application::process_events();
     let _ = std::fs::remove_dir_all(&home);
     println!("\ntest result: ok. {passed} passed");

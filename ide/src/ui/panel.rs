@@ -59,6 +59,8 @@ pub struct PanelWindow {
     /// Set while the channel list is refilled (its signal must not switch).
     updating: Cell<bool>,
     pub terminals: Terminals,
+    debug_text: RnclTextArea,
+    debug_input: RnclTextField,
     timer: Timer,
 }
 
@@ -91,7 +93,7 @@ impl Terminals {
     }
 }
 
-fn terminal_menu() -> Menu {
+pub(super) fn terminal_menu() -> Menu {
     Menu::new()
         .item("term.copy", "Kopieren", Some("Ctrl+Shift+C"))
         .item("term.paste", "Einfügen", Some("Ctrl+Shift+V"))
@@ -101,15 +103,6 @@ fn terminal_menu() -> Menu {
         .separator()
         .item("term.new", "Neues Terminal", None)
         .item("term.close", "Terminal beenden", None)
-}
-
-fn placeholder(page: &RnclPanel, text: &str) -> RnclLabel {
-    let label = RnclLabel::new(page, text);
-    let l = label.clone();
-    page.widget().on_resized(move |w, _| {
-        l.set_geometry(12, 12, (w - 24).max(0), 24);
-    });
-    label
 }
 
 impl PanelWindow {
@@ -146,10 +139,26 @@ impl PanelWindow {
         };
         terminals.add.set_tool_tip("Neues Terminal");
         terminals.close.set_tool_tip("Sichtbares Terminal beenden");
-        placeholder(
-            &debug,
-            "Die Debug-Konsole folgt zusammen mit dem Debugger (Haltepunkte, Variablen).",
-        );
+        // Debug-Konsole: Ausgabe des Programms und des Debuggers, darunter
+        // die Eingabe (Ausdruck; ` = Befehl an den Debugger).
+        let debug_text = RnclTextArea::new(&debug);
+        debug_text.set_read_only(true);
+        debug_text.set_monospace(true);
+        let debug_input = RnclTextField::new(&debug);
+        debug_input
+            .set_placeholder("Ausdruck auswerten (Enter) – ` am Anfang: Befehl an den Debugger");
+        {
+            let (text, input) = (debug_text.clone(), debug_input.clone());
+            debug.widget().on_resized(move |width, height| {
+                text.set_geometry(0, 0, width, (height - ROW - MARGIN).max(0));
+                input.set_geometry(
+                    MARGIN,
+                    (height - ROW).max(0),
+                    (width - 2 * MARGIN).max(0),
+                    ROW - 4,
+                );
+            });
+        }
 
         // Seiteninhalte folgen der Größe der Seite.
         {
@@ -213,8 +222,24 @@ impl PanelWindow {
             output_channel: RefCell::new(String::new()),
             updating: Cell::new(false),
             terminals,
+            debug_text,
+            debug_input,
             timer: Timer::new(),
         }
+    }
+
+    /// Shows the debug console text (scrolls to the end when it grew).
+    pub fn set_debug_console(&self, text: String) {
+        if self.debug_text.text() != text {
+            let lines = text.lines().count() as i32;
+            self.debug_text.set_text(&text);
+            self.debug_text.goto_line(lines);
+        }
+    }
+
+    /// The debug console text (automation).
+    pub fn debug_console(&self) -> String {
+        self.debug_text.text()
     }
 
     pub fn show_tab(&self, tab: Tab) {
@@ -461,6 +486,13 @@ pub fn connect(ide: &Rc<Ide>) {
                 ide.start_terminal();
             }
         }));
+    panel.debug_input.on_return_pressed(with0(ide, |ide| {
+        let text = ide.panel.debug_input.text();
+        if !text.trim().is_empty() {
+            ide.debug_evaluate(&text);
+            ide.panel.debug_input.set_text("");
+        }
+    }));
     let terminals = &panel.terminals;
     terminals.add.on_clicked(with0(ide, |ide| {
         ide.new_terminal();

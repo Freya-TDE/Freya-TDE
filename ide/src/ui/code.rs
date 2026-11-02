@@ -7,7 +7,9 @@
 //! typing pause and checks on save; its findings and those of the last
 //! build appear as gutter marks. Ctrl+Space (and typing `.` or `::`)
 //! completes, Ctrl+Click or Ctrl+F12 jumps to the definition. Brace blocks
-//! fold with the arrows in the gutter.
+//! fold with the arrows in the gutter. The leftmost gutter column holds
+//! breakpoints (click toggles, right click edits) and the debugger's
+//! current line.
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -36,6 +38,8 @@ struct OpenFile {
     label: Option<String>,
     /// Git's version to compare with (the index); `None` = no change marks.
     base: RefCell<Option<String>>,
+    /// Text as last seen (to move breakpoints along with edits).
+    shown: RefCell<String>,
 }
 
 impl OpenFile {
@@ -111,9 +115,13 @@ pub struct CodeWindow {
     /// File waiting to be sent to rust-analyzer after the typing pause.
     pending_change: RefCell<Option<PathBuf>>,
     change_timer: Timer,
+    /// Breakpoints per file (also for files opened later).
+    breakpoints: RefCell<BTreeMap<PathBuf, Vec<BreakpointMark>>>,
+    /// Where the debugger stands.
+    execution: RefCell<Option<(PathBuf, usize)>>,
 }
 
-fn menu_bar() -> MenuBar {
+pub(super) fn menu_bar() -> MenuBar {
     vec![
         (
             "Datei".into(),
@@ -154,6 +162,8 @@ impl CodeWindow {
             lsp_marks: RefCell::new(BTreeMap::new()),
             pending_change: RefCell::new(None),
             change_timer,
+            breakpoints: RefCell::new(BTreeMap::new()),
+            execution: RefCell::new(None),
         }
     }
 
@@ -225,8 +235,18 @@ impl CodeWindow {
                     if ide.is_refreshing() {
                         return;
                     }
+                    // Haltepunkte wandern mit eingefügten/gelöschten Zeilen.
+                    if let Some(file) = ide.code.file(&p) {
+                        let old = file.shown.replace(text.clone());
+                        ide.code_lines_moved(&p, &old, &text);
+                    }
                     ide.code.update_titles();
                     ide.code.text_changed(ide, &p, &text);
+                }));
+                let p = path.to_path_buf();
+                let widget = editor.widget().clone();
+                editor.on_gutter_clicked(with(ide, move |ide, click: GutterClick| {
+                    ide.gutter_clicked(&p, click, &widget);
                 }));
                 editor.on_mouse(with(ide, |ide, e: MouseEvent| {
                     if e.action == MouseAction::Released && e.button == 1 && e.modifiers.ctrl {
@@ -241,8 +261,10 @@ impl CodeWindow {
                     read_only,
                     label: None,
                     base: RefCell::new(None),
+                    shown: RefCell::new(text.clone()),
                 }));
                 self.refresh_marks(path);
+                self.refresh_debug_marks(path);
                 if is_rust(path) {
                     ide.lsp_opened(path, &text);
                 }
@@ -289,6 +311,7 @@ impl CodeWindow {
                     read_only: true,
                     label: Some(label.to_owned()),
                     base: RefCell::new(None),
+                    shown: RefCell::new(text.to_owned()),
                 }));
                 self.files.borrow().len() - 1
             }
@@ -310,6 +333,8 @@ impl CodeWindow {
         };
         // Gesetzter Text meldet keine Änderung – wie beim Tippen nachreichen.
         file.editor.set_text(text);
+        let old = file.shown.replace(text.to_owned());
+        ide.code_lines_moved(&file.path, &old, text);
         self.update_titles();
         ide.lsp_changed(&file.path, text);
         true
@@ -519,6 +544,7 @@ impl CodeWindow {
             if text != file.editor.text() {
                 file.editor.set_text(&text);
                 *file.saved.borrow_mut() = text.clone();
+                *file.shown.borrow_mut() = text.clone();
                 reloaded.push((file.path.clone(), text));
             }
         }
@@ -573,6 +599,79 @@ impl CodeWindow {
                 .unwrap_or_default(),
         );
         file.editor.set_line_marks(marks);
+    }
+
+    /// Breakpoints and execution line of `path`.
+    fn refresh_debug_marks(&self, path: &Path) {
+        let Some(file) = self.file(path) else {
+            return;
+        };
+        let marks = self
+            .breakpoints
+            .borrow()
+            .get(&file.path)
+            .cloned()
+            .unwrap_or_default();
+        if file.editor.breakpoint_marks() != marks {
+            file.editor.set_breakpoint_marks(marks);
+        }
+        let line = self
+            .execution
+            .borrow()
+            .as_ref()
+            .filter(|(p, _)| *p == file.path)
+            .map(|(_, l)| *l);
+        if file.editor.execution_line() != line {
+            file.editor.set_execution_line(line);
+        }
+    }
+
+    fn refresh_all_debug_marks(&self) {
+        let paths: Vec<PathBuf> = self.files.borrow().iter().map(|f| f.path.clone()).collect();
+        for path in paths {
+            self.refresh_debug_marks(&path);
+        }
+    }
+
+    /// Breakpoints of all files (canonical paths).
+    pub fn set_breakpoints(&self, marks: BTreeMap<PathBuf, Vec<BreakpointMark>>) {
+        if *self.breakpoints.borrow() != marks {
+            *self.breakpoints.borrow_mut() = marks;
+            self.refresh_all_debug_marks();
+        }
+    }
+
+    /// The line the debugger stands on (canonical path); `None` = none.
+    pub fn set_execution(&self, at: Option<(&Path, usize)>) {
+        let at = at.map(|(p, l)| (p.to_path_buf(), l));
+        if *self.execution.borrow() != at {
+            *self.execution.borrow_mut() = at;
+            self.refresh_all_debug_marks();
+        }
+    }
+
+    /// Breakpoint marks shown for an open file (automation).
+    pub fn breakpoint_marks(&self, path: &Path) -> Vec<BreakpointMark> {
+        self.file(path)
+            .map(|f| f.editor.breakpoint_marks())
+            .unwrap_or_default()
+    }
+
+    /// Simulates a click into the gutter.
+    pub fn click_gutter(&self, path: &Path, line: usize, button: u8) {
+        if let Some(file) = self.file(path) {
+            file.editor.widget().simulate_gutter_click(GutterClick {
+                line,
+                button,
+                x: 4,
+                y: 4,
+            });
+        }
+    }
+
+    /// The execution line shown in an open file.
+    pub fn execution_line(&self, path: &Path) -> Option<usize> {
+        self.file(path).and_then(|f| f.editor.execution_line())
     }
 
     /// Marks of a build: errors and warnings per file (absolute paths).
@@ -648,6 +747,11 @@ pub fn connect(ide: &Rc<Ide>) {
             }
             "code.designer" => {
                 ide.show_window(window::DESIGNER);
+                Ok(())
+            }
+            // Haltepunkt-Menü der Randleiste.
+            other if other.starts_with("dbg.") => {
+                ide.debug_menu(other);
                 Ok(())
             }
             _ => Ok(()),

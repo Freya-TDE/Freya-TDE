@@ -29,7 +29,7 @@ pub struct MainWindow {
     built_for: RefCell<Vec<TypeRef>>,
 }
 
-fn menu_bar() -> MenuBar {
+pub(super) fn menu_bar() -> MenuBar {
     vec![
         (
             "Datei".into(),
@@ -62,8 +62,29 @@ fn menu_bar() -> MenuBar {
                 .item("project.add_data", "Datenmodul hinzufügen", None)
                 .separator()
                 .item("project.generate", "Code erzeugen", Some("Ctrl+G"))
-                .item("project.build", "Bauen", Some("Ctrl+F9"))
-                .item("project.run", "Starten", Some("F9")),
+                .item("project.build", "Bauen", Some("Ctrl+F9")),
+        ),
+        (
+            // Wie Delphi/Lazarus: Start, Schritte, Haltepunkte.
+            "Start".into(),
+            Menu::new()
+                .item("start.run", "Starten / Weiter", Some("F9"))
+                .item(
+                    "start.run_plain",
+                    "Ohne Debugger starten",
+                    Some("Ctrl+Shift+F9"),
+                )
+                .item("start.pause", "Anhalten", None)
+                .item("start.stop", "Programm beenden", Some("Ctrl+F2"))
+                .separator()
+                .item("start.step_into", "Einzelne Anweisung", Some("F7"))
+                .item("start.step_over", "Gesamte Routine", Some("F8"))
+                .item("start.step_out", "Bis Rückgabe", Some("Shift+F8"))
+                .item("start.run_to", "Bis Cursor", Some("F4"))
+                .separator()
+                .item("start.toggle_bp", "Haltepunkt umschalten", Some("F5"))
+                .item("start.add_watch", "Ausdruck überwachen …", Some("Ctrl+F5"))
+                .item("start.remove_all_bp", "Alle Haltepunkte entfernen", None),
         ),
         (
             "Fenster".into(),
@@ -78,8 +99,18 @@ fn menu_bar() -> MenuBar {
                 .item("window.code", "Code", None)
                 .item("window.project", "Projekt", None)
                 .item("window.git", "Quellcodeverwaltung", Some("Ctrl+Shift+G"))
+                .item("window.debugger", "Debugger", Some("Ctrl+Shift+D"))
+                .item(
+                    "window.debug_console",
+                    "Debug-Konsole",
+                    Some("Ctrl+Shift+Y"),
+                )
                 .separator()
                 .item("window.reset", "Standardanordnung", None),
+        ),
+        (
+            "Hilfe".into(),
+            Menu::new().item("help.shortcuts", "Tastenkürzel", None),
         ),
     ]
 }
@@ -279,7 +310,10 @@ pub fn connect(ide: &Rc<Ide>) {
                 ide.generate_code();
             }
             "project.build" => ide.build(false),
-            "project.run" => ide.run(),
+            id if id.starts_with("start.") => ide.debug_menu(id),
+            "window.debugger" => ide.debug_menu("dbg.show"),
+            "window.debug_console" => ide.debug_menu("dbg.console"),
+            "help.shortcuts" => ide.show_shortcuts(),
             "window.designer" => ide.show_window(window::DESIGNER),
             "window.inspector" => ide.show_window(window::INSPECTOR),
             "window.structure" => ide.show_window(window::STRUCTURE),

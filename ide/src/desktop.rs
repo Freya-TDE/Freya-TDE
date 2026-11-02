@@ -45,6 +45,8 @@ pub mod window {
     pub const CODE: &str = "code";
     pub const PROJECT: &str = "project";
     pub const GIT: &str = "git";
+    pub const DEBUGGER: &str = "debugger";
+    pub const SHORTCUTS: &str = "shortcuts";
 }
 
 /// All window places.
@@ -93,6 +95,21 @@ impl Desktop {
                 Place {
                     visible: false,
                     ..Place::at(760, 160, 420, 720)
+                },
+            ),
+            // Erscheint beim Debuggen (Start → Starten).
+            (
+                window::DEBUGGER,
+                Place {
+                    visible: false,
+                    ..Place::at(1120, 200, 420, 700)
+                },
+            ),
+            (
+                window::SHORTCUTS,
+                Place {
+                    visible: false,
+                    ..Place::at(300, 120, 720, 640)
                 },
             ),
         ];

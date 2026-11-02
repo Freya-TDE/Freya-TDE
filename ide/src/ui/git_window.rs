@@ -274,7 +274,7 @@ fn graph_shapes(commits: &[Commit], rows: &[GraphRow]) -> Vec<Shape> {
 
 /// „Weitere Aktionen“ (VS Code's „…“ at the repository); also the
 /// window's menu bar.
-fn more_actions() -> Menu {
+pub(super) fn more_actions() -> Menu {
     Menu::new()
         .item("git.pull", "Pull", None)
         .item("git.push", "Push", None)

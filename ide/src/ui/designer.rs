@@ -136,7 +136,7 @@ fn drop_marker(
     })
 }
 
-fn menu_bar() -> MenuBar {
+pub(super) fn menu_bar() -> MenuBar {
     vec![(
         "Ansicht".into(),
         Menu::new().item("designer.code", "Code", Some("F12")),

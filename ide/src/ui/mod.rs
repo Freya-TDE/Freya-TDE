@@ -4,6 +4,8 @@
 
 mod code;
 mod convert;
+mod debugger;
+mod debugging;
 mod designer;
 mod git_window;
 mod inspector;
@@ -11,6 +13,7 @@ mod main_window;
 pub mod panel;
 mod project;
 mod project_manager;
+pub mod shortcuts;
 mod structure;
 mod terminal_view;
 
@@ -37,12 +40,15 @@ use crate::projects::{CargoProject, ProjectError, ProjectList, ProjectNode};
 use crate::session::{Changes, Session};
 
 use code::CodeWindow;
+use debugger::DebuggerWindow;
+use debugging::Debugging;
 use designer::DesignerWindow;
 use git_window::GitWindow;
 use inspector::InspectorWindow;
 use main_window::MainWindow;
 use panel::{PanelWindow, Tab};
 use project::ProjectWindow;
+use shortcuts::ShortcutsWindow;
 use structure::StructureWindow;
 
 /// Backend of new projects until real backend packs exist.
@@ -141,6 +147,12 @@ pub struct Ide {
     code: CodeWindow,
     project: ProjectWindow,
     git_window: GitWindow,
+    debugger: DebuggerWindow,
+    shortcuts: ShortcutsWindow,
+    /// Breakpoints, watches and the debug session.
+    debugging: RefCell<Debugging>,
+    /// Where breakpoints and watches are kept (`debug.toml`).
+    debug_store_file: Option<PathBuf>,
     /// The repository of the project folder, checked again when the folder
     /// changes: (project folder, repository).
     repo: RefCell<Option<(PathBuf, Option<Git>)>>,
@@ -227,6 +239,10 @@ impl Ide {
             code: CodeWindow::build(),
             project: ProjectWindow::build(),
             git_window: GitWindow::build(),
+            debugger: DebuggerWindow::build(),
+            shortcuts: ShortcutsWindow::build(),
+            debugging: RefCell::new(Debugging::default()),
+            debug_store_file: crate::debug::DebugStore::default_path(),
             repo: RefCell::new(None),
             git_status: RefCell::new(None),
             git_log_key: RefCell::new(String::new()),
@@ -277,6 +293,7 @@ impl Ide {
                     .and_then(|ide| ide.ask_credentials(&question));
                 let _ = reply.send(answer);
             }));
+        ide.install_debug_wake();
         main_window::connect(&ide);
         designer::connect(&ide);
         inspector::connect(&ide);
@@ -285,6 +302,8 @@ impl Ide {
         code::connect(&ide);
         project::connect(&ide);
         git_window::connect(&ide);
+        debugger::connect(&ide);
+        shortcuts::connect(&ide);
         // Wie bei Delphi: Strg+G, F9, Strg+Umschalt+G … aus jedem Fenster.
         for (name, window) in ide.windows() {
             if name != window::MAIN {
@@ -306,7 +325,7 @@ impl Ide {
         self.session.borrow()
     }
 
-    fn windows(&self) -> [(&'static str, &RnclWindow); 8] {
+    fn windows(&self) -> [(&'static str, &RnclWindow); 10] {
         [
             (window::MAIN, &self.main.window),
             (window::STRUCTURE, &self.structure.window),
@@ -316,6 +335,8 @@ impl Ide {
             (window::CODE, &self.code.window),
             (window::PROJECT, &self.project.window),
             (window::GIT, &self.git_window.window),
+            (window::DEBUGGER, &self.debugger.window),
+            (window::SHORTCUTS, &self.shortcuts.window),
         ]
     }
 
@@ -410,6 +431,26 @@ impl Ide {
     /// typing); `false` if it is not open.
     pub fn set_code_text(&self, path: &Path, text: &str) -> bool {
         self.code.set_text(self, path, text)
+    }
+
+    /// Breakpoints shown in the gutter of an open file.
+    pub fn code_breakpoint_marks(&self, path: &Path) -> Vec<BreakpointMark> {
+        self.code.breakpoint_marks(path)
+    }
+
+    /// The debugger's line shown in an open file.
+    pub fn code_execution_line(&self, path: &Path) -> Option<usize> {
+        self.code.execution_line(path)
+    }
+
+    /// The debug console text.
+    pub fn debug_console(&self) -> String {
+        self.panel.debug_console()
+    }
+
+    /// Simulates a click into the gutter of an open file (automation).
+    pub fn click_gutter(&self, path: &Path, line: usize, button: u8) {
+        self.code.click_gutter(path, line, button);
     }
 
     /// Gutter marks of a file open in the code editor.
@@ -1377,6 +1418,11 @@ impl Ide {
         self.restore_desktop();
     }
 
+    /// Help → keyboard shortcuts.
+    pub fn show_shortcuts(&self) {
+        self.show_window(window::SHORTCUTS);
+    }
+
     pub fn show_window(&self, name: &str) {
         if let Some((_, window)) = self.windows().into_iter().find(|(n, _)| *n == name) {
             window.show();
@@ -1986,10 +2032,11 @@ impl Ide {
             *self.executable.borrow_mut() = report.executable.clone();
             self.main.set_status("Build erfolgreich.");
             if self.run_after_build.replace(false) {
-                self.run_executable();
+                self.launch_after_build();
             }
         } else {
             self.run_after_build.set(false);
+            self.cancel_launch();
             self.main
                 .set_status(&format!("Build fehlgeschlagen ({errors} Fehler)."));
             self.show_panel(Tab::Problems);
@@ -2389,6 +2436,7 @@ impl Ide {
         }
         self.save_desktop();
         self.stop_lsp();
+        self.stop_debugging();
         Application::quit();
         true
     }

@@ -30,7 +30,7 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-pub use store::{Breakpoint, BreakpointKind, DebugSettings, DebugStore};
+pub use store::{Breakpoint, BreakpointKind, DebugSettings, DebugStore, line_shift};
 
 /// Console lines kept at most; older ones are dropped.
 pub const CONSOLE_LIMIT: usize = 5000;
