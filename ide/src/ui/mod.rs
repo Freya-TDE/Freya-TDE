@@ -663,7 +663,12 @@ impl Ide {
             self.git_window.show_log(commits, &refs);
             *self.git_log_key.borrow_mut() = key;
         }
+        // Gestagt, committet, ausgecheckt …: Vergleichsstand der Editoren neu.
+        let changed = *self.git_status.borrow() != status;
         *self.git_status.borrow_mut() = status;
+        if changed {
+            self.reload_git_bases();
+        }
     }
 
     /// The dry run of a Git operation.
@@ -1780,9 +1785,41 @@ impl Ide {
         let Some(me) = self.me.upgrade() else {
             return;
         };
-        if let Err(e) = self.code.open(&me, path, line) {
-            self.main.set_status(&e);
+        let new = !self.code.open_paths().contains(&code::key(path));
+        match self.code.open(&me, path, line) {
+            Ok(()) if new => self.code.set_git_base(path, self.git_base(path)),
+            Ok(()) => {}
+            Err(e) => self.main.set_status(&e),
         }
+    }
+
+    /// Git's version of a file for the change marks: the index; untracked
+    /// files compare with nothing (all lines new); `None` outside a
+    /// repository and for ignored files.
+    fn git_base(&self, path: &Path) -> Option<String> {
+        let repo = self.repo()?;
+        let relative = repo.relative(path)?;
+        repo.index_text(&relative).or_else(|| {
+            let untracked = self
+                .git_status
+                .borrow()
+                .as_ref()
+                .is_some_and(|s| s.change_of(&relative) == Some(crate::git::Change::Untracked));
+            untracked.then(String::new)
+        })
+    }
+
+    /// Reloads Git's versions of all open files (after staging, commits …).
+    fn reload_git_bases(&self) {
+        for path in self.code.open_paths() {
+            self.code.set_git_base(&path, self.git_base(&path));
+        }
+    }
+
+    /// Changed lines of an open file against Git's version (the editor's
+    /// change marks) – for automation.
+    pub fn code_line_changes(&self, path: &Path) -> Vec<crate::git::LineChange> {
+        self.code.line_changes(path)
     }
 
     /// Opens the `.rs` of the current form in the code editor (F12).

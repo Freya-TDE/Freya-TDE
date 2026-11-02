@@ -34,6 +34,8 @@ struct OpenFile {
     read_only: bool,
     /// Tab title of a text without a file (e.g. a diff); `None` for files.
     label: Option<String>,
+    /// Git's version to compare with (the index); `None` = no change marks.
+    base: RefCell<Option<String>>,
 }
 
 impl OpenFile {
@@ -238,6 +240,7 @@ impl CodeWindow {
                     saved: RefCell::new(text.clone()),
                     read_only,
                     label: None,
+                    base: RefCell::new(None),
                 }));
                 self.refresh_marks(path);
                 if is_rust(path) {
@@ -285,6 +288,7 @@ impl CodeWindow {
                     saved: RefCell::new(text.to_owned()),
                     read_only: true,
                     label: Some(label.to_owned()),
+                    base: RefCell::new(None),
                 }));
                 self.files.borrow().len() - 1
             }
@@ -328,14 +332,11 @@ impl CodeWindow {
     /// Text change: rust-analyzer after a typing pause; `.` and `::` ask
     /// for completions at once.
     fn text_changed(&self, ide: &Rc<Ide>, path: &Path, text: &str) {
-        if !is_rust(path) {
-            return;
-        }
         let Some(file) = self.file(path) else {
             return;
         };
         let (line, column) = file.editor.cursor();
-        if completion_trigger(text, line, column) {
+        if is_rust(path) && completion_trigger(text, line, column) {
             self.change_timer.stop();
             self.pending_change.borrow_mut().take();
             ide.lsp_changed(path, text);
@@ -354,7 +355,59 @@ impl CodeWindow {
             && let Some(file) = self.file(&path)
         {
             ide.lsp_changed(&path, &file.editor.text());
+            self.refresh_diff(&path);
         }
+    }
+
+    /// Paths of the open files (not of texts without a file).
+    pub fn open_paths(&self) -> Vec<PathBuf> {
+        self.files
+            .borrow()
+            .iter()
+            .filter(|f| f.label.is_none())
+            .map(|f| f.path.clone())
+            .collect()
+    }
+
+    /// Sets Git's version of a file to compare with (`None` = no marks).
+    pub fn set_git_base(&self, path: &Path, base: Option<String>) {
+        if let Some(file) = self.file(path) {
+            *file.base.borrow_mut() = base;
+        }
+        self.refresh_diff(path);
+    }
+
+    /// Changed lines of an open file against Git's version.
+    pub fn line_changes(&self, path: &Path) -> Vec<crate::git::LineChange> {
+        let Some(file) = self.file(path) else {
+            return Vec::new();
+        };
+        let base = file.base.borrow();
+        match base.as_deref() {
+            Some(base) => crate::git::line_changes(base, &file.editor.text()),
+            None => Vec::new(),
+        }
+    }
+
+    /// Draws the change marks of a file anew.
+    fn refresh_diff(&self, path: &Path) {
+        let Some(file) = self.file(path) else {
+            return;
+        };
+        let marks = self
+            .line_changes(path)
+            .into_iter()
+            .map(|c| DiffMark {
+                kind: match c.kind {
+                    crate::git::LineChangeKind::Added => DiffKind::Added,
+                    crate::git::LineChangeKind::Modified => DiffKind::Modified,
+                    crate::git::LineChangeKind::Deleted => DiffKind::Deleted,
+                },
+                line: c.line,
+                count: c.count,
+            })
+            .collect();
+        file.editor.set_diff_marks(marks);
     }
 
     /// Shows completion proposals in the front editor.
@@ -468,6 +521,9 @@ impl CodeWindow {
                 *file.saved.borrow_mut() = text.clone();
                 reloaded.push((file.path.clone(), text));
             }
+        }
+        for (path, _) in &reloaded {
+            self.refresh_diff(path);
         }
         self.update_titles();
         reloaded

@@ -258,6 +258,116 @@ pub fn parse_hunks(diff: &str) -> Vec<Hunk> {
     hunks
 }
 
+// --- Line changes (editor gutter) ------------------------------------------------------
+
+/// How lines differ from the compared version.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LineChangeKind {
+    Added,
+    Modified,
+    /// Lines were removed after `line` (`count` = removed lines).
+    Deleted,
+}
+
+/// A block of changed lines in the new text (1-based `line`; for
+/// [`LineChangeKind::Deleted`] the line after which lines are missing,
+/// 0 = before the first line).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LineChange {
+    pub kind: LineChangeKind,
+    pub line: usize,
+    pub count: usize,
+}
+
+/// Cells of the comparison table at most (beyond that the changed middle
+/// counts as one modified block – still right, only coarser).
+const DIFF_LIMIT: usize = 4_000_000;
+
+/// Which lines of `new` are added, modified or deleted compared to `old`
+/// (like VS Code's gutter). Deterministic; common lines at the start and
+/// end are skipped, the rest is compared by longest common subsequence.
+pub fn line_changes(old: &str, new: &str) -> Vec<LineChange> {
+    let a: Vec<&str> = old.lines().collect();
+    let b: Vec<&str> = new.lines().collect();
+    let prefix = a.iter().zip(&b).take_while(|(x, y)| x == y).count();
+    let suffix = a[prefix..]
+        .iter()
+        .rev()
+        .zip(b[prefix..].iter().rev())
+        .take_while(|(x, y)| x == y)
+        .count();
+    let a_mid = &a[prefix..a.len() - suffix];
+    let b_mid = &b[prefix..b.len() - suffix];
+    // Paare gleicher Zeilen (Index in a_mid, Index in b_mid).
+    let matches: Vec<(usize, usize)> = if a_mid.is_empty()
+        || b_mid.is_empty()
+        || a_mid.len() * b_mid.len() > DIFF_LIMIT
+    {
+        Vec::new()
+    } else {
+        let (n, m) = (a_mid.len(), b_mid.len());
+        // lcs[i][j]: Länge der LCS von a_mid[i..] und b_mid[j..].
+        let mut lcs = vec![0u32; (n + 1) * (m + 1)];
+        let at = |i: usize, j: usize| i * (m + 1) + j;
+        for i in (0..n).rev() {
+            for j in (0..m).rev() {
+                lcs[at(i, j)] = if a_mid[i] == b_mid[j] {
+                    lcs[at(i + 1, j + 1)] + 1
+                } else {
+                    lcs[at(i + 1, j)].max(lcs[at(i, j + 1)])
+                };
+            }
+        }
+        let (mut i, mut j) = (0, 0);
+        let mut pairs = Vec::new();
+        while i < n && j < m {
+            if a_mid[i] == b_mid[j] {
+                pairs.push((i, j));
+                i += 1;
+                j += 1;
+            } else if lcs[at(i + 1, j)] >= lcs[at(i, j + 1)] {
+                i += 1;
+            } else {
+                j += 1;
+            }
+        }
+        pairs
+    };
+    // Lücken zwischen den gleichen Zeilen sind die Änderungen.
+    let mut changes = Vec::new();
+    let (mut i, mut j) = (0, 0);
+    let ends = matches
+        .iter()
+        .copied()
+        .chain(std::iter::once((a_mid.len(), b_mid.len())));
+    for (mi, mj) in ends {
+        let (deleted, added) = (mi - i, mj - j);
+        let line = prefix + j + 1;
+        match (deleted, added) {
+            (0, 0) => {}
+            (0, n) => changes.push(LineChange {
+                kind: LineChangeKind::Added,
+                line,
+                count: n,
+            }),
+            (n, 0) => changes.push(LineChange {
+                kind: LineChangeKind::Deleted,
+                line: line - 1,
+                count: n,
+            }),
+            (_, n) => changes.push(LineChange {
+                kind: LineChangeKind::Modified,
+                line,
+                count: n,
+            }),
+        }
+        i = mi + 1;
+        j = mj + 1;
+    }
+    changes
+}
+
 // --- Graph --------------------------------------------------------------------------
 
 /// Where a graph line starts or ends within a row.
@@ -947,6 +1057,13 @@ impl Git {
     /// The text of a file in HEAD (`None` if it is not committed).
     pub fn head_text(&self, path: &str) -> Option<String> {
         let output = self.git(&["show", &format!("HEAD:{path}")], None).ok()?;
+        output.success.then_some(output.stdout)
+    }
+
+    /// The text of a file in the index (the staged state, else HEAD);
+    /// `None` if the file is not tracked. The editor compares against it.
+    pub fn index_text(&self, path: &str) -> Option<String> {
+        let output = self.git(&["show", &format!(":{path}")], None).ok()?;
         output.success.then_some(output.stdout)
     }
 
@@ -1657,6 +1774,28 @@ u UU N... 100644 100644 100644 100644 a b c conflict.rs\0\
         assert_eq!((hunks[1].old_start, hunks[1].old_lines), (10, 1));
         assert_eq!((hunks[1].new_start, hunks[1].new_lines), (10, 2));
         assert_eq!(hunks[1].lines.len(), 2);
+    }
+
+    #[test]
+    fn line_change_blocks() {
+        use LineChangeKind::*;
+        let c = |kind, line, count| LineChange { kind, line, count };
+        let old = "a\nb\nc\nd\ne\n";
+        assert!(line_changes(old, old).is_empty());
+        // Eingefügt, geändert, gelöscht.
+        assert_eq!(line_changes(old, "a\nX\nb\nc\nd\ne\n"), [c(Added, 2, 1)]);
+        assert_eq!(line_changes(old, "a\nB\nc\nd\ne\n"), [c(Modified, 2, 1)]);
+        assert_eq!(line_changes(old, "a\nb\ne\n"), [c(Deleted, 2, 2)]);
+        assert_eq!(line_changes(old, "b\nc\nd\ne\n"), [c(Deleted, 0, 1)]);
+        // Mehrere Blöcke; geänderte Zeile mit zusätzlicher neuer Zeile.
+        assert_eq!(
+            line_changes(old, "a\nB1\nB2\nc\nd\ne\nf\n"),
+            [c(Modified, 2, 2), c(Added, 7, 1)]
+        );
+        // Neue Datei: alles hinzugefügt.
+        assert_eq!(line_changes("", "x\ny\n"), [c(Added, 1, 2)]);
+        let json = serde_json::to_string(&line_changes(old, "a\n")).unwrap();
+        assert!(json.contains("\"deleted\""), "{json}");
     }
 
     #[test]

@@ -248,6 +248,35 @@ fn main() {
         assert!(status.head.is_some());
         let log = ide.repo().unwrap().log(10).unwrap();
         assert_eq!(log[0].subject, "Initial commit");
+        // Änderungsmarken im Editor: verglichen mit dem Git-Index.
+        use freya_td::git::LineChangeKind;
+        let form_rs = project_dir.join("src/main_form.rs");
+        ide.open_source(&form_rs, 1);
+        let open = ide.code_file().unwrap();
+        assert!(ide.code_line_changes(&open).is_empty());
+        let text = ide.code_text(&open).unwrap();
+        let mut lines: Vec<&str> = text.lines().collect();
+        // Neue Zeile oben, unveränderte Zeile, dann eine geänderte Zeile.
+        lines[1] = "//! geändert";
+        lines.insert(0, "// neu");
+        let changed = lines.join("\n") + "\n";
+        assert!(ide.set_code_text(&open, &changed));
+        assert!(pump_until(5, || !ide.code_line_changes(&open).is_empty()));
+        let kinds: Vec<(LineChangeKind, usize)> = ide
+            .code_line_changes(&open)
+            .iter()
+            .map(|c| (c.kind, c.line))
+            .collect();
+        assert_eq!(
+            kinds,
+            [(LineChangeKind::Added, 1), (LineChangeKind::Modified, 3)],
+            "{:?}",
+            ide.code_line_changes(&open)
+        );
+        assert!(ide.set_code_text(&open, &text));
+        assert!(pump_until(5, || ide.code_line_changes(&open).is_empty()));
+        println!("test git_line_changes ... ok");
+        passed += 1;
         std::fs::write(project_dir.join("README.md"), "# Shop\n").unwrap();
         ide.git_refresh(false);
         assert_eq!(ide.git_changes().get("README.md"), Some(&Change::Untracked));
