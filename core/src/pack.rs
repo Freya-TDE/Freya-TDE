@@ -23,6 +23,7 @@
 //! authors = ["…"]                       # optional
 //! license = "MIT OR Apache-2.0"         # license of the pack itself
 //! generated-code-license = "MIT"        # license of the code it generates (mandatory)
+//! license-notice = """…"""              # optional: shown before the pack is used (e.g. license terms of a dependency)
 //!
 //! [[component]]
 //! name = "Pool"                         # PascalCase
@@ -173,6 +174,7 @@ struct RawInfo {
     authors: Vec<String>,
     license: String,
     generated_code_license: String,
+    license_notice: Option<String>,
 }
 
 #[derive(Deserialize, Default, Clone, Copy)]
@@ -383,6 +385,10 @@ pub struct PackInfo {
     pub license: String,
     /// License of the code the pack generates into user projects.
     pub generated_code_license: String,
+    /// What a user should know before using the pack, e.g. the license
+    /// terms of a library the generated project depends on. The IDE shows it
+    /// and lets the user decide.
+    pub license_notice: Option<String>,
 }
 
 /// Properties and code generation a backend pack adds to an existing type.
@@ -957,6 +963,7 @@ impl Checker<'_> {
     fn backend(&mut self, info: &PackInfo, raw: &RawBackend) -> BackendDescriptor {
         let location = "backend";
         let mut backend = BackendDescriptor::new(info.name.clone());
+        backend.license_notice = info.license_notice.clone();
         backend.event_loop = raw.event_loop;
         backend.absolute_positioning = raw.absolute_positioning;
         for p in &raw.platforms {
@@ -1201,6 +1208,11 @@ impl Pack {
             authors: raw.pack.authors,
             license: raw.pack.license,
             generated_code_license: raw.pack.generated_code_license,
+            license_notice: raw
+                .pack
+                .license_notice
+                .map(|n| n.trim().to_owned())
+                .filter(|n| !n.is_empty()),
         };
         if !valid_pack_name(&info.name) {
             checker.problem(

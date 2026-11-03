@@ -622,13 +622,30 @@ fn main() {
             .iter()
             .any(|i| i.type_ref == TypeRef::backend("iced", "PickList"))
     );
+    // Slint: erst der Lizenzhinweis (die Oberfläche fragt), dann das Projekt.
+    let notice = ide
+        .backend_notice("slint")
+        .expect("Slint hat einen Lizenzhinweis");
+    assert!(
+        notice.contains("Royalty-free") && notice.contains("GPLv3"),
+        "{notice}"
+    );
+    assert_eq!(ide.backend_notice("gtk4"), None);
+    ide.new_project_with_notice_accepted("slint");
+    assert_eq!(ide.session().document().project().backend, "slint");
+    assert!(
+        tdr_designer::palette(ide.session().document().registry(), "slint")
+            .iter()
+            .any(|i| i.type_ref == TypeRef::backend("slint", "AboutSlint"))
+    );
+    ide.new_project_with_notice_accepted("iced");
     ide.new_project_with("kein_backend");
     assert_eq!(
         ide.session().document().project().backend,
         "iced",
         "unbekanntes Backend ändert nichts"
     );
-    println!("test egui_iced_projects ... ok");
+    println!("test egui_iced_slint_projects ... ok");
     passed += 1;
 
     Application::process_events();

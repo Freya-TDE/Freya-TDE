@@ -1,0 +1,12 @@
+{#- Slint event loop: every form goes into an Rc<RefCell<…>>, the first one is
+    the main form – it is shown; when its window closes, the loop ends. -#}
+{%- set ui = forms | rejectattr("data_module") | list %}
+{%- for f in ui %}
+let form_{{ f.name }} = std::rc::Rc::new(std::cell::RefCell::new({{ app }}.{{ f.name }}));
+{{ f.name }}::{{ f.struct }}::start(&form_{{ f.name }}, {{ "true" if loop.first else "false" }});
+{%- endfor %}
+{%- if ui %}
+form_{{ ui[0].name }}.borrow().show()?;
+slint::run_event_loop()?;
+{%- endif %}
+Ok(())

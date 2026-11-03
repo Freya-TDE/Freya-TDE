@@ -1610,7 +1610,38 @@ impl Ide {
 
     /// A new, unsaved project with UI backend `backend` (`"gtk4"`, `"egui"`
     /// … or `"none"`); an unknown backend is reported in the status line.
+    ///
+    /// If the backend's pack has a license notice (Slint), it is shown first
+    /// and the project is only created when the user agrees.
     pub fn new_project_with(&self, backend: &str) {
+        if let Some(notice) = self.backend_notice(backend)
+            && !dialog::confirm(
+                Some(self.main.window.widget()),
+                &format!("Lizenzhinweis: {backend}"),
+                &format!("{notice}\n\nProjekt mit {backend} anlegen?"),
+            )
+        {
+            self.main
+                .set_status(&format!("Kein Projekt mit {backend} angelegt."));
+            return;
+        }
+        self.new_project_with_notice_accepted(backend);
+    }
+
+    /// The license notice of a UI backend (pack `license-notice`), if it has
+    /// one – what the user should know before using it.
+    pub fn backend_notice(&self, backend: &str) -> Option<String> {
+        full_registry(&self.pack_dirs)
+            .0
+            .backend(backend)?
+            .license_notice
+            .clone()
+    }
+
+    /// Like [`Ide::new_project_with`], without showing the license notice
+    /// (the caller already agreed – automation, tests, an AI that showed it
+    /// to the user).
+    pub fn new_project_with_notice_accepted(&self, backend: &str) {
         let (registry, packs) = full_registry(&self.pack_dirs);
         if backend != NO_BACKEND && registry.backend(backend).is_none() {
             self.main

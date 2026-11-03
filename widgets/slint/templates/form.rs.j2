@@ -1,0 +1,508 @@
+{#- Slint: the form as a Slint component `FormUi` (via `slint::slint!`), appended
+    to <form>.gen.rs. Every widget becomes properties `<name>_<property>` and
+    callbacks `<name>_<event>`; `start` connects the callbacks to the handlers.
+    All Slint identifiers use `_` (Slint treats `_` and `-` alike): the macro
+    body is reformatted by prettyplease, which would split `a-b` into `a - b`. -#}
+{%- set containers = ["core/Form", "core/Container", "backend:slint/GroupBox", "backend:slint/TabWidget"] %}
+{%- set enableable = ["core/Button", "core/Edit", "core/CheckBox", "backend:slint/Switch", "backend:slint/SpinBox", "backend:slint/Slider", "backend:slint/ComboBox", "backend:slint/TextEdit", "backend:slint/GroupBox"] %}
+{#- Wie die Theme-Tabelle des Designers (designer/themes/linux.toml): Rand 12, Abstand 8. -#}
+{%- set default_layout = {"kind": "vertical", "spacing": 8, "padding": {"left": 12, "top": 12, "right": 12, "bottom": 12}} %}
+{%- set menus = components | selectattr("type", "eq", "backend:slint/MainMenu") | list %}
+
+{%- macro b(value) %}{{ "true" if value else "false" }}{% endmacro %}
+
+{#- Callback name of an event: `ok_button` + `on_click` → `ok_button_click`. -#}
+{%- macro cb(c, event) %}{{ c.name }}_{{ event[3:] if event[:3] == "on_" else event }}{% endmacro %}
+
+{#- `Ctrl+Shift+S` → `@keys(Control + Shift + "s")`. -#}
+{%- set modifiers = {"ctrl": "Control", "strg": "Control", "shift": "Shift", "umschalt": "Shift", "alt": "Alt", "cmd": "Meta", "meta": "Meta"} %}
+{%- set named_keys = {"entf": "Delete", "del": "Delete", "delete": "Delete", "esc": "Escape", "escape": "Escape", "enter": "Return", "return": "Return", "tab": "Tab", "space": "Space", "leertaste": "Space"} %}
+{%- macro keys(spec) -%}
+{%- set parts = spec | split("+") | map("trim") | list -%}
+@keys(
+{%- for p in parts -%}
+{%- if not loop.last -%}
+{{ modifiers[p | lower] if (p | lower) in modifiers else "Control" }} + {% else -%}
+{%- if p | length == 1 -%}{{ p | lower | rust_str }}{%- elif (p | lower) in named_keys -%}{{ named_keys[p | lower] }}{%- else -%}{{ p }}{%- endif -%}
+{%- endif -%}
+{%- endfor -%}
+)
+{%- endmacro %}
+
+{#- The menus below `prefix` (paths like `Datei/Export/PDF`). -#}
+{%- macro menu(items, prefix, owner) -%}
+{%- set seen = namespace(names=[]) -%}
+{%- for it in items if it.path[:prefix | length] == prefix and it.path | length > prefix | length -%}
+{%- set rest = it.path[prefix | length:] -%}
+{%- if "/" in rest -%}
+{%- set head = rest | split("/") | first -%}
+{%- if head not in seen.names -%}
+{%- set seen.names = seen.names + [head] %}
+Menu {
+    title: {{ head | rust_str }};
+    {{ menu(items, prefix ~ head ~ "/", owner) }}
+}
+{%- endif -%}
+{%- elif prefix != "" and rest == "-" %}
+MenuSeparator {}
+{%- elif prefix != "" %}
+MenuItem {
+    title: {{ rest | rust_str }};
+    {%- if it.keys %}
+    shortcut: {{ keys(it.keys) }};
+    {%- endif %}
+    activated => { root.{{ owner }}_select({{ it.path | rust_str }}); }
+}
+{%- endif -%}
+{%- endfor -%}
+{%- endmacro %}
+
+{#- The layout of container `w` with its children. -#}
+{%- macro layout(w) -%}
+{%- set l = w.layout or default_layout -%}
+{%- set kids = w.children -%}
+{%- set radios = kids | selectattr("type", "eq", "backend:slint/RadioButton") | list -%}
+{%- set stretched = kids | selectattr("placement") | selectattr("placement.kind", "eq", "layout") | selectattr("placement.stretch") | list -%}
+{%- if l.kind == "absolute" -%}
+{%- set ext = namespace(w=0, h=0) -%}
+{%- for c in kids if c.placement and c.placement.kind == "absolute" -%}
+{%- set ext.w = [ext.w, c.placement.x + c.placement.width] | max -%}
+{%- set ext.h = [ext.h, c.placement.y + c.placement.height] | max -%}
+{%- endfor %}
+Rectangle {
+    min_width: {{ ext.w + l.padding.left + l.padding.right }}px;
+    min_height: {{ ext.h + l.padding.top + l.padding.bottom }}px;
+    {%- for c in kids %}
+    {%- set p = c.placement %}
+    {%- if p and p.kind == "absolute" %}
+    Rectangle {
+        x: {{ p.x + l.padding.left }}px;
+        y: {{ p.y + l.padding.top }}px;
+        width: {{ p.width }}px;
+        height: {{ p.height }}px;
+        {{ item(c, radios) }}
+    }
+    {%- endif %}
+    {%- endfor %}
+}
+{%- elif l.kind == "grid" %}
+{%- set columns = l.columns or 1 %}
+GridLayout {
+    spacing: {{ l.spacing }}px;
+    padding_left: {{ l.padding.left }}px;
+    padding_top: {{ l.padding.top }}px;
+    padding_right: {{ l.padding.right }}px;
+    padding_bottom: {{ l.padding.bottom }}px;
+    {%- for c in kids %}
+    {%- set p = c.placement %}
+    {%- set cell = p.cell if p and p.kind == "layout" and p.cell else none %}
+    HorizontalLayout {
+        row: {{ cell.row if cell else loop.index0 // columns }};
+        col: {{ cell.column if cell else loop.index0 % columns }};
+        {%- if cell and cell.column_span > 1 %}
+        colspan: {{ cell.column_span }};
+        {%- endif %}
+        {%- if cell and cell.row_span > 1 %}
+        rowspan: {{ cell.row_span }};
+        {%- endif %}
+        {{ item(c, radios) }}
+    }
+    {%- endfor %}
+}
+{%- else %}
+{%- set horizontal = l.kind == "horizontal" %}
+{{ "HorizontalLayout" if horizontal else "VerticalLayout" }} {
+    spacing: {{ l.spacing }}px;
+    padding_left: {{ l.padding.left }}px;
+    padding_top: {{ l.padding.top }}px;
+    padding_right: {{ l.padding.right }}px;
+    padding_bottom: {{ l.padding.bottom }}px;
+    {%- if not stretched %}
+    alignment: start;
+    {%- endif %}
+    {%- for c in kids if l.kind != "stack" or loop.first %}
+    {%- set p = c.placement %}
+    {%- set align = p.align if p and p.kind == "layout" else "Fill" %}
+    {%- set stretch = p.stretch if p and p.kind == "layout" else 0 %}
+    {%- if not horizontal and align != "Fill" %}
+    HorizontalLayout {
+        alignment: {{ {"Start": "start", "Center": "center", "End": "end"}[align] }};
+        {%- if stretched %}
+        vertical_stretch: {{ stretch }};
+        {%- endif %}
+        {{ item(c, radios) }}
+    }
+    {%- elif stretched %}
+    {{ "HorizontalLayout" if horizontal else "VerticalLayout" }} {
+        {{ "horizontal_stretch" if horizontal else "vertical_stretch" }}: {{ stretch }};
+        {{ item(c, radios) }}
+    }
+    {%- else %}
+    {{ item(c, radios) }}
+    {%- endif %}
+    {%- endfor %}
+}
+{%- endif -%}
+{%- endmacro %}
+
+{#- A child in a layout: radio buttons of a container are drawn as one group
+    where the first of them stands. -#}
+{%- macro item(c, radios) -%}
+{%- if c.type == "backend:slint/RadioButton" -%}
+{%- if c.name == radios[0].name %}{{ radio_group(radios) }}{% endif -%}
+{%- else -%}
+{{ element(c) }}
+{%- endif -%}
+{%- endmacro %}
+
+{#- The radio buttons of a container: one group (Slint keeps one checked). -#}
+{%- macro radio_group(radios) %}
+RadioGroup {
+    {%- for r in radios %}
+    RadioButton {
+        text: root.{{ r.name }}_caption;
+        checked <=> root.{{ r.name }}_checked;
+        enabled: root.{{ r.name }}_enabled;
+        {%- if r.events.on_toggle %}
+        toggled => {
+            if self.checked {
+                root.{{ cb(r, "on_toggle") }}(true);
+            }
+        }
+        {%- endif %}
+    }
+    {%- endfor %}
+}
+{%- endmacro %}
+
+{#- One widget (containers: with their layout). -#}
+{%- macro element(c) -%}
+{%- set t = c.type -%}
+{%- set e = c.events -%}
+{%- if t == "core/Label" %}
+Text {
+    text: root.{{ c.name }}_text;
+    visible: root.{{ c.name }}_visible;
+    vertical_alignment: center;
+}
+{%- elif t == "core/Button" %}
+Button {
+    text: root.{{ c.name }}_caption;
+    enabled: root.{{ c.name }}_enabled;
+    visible: root.{{ c.name }}_visible;
+    {%- if e.on_click %}
+    clicked => { root.{{ cb(c, "on_click") }}(); }
+    {%- endif %}
+}
+{%- elif t == "core/Edit" %}
+LineEdit {
+    text <=> root.{{ c.name }}_text;
+    placeholder_text: {{ c.rust.placeholder }};
+    read_only: {{ b(c.props.read_only) }};
+    {%- if c.props.password %}
+    input_type: InputType.password;
+    {%- endif %}
+    enabled: root.{{ c.name }}_enabled;
+    visible: root.{{ c.name }}_visible;
+    {%- if e.on_change %}
+    edited(text) => { root.{{ cb(c, "on_change") }}(text); }
+    {%- endif %}
+    {%- if e.on_submit %}
+    accepted(text) => { root.{{ cb(c, "on_submit") }}(); }
+    {%- endif %}
+}
+{%- elif t in ["core/CheckBox", "backend:slint/Switch"] %}
+{{ "CheckBox" if t == "core/CheckBox" else "Switch" }} {
+    text: root.{{ c.name }}_caption;
+    checked <=> root.{{ c.name }}_checked;
+    enabled: root.{{ c.name }}_enabled;
+    visible: root.{{ c.name }}_visible;
+    {%- if e.on_toggle %}
+    toggled => { root.{{ cb(c, "on_toggle") }}(self.checked); }
+    {%- endif %}
+}
+{%- elif t == "backend:slint/SpinBox" %}
+SpinBox {
+    value <=> root.{{ c.name }}_value;
+    minimum: {{ c.props.minimum }};
+    maximum: {{ c.props.maximum }};
+    enabled: root.{{ c.name }}_enabled;
+    visible: root.{{ c.name }}_visible;
+    {%- if e.on_change %}
+    edited(value) => { root.{{ cb(c, "on_change") }}(value); }
+    {%- endif %}
+}
+{%- elif t == "backend:slint/Slider" %}
+Slider {
+    value <=> root.{{ c.name }}_value;
+    minimum: {{ c.props.minimum }};
+    maximum: {{ c.props.maximum }};
+    step: {{ c.props.step }};
+    enabled: root.{{ c.name }}_enabled;
+    visible: root.{{ c.name }}_visible;
+    {%- if e.on_change %}
+    changed(value) => { root.{{ cb(c, "on_change") }}(value); }
+    {%- endif %}
+}
+{%- elif t == "backend:slint/ProgressIndicator" %}
+ProgressIndicator {
+    progress: root.{{ c.name }}_progress;
+    indeterminate: {{ b(c.props.indeterminate) }};
+    visible: root.{{ c.name }}_visible;
+}
+{%- elif t == "backend:slint/ComboBox" %}
+ComboBox {
+    model: root.{{ c.name }}_items;
+    current_index <=> root.{{ c.name }}_selected;
+    enabled: root.{{ c.name }}_enabled;
+    visible: root.{{ c.name }}_visible;
+    {%- if e.on_select %}
+    selected(value) => { root.{{ cb(c, "on_select") }}(self.current_index); }
+    {%- endif %}
+}
+{%- elif t == "backend:slint/ListView" %}
+StandardListView {
+    model: root.{{ c.name }}_items;
+    current_item <=> root.{{ c.name }}_selected;
+    min_height: 100px;
+    visible: root.{{ c.name }}_visible;
+    {%- if e.on_select %}
+    current_item_changed(index) => { root.{{ cb(c, "on_select") }}(index); }
+    {%- endif %}
+}
+{%- elif t == "backend:slint/TextEdit" %}
+TextEdit {
+    text <=> root.{{ c.name }}_text;
+    read_only: {{ b(c.props.read_only) }};
+    wrap: {{ "TextWrap.word_wrap" if c.props.wrap else "TextWrap.no_wrap" }};
+    min_height: 80px;
+    enabled: root.{{ c.name }}_enabled;
+    visible: root.{{ c.name }}_visible;
+    {%- if e.on_change %}
+    edited(text) => { root.{{ cb(c, "on_change") }}(text); }
+    {%- endif %}
+}
+{%- elif t == "backend:slint/Separator" %}
+Rectangle {
+    height: 1px;
+    background: Palette.border;
+    visible: root.{{ c.name }}_visible;
+}
+{%- elif t == "backend:slint/Image" %}
+Image {
+    source: root.{{ c.name }}_source;
+    image_fit: contain;
+    {%- if c.props.pixel_size > 0 %}
+    width: {{ c.props.pixel_size }}px;
+    height: {{ c.props.pixel_size }}px;
+    {%- endif %}
+    visible: root.{{ c.name }}_visible;
+}
+{%- elif t == "backend:slint/AboutSlint" %}
+AboutSlint {
+    visible: root.{{ c.name }}_visible;
+}
+{%- elif t == "backend:slint/GroupBox" %}
+GroupBox {
+    title: root.{{ c.name }}_title;
+    enabled: root.{{ c.name }}_enabled;
+    visible: root.{{ c.name }}_visible;
+    {{ layout(c) }}
+}
+{%- elif t == "backend:slint/TabWidget" %}
+TabWidget {
+    current_index <=> root.{{ c.name }}_current;
+    visible: root.{{ c.name }}_visible;
+    {%- if e.on_page %}
+    changed current_index => { root.{{ cb(c, "on_page") }}(self.current_index); }
+    {%- endif %}
+    {%- for page in c.children %}
+    Tab {
+        title: {{ (c.props.pages[loop.index0] if c.props.pages | length > loop.index0 else page.name) | rust_str }};
+        {%- if page.type in containers %}
+        {{ element(page) }}
+        {%- else %}
+        VerticalLayout {
+            alignment: start;
+            {{ element(page) }}
+        }
+        {%- endif %}
+    }
+    {%- endfor %}
+}
+{%- elif t == "core/Container" %}
+VerticalLayout {
+    visible: root.{{ c.name }}_visible;
+    {{ layout(c) }}
+}
+{%- elif t == "backend:slint/RadioButton" %}
+{#- Wird von der Gruppe gezeichnet (siehe `children`). #}
+{%- else %}
+Text { text: {{ c.type_name | rust_str }}; }
+{%- endif -%}
+{%- endmacro %}
+
+{#- The properties of `c` with their values from the designer. -#}
+{%- macro properties(c) -%}
+{%- set t = c.type %}
+in_out property <bool> {{ c.name }}_visible: {{ b(c.props.visible) }};
+in_out property <bool> {{ c.name }}_enabled: {{ b(c.props.enabled) }};
+{%- if t == "core/Label" %}
+in_out property <string> {{ c.name }}_text: {{ c.rust.text }};
+{%- elif t == "core/Button" %}
+in_out property <string> {{ c.name }}_caption: {{ c.rust.caption }};
+{%- elif t in ["core/Edit", "backend:slint/TextEdit"] %}
+in_out property <string> {{ c.name }}_text: {{ c.rust.text }};
+{%- elif t in ["core/CheckBox", "backend:slint/Switch", "backend:slint/RadioButton"] %}
+in_out property <string> {{ c.name }}_caption: {{ c.rust.caption }};
+in_out property <bool> {{ c.name }}_checked: {{ b(c.props.checked) }};
+{%- elif t == "backend:slint/SpinBox" %}
+in_out property <int> {{ c.name }}_value: {{ c.props.value }};
+{%- elif t == "backend:slint/Slider" %}
+in_out property <float> {{ c.name }}_value: {{ c.props.value }};
+{%- elif t == "backend:slint/ProgressIndicator" %}
+in_out property <float> {{ c.name }}_progress: {{ c.props.progress }};
+{%- elif t == "backend:slint/ComboBox" %}
+in_out property <[string]> {{ c.name }}_items: [{% for i in c.props["items"] %}{{ i | rust_str }}{% if not loop.last %}, {% endif %}{% endfor %}];
+in_out property <int> {{ c.name }}_selected: {{ c.props.selected }};
+{%- elif t == "backend:slint/ListView" %}
+in_out property <[StandardListViewItem]> {{ c.name }}_items: [{% for i in c.props["items"] %}{ text: {{ i | rust_str }} }{% if not loop.last %}, {% endif %}{% endfor %}];
+in_out property <int> {{ c.name }}_selected: {{ c.props.selected }};
+{%- elif t == "backend:slint/Image" %}
+in_out property <image> {{ c.name }}_source;
+{%- elif t == "backend:slint/GroupBox" %}
+in_out property <string> {{ c.name }}_title: {{ c.rust.title }};
+{%- elif t == "backend:slint/TabWidget" %}
+in_out property <int> {{ c.name }}_current: {{ c.props.page }};
+{%- endif %}
+{%- endmacro %}
+
+{#- Slint type of an event parameter. -#}
+{%- set slint_types = {"bool": "bool", "&str": "string", "i32": "int", "f32": "float", "u32": "int"} %}
+
+{%- if root %}
+#[allow(unused_imports)]
+use slint::ComponentHandle as _;
+
+slint::slint! {
+    import { Button, LineEdit, CheckBox, RadioGroup, Switch, SpinBox, Slider, ProgressIndicator, ComboBox, StandardListView, TextEdit, GroupBox, TabWidget, AboutSlint, Palette } from "std-widgets.slint";
+
+    export component FormUi inherits Window {
+        title: root.{{ root.name }}_title;
+        {%- if root.props.resizable %}
+        preferred_width: {{ root.props.size.width }}px;
+        preferred_height: {{ root.props.size.height }}px;
+        {%- else %}
+        width: {{ root.props.size.width }}px;
+        height: {{ root.props.size.height }}px;
+        {%- endif %}
+        in_out property <string> {{ root.name }}_title: {{ root.rust.title }};
+        {%- for c in widgets if c.name != root.name %}
+        {{ properties(c) | indent(8) }}
+        {%- endfor %}
+        {%- for c in widgets %}
+        {%- for event, handler in c.events | items if handler and c.type != "core/Form" %}
+        {%- set def = event %}
+        callback {{ cb(c, event) }}(
+            {%- if c.type in ["core/Edit", "backend:slint/TextEdit"] and event == "on_change" %}string
+            {%- elif event == "on_toggle" %}bool
+            {%- elif event in ["on_change", "on_select", "on_page"] and c.type in ["backend:slint/SpinBox", "backend:slint/ComboBox", "backend:slint/ListView", "backend:slint/TabWidget"] %}int
+            {%- elif event == "on_change" and c.type == "backend:slint/Slider" %}float
+            {%- endif %});
+        {%- endfor %}
+        {%- endfor %}
+        {%- for m in menus %}
+        callback {{ m.name }}_select(string);
+        {%- set ns = namespace(items=[]) %}
+        {%- for raw in m.props["items"] %}
+        {%- set pk = raw | split("|") | list %}
+        {%- set path = pk[0] | split("/") | map("trim") | join("/") %}
+        {%- set ns.items = ns.items + [{"path": path, "keys": (pk[1] | trim if pk | length > 1 else "")}] %}
+        {%- endfor %}
+        MenuBar {
+            {{ menu(ns.items, "", m.name) | indent(12) }}
+        }
+        {%- endfor %}
+        {{ layout(root) | indent(8) }}
+    }
+}
+
+impl {{ form.struct }} {
+    /// Shows the form's window.
+    pub fn show(&self) -> Result<(), slint::PlatformError> {
+        self.{{ root.name }}.show()
+    }
+
+    /// Calls `f` with the form, unless it is gone or busy (a handler that
+    /// changes a property can trigger another callback of the same form).
+    #[allow(dead_code)]
+    fn freya_call(
+        form: &std::rc::Weak<std::cell::RefCell<Self>>,
+        f: impl FnOnce(&mut Self),
+    ) {
+        if let Some(form) = form.upgrade() {
+            if let Ok(mut form) = form.try_borrow_mut() {
+                f(&mut form);
+            }
+        }
+    }
+
+    /// Connects the callbacks to the handlers, loads pictures and – for the
+    /// main form – asks `on_close` before the window closes.
+    #[allow(unused_variables)]
+    pub fn start(this: &std::rc::Rc<std::cell::RefCell<Self>>, main: bool) {
+        let form = this.borrow();
+        let weak = std::rc::Rc::downgrade(this);
+    {%- for c in widgets %}
+    {%- for event, handler in c.events | items if handler and c.type != "core/Form" %}
+        {
+            let weak = weak.clone();
+            form.{{ root.name }}.on_{{ cb(c, event) }}(move |
+                {%- if c.type in ["core/Edit", "backend:slint/TextEdit"] and event == "on_change" %}text| {
+                Self::freya_call(&weak, |f| f.{{ handler }}(&text));
+                {%- elif event == "on_toggle" %}checked| {
+                Self::freya_call(&weak, |f| f.{{ handler }}(checked));
+                {%- elif event in ["on_change", "on_select", "on_page"] and c.type in ["backend:slint/SpinBox", "backend:slint/ComboBox", "backend:slint/ListView", "backend:slint/TabWidget", "backend:slint/Slider"] %}value| {
+                Self::freya_call(&weak, |f| f.{{ handler }}(value));
+                {%- else %}| {
+                Self::freya_call(&weak, |f| f.{{ handler }}());
+                {%- endif %}
+            });
+        }
+    {%- endfor %}
+    {%- endfor %}
+    {%- for m in menus if m.events.on_select %}
+        {
+            let weak = weak.clone();
+            form.{{ root.name }}.on_{{ m.name }}_select(move |item| {
+                Self::freya_call(&weak, |f| f.{{ m.events.on_select }}(&item));
+            });
+        }
+    {%- endfor %}
+    {%- for c in widgets if c.type == "backend:slint/Image" and c.props.file %}
+        form.{{ root.name }}.set_{{ c.name }}_source(
+            slint::Image::load_from_path(std::path::Path::new({{ c.rust.file }})).unwrap_or_default(),
+        );
+    {%- endfor %}
+        if main {
+            let weak = weak.clone();
+            form.{{ root.name }}.window().on_close_requested(move || {
+                #[allow(unused_mut)]
+                let mut close = true;
+            {%- if root.events.on_close %}
+                Self::freya_call(&weak, |f| close = f.{{ root.events.on_close }}());
+            {%- endif %}
+                if close {
+                    slint::CloseRequestResponse::HideWindow
+                } else {
+                    slint::CloseRequestResponse::KeepWindowShown
+                }
+            });
+        }
+        drop(form);
+    {%- if root.events.on_create %}
+        Self::freya_call(&weak, |f| f.{{ root.events.on_create }}());
+    {%- endif %}
+    }
+}
+{%- endif %}

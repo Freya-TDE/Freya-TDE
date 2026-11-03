@@ -237,3 +237,71 @@ height = 120
 min-width = 200
 padding-x = 0
 header = 40
+
+# --- Slint (widgets/slint)
+[widgets."backend:slint/RadioButton"]
+height = 32
+min-width = 24
+padding-x = 0
+
+[widgets."backend:slint/Switch"]
+height = 28
+min-width = 48
+padding-x = 0
+
+[widgets."backend:slint/SpinBox"]
+height = 32
+min-width = 120
+padding-x = 8
+
+[widgets."backend:slint/Slider"]
+height = 30
+min-width = 140
+padding-x = 0
+
+[widgets."backend:slint/ProgressIndicator"]
+height = 8
+min-width = 120
+padding-x = 0
+
+[widgets."backend:slint/ComboBox"]
+height = 32
+min-width = 120
+padding-x = 10
+
+[widgets."backend:slint/ListView"]
+height = 100
+min-width = 140
+padding-x = 8
+
+[widgets."backend:slint/TextEdit"]
+height = 80
+min-width = 160
+padding-x = 6
+
+[widgets."backend:slint/Separator"]
+height = 1
+min-width = 20
+padding-x = 0
+
+[widgets."backend:slint/Image"]
+height = 64
+min-width = 64
+padding-x = 0
+
+[widgets."backend:slint/AboutSlint"]
+height = 80
+min-width = 120
+padding-x = 0
+
+[widgets."backend:slint/GroupBox"]
+height = 80
+min-width = 120
+padding-x = 0
+header = 28
+
+[widgets."backend:slint/TabWidget"]
+height = 120
+min-width = 200
+padding-x = 0
+header = 34

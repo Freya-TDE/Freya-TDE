@@ -560,3 +560,34 @@ runtime = "x()"
         ["backend: only packs with kind = \"backend\" may have [backend]"]
     );
 }
+
+#[test]
+fn license_notice_reaches_the_backend() {
+    let text = r#"
+[pack]
+name = "fancy"
+version = "0.1.0"
+kind = "backend"
+license = "MIT"
+generated-code-license = "MIT"
+license-notice = """
+  The generated project depends on a library with special terms.
+"""
+
+[backend]
+"#;
+    let pack = Pack::parse(text).unwrap();
+    assert_eq!(
+        pack.info.license_notice.as_deref(),
+        Some("The generated project depends on a library with special terms.")
+    );
+    let mut registry = TypeRegistry::with_builtins();
+    pack.register(&mut registry).unwrap();
+    assert_eq!(
+        registry.backend("fancy").unwrap().license_notice,
+        pack.info.license_notice
+    );
+    // Ohne Hinweis bleibt es leer.
+    let plain = Pack::parse(&text.replace("license-notice", "description")).unwrap();
+    assert_eq!(plain.info.license_notice, None);
+}

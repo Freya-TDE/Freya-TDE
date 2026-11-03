@@ -1,0 +1,295 @@
+# Slint – UI-Backend für Zielprojekte / UI backend for target projects
+#
+# Deklarativ: Das Formular wird eine Slint-Komponente (`FormUi`, per `slint::slint!`
+# im Formular-Modul). Jedes Widget hat Properties `<name>_<eigenschaft>` und
+# Callbacks `<name>_<ereignis>`; der Nutzercode spricht sie über das Feld `window` an:
+# `self.window.set_greeting_text("Hallo".into())`, `self.window.get_name_edit_text()`.
+# Declarative: the form becomes a Slint component; widgets are reached through
+# its properties (`self.window.set_greeting_text(…)`).
+#
+# Slint selbst steht unter GPLv3 / Royalty-free / kommerziell – siehe license-notice.
+# Freya TDE hängt nicht von Slint ab, nur das erzeugte Projekt.
+
+[pack]
+name = "slint"
+version = "0.1.0"
+kind = "backend"
+description = "Slint: declarative UI (Linux, Windows, macOS); see the license notice"
+authors = ["Dragon Software <info@dragon-software.net>"]
+license = "MIT OR Apache-2.0"
+generated-code-license = "MIT OR Apache-2.0"
+license-notice = """
+Slint ist dreifach lizenziert; Sie wählen eine der Lizenzen:
+
+• GPLv3 – frei; Ihr Programm muss dann GPL-konform weitergegeben werden.
+• Slint Royalty-free License 2.0 – frei für Desktop-, Mobil- und Web-Programme, auch
+  proprietär. Bedingung: ein Hinweis auf Slint, z. B. das Widget „AboutSlint“ in einem
+  Menü oder Startbildschirm oder das Slint-Badge auf der Download-Seite. Nicht für
+  Embedded-Geräte.
+• Kommerzielle Lizenz – kostenpflichtig (z. B. für Embedded ohne GPL).
+
+Freya TDE nutzt Slint nicht selbst, nur Ihr erzeugtes Projekt hängt davon ab. Der von
+Freya TDE erzeugte Code gehört Ihnen (MIT OR Apache-2.0).
+Einzelheiten: https://slint.dev/terms-and-conditions
+
+(Slint is GPLv3 / Royalty-free 2.0 with attribution, not for embedded / commercial.)
+"""
+
+[backend]
+event-loop = "main-thread"
+absolute-positioning = true
+platforms = ["linux", "windows", "macos"]
+cargo = [{ crate = "slint", version = "1.18" }]
+form-file = "templates/form.rs.j2"
+run-file = "templates/run.rs.j2"
+
+# --- Kern-Widgets / core widgets ----------------------------------------------------------
+# Nur das Formular bekommt ein Feld: die Slint-Komponente. Die übrigen Widgets sind
+# Properties dieser Komponente (kein eigenes Feld).
+
+[[extend]]
+type = "core/Form"
+[extend.codegen]
+type = "FormUi"
+init = "{{ form }}::FormUi::new()?"
+
+# --- Slint-Palette / Slint palette --------------------------------------------------------
+
+[[component]]
+name = "RadioButton"
+kind = "widget"
+look = "radio"
+category = "Slint"
+icon = "radio"
+description = "Option button; radio buttons next to each other in a container form a group"
+[component.properties.caption]
+type = "text"
+default = "Option"
+category = "Appearance"
+[component.properties.checked]
+type = "bool"
+category = "Behavior"
+[component.events.on_toggle]
+params = [{ name = "checked", type = "bool" }]
+description = "Chosen by the user"
+
+[[component]]
+name = "Switch"
+kind = "widget"
+look = "switch"
+category = "Slint"
+icon = "switch"
+description = "On/off switch with caption"
+[component.properties.caption]
+type = "text"
+category = "Appearance"
+[component.properties.checked]
+type = "bool"
+category = "Behavior"
+[component.events.on_toggle]
+params = [{ name = "checked", type = "bool" }]
+
+[[component]]
+name = "SpinBox"
+kind = "widget"
+look = "spin"
+category = "Slint"
+icon = "spin"
+description = "Whole number with up/down buttons"
+[component.properties.value]
+type = "int"
+category = "Value"
+[component.properties.minimum]
+type = "int"
+category = "Value"
+[component.properties.maximum]
+type = "int"
+default = 100
+category = "Value"
+[component.events.on_change]
+params = [{ name = "value", type = "i32" }]
+
+[[component]]
+name = "Slider"
+kind = "widget"
+look = "slider"
+category = "Slint"
+icon = "slider"
+description = "Slider to choose a value"
+[component.properties.value]
+type = "float"
+category = "Value"
+[component.properties.minimum]
+type = "float"
+category = "Value"
+[component.properties.maximum]
+type = "float"
+default = 100.0
+category = "Value"
+[component.properties.step]
+type = "float"
+default = 1.0
+category = "Value"
+[component.events.on_change]
+params = [{ name = "value", type = "f32" }]
+
+[[component]]
+name = "ProgressIndicator"
+kind = "widget"
+look = "progress"
+category = "Slint"
+icon = "progress"
+description = "Shows the progress of a task"
+[component.properties.progress]
+type = "float"
+min = 0.0
+max = 1.0
+category = "Value"
+description = "Progress from 0.0 to 1.0"
+[component.properties.indeterminate]
+type = "bool"
+category = "Appearance"
+description = "Busy animation without a value"
+
+[[component]]
+name = "ComboBox"
+kind = "widget"
+look = "dropdown"
+category = "Slint"
+icon = "dropdown"
+description = "Choose one entry from a list"
+[component.properties.items]
+type = "list"
+item = "text"
+category = "Value"
+[component.properties.selected]
+type = "int"
+min = 0
+category = "Value"
+description = "Index of the selected entry"
+[component.events.on_select]
+params = [{ name = "index", type = "i32" }]
+
+[[component]]
+name = "ListView"
+kind = "widget"
+look = "list"
+category = "Slint"
+icon = "list"
+description = "List of text entries to choose from (StandardListView)"
+[component.properties.items]
+type = "list"
+item = "text"
+category = "Value"
+[component.properties.selected]
+type = "int"
+min = -1
+default = -1
+category = "Value"
+description = "Index of the selected entry (-1 = none)"
+[component.events.on_select]
+params = [{ name = "index", type = "i32" }]
+
+[[component]]
+name = "TextEdit"
+kind = "widget"
+look = "memo"
+category = "Slint"
+icon = "memo"
+description = "Multi-line text"
+[component.properties.text]
+type = "text"
+category = "Appearance"
+[component.properties.read_only]
+type = "bool"
+category = "Behavior"
+[component.properties.wrap]
+type = "bool"
+default = true
+category = "Appearance"
+description = "Wrap long lines at word boundaries"
+[component.events.on_change]
+params = [{ name = "text", type = "&str" }]
+
+[[component]]
+name = "Separator"
+kind = "widget"
+look = "separator"
+category = "Slint"
+icon = "separator"
+description = "A line between widgets"
+
+[[component]]
+name = "Image"
+kind = "widget"
+look = "image"
+category = "Slint"
+icon = "image"
+description = "Picture from a file (PNG, JPEG, SVG …), loaded at start"
+[component.properties.file]
+type = "text"
+category = "Appearance"
+description = "Path of the picture, relative to the working directory"
+[component.properties.pixel_size]
+type = "int"
+min = 0
+default = 64
+category = "Appearance"
+description = "Size in pixels (0 = natural size)"
+
+[[component]]
+name = "AboutSlint"
+kind = "widget"
+category = "Slint"
+icon = "component"
+description = "The Slint logo with \"Made with Slint\" – fulfils the attribution of the Royalty-free license"
+
+[[component]]
+name = "GroupBox"
+kind = "container"
+look = "frame"
+category = "Slint"
+icon = "frame"
+description = "Container with a title"
+[component.properties.title]
+type = "text"
+default = "Group"
+category = "Appearance"
+
+[[component]]
+name = "TabWidget"
+kind = "container"
+look = "tabs"
+category = "Slint"
+icon = "tabs"
+description = "Pages with tabs; every child is one page (usually a Container)"
+[component.properties.pages]
+type = "list"
+item = "text"
+category = "Appearance"
+description = "Tab titles, one per child (missing ones: the child's name)"
+[component.properties.page]
+type = "int"
+min = 0
+category = "Behavior"
+description = "The page shown at the start (and in the designer)"
+[component.events.on_page]
+params = [{ name = "page", type = "i32" }]
+
+[[component]]
+name = "MainMenu"
+look = "menubar"
+category = "Slint"
+icon = "menu"
+description = "Menu bar of the window: entries like `Datei/Öffnen | Ctrl+O`, `Datei/-` (separator)"
+[component.properties.items]
+type = "list"
+item = "text"
+category = "Menu"
+description = "One entry per line: path with `/`, optional `| shortcut`, `-` = separator"
+[component.events.on_select]
+params = [{ name = "item", type = "&str" }]
+description = "An entry was chosen; `item` is its path, e.g. `Datei/Öffnen`"
+[component.codegen]
+type = "()"
+init = "()"

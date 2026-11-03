@@ -8,10 +8,10 @@ Visuelle Widgets und Backend-Paletten, aufbauend auf `tdr-core` (der gemeinsame 
 | `gtk4` | fertig / done | GTK 4 über gtk4-rs (Linux, Windows, macOS); Kern-Widgets plus Palette „GTK“: RadioButton, Switch, SpinButton, Scale, ProgressBar, DropDown, ListBox, TextView, Notebook, Frame, Image, Separator, LinkButton, MainMenu |
 | `egui` | fertig / done | egui 0.37 mit eframe (Immediate Mode); Kern-Widgets plus Palette „egui“: RadioButton, Switch, DragValue, Slider, ProgressBar, ComboBox, ListBox, TextEdit, Hyperlink, Separator, CollapsingHeader, Tabs, MainMenu |
 | `iced` | fertig / done | iced 0.14 (Elm-Architektur); Kern-Widgets plus Palette „iced“: RadioButton, Toggler, Slider, ProgressBar, PickList, ListBox, TextEditor, Rule, GroupBox, Tabs |
-| `slint` | geplant / planned (Lizenz prüfen / check license) | |
+| `slint` | fertig / done | Slint 1.18 (deklarativ, mit Lizenzhinweis); Kern-Widgets plus Palette „Slint“: RadioButton, Switch, SpinBox, Slider, ProgressIndicator, ComboBox, ListView, TextEdit, Separator, Image, AboutSlint, GroupBox, TabWidget, MainMenu |
 
 Neue Projekte nutzen `gtk4`, wenn das Pack gefunden wird; „Datei → Neues Projekt mit Oberfläche“ wählt ein
-anderes (GTK 4, egui, iced, ohne Oberfläche).
+anderes (GTK 4, egui, iced, Slint, ohne Oberfläche).
 *New projects use `gtk4`; File → New project with UI picks another backend.*
 
 ## GTK 4
@@ -97,6 +97,43 @@ ein Handler ändert den Zustand (`self.greeting.value = …`, `self.window.capti
 - Test: `xvfb-run -a cargo test -p tdr-core --test backend_iced` baut ein Projekt mit allen Widgets, startet es und
   klickt mit `xdotool` zweimal auf den Knopf.
 
+## Slint
+
+Slint steht unter GPLv3, der Slint Royalty-free License 2.0 (frei für Desktop/Mobil/Web, auch proprietär,
+mit Hinweis auf Slint – z. B. das Widget `AboutSlint` –, nicht für Embedded) oder einer kommerziellen Lizenz.
+Freya TDE reicht Slint nur durch: Vor dem Anlegen eines Slint-Projekts zeigt die IDE den `license-notice`
+des Packs, der Entwickler entscheidet. Freya TDE selbst hängt nicht von Slint ab; der erzeugte Code ist
+MIT OR Apache-2.0.
+*Slint is GPLv3 / Royalty-free (attribution, not embedded) / commercial; the IDE shows the notice first.*
+
+Deklarativ: das Formular wird eine Slint-Komponente `FormUi` (per `slint::slint!` in `<form>.gen.rs`), das
+einzige Feld ist das Fenster. Jedes Widget hat Properties `<name>_<eigenschaft>` (`_text`, `_caption`,
+`_checked`, `_value`, `_items`, `_selected`, `_current`, `_title`, `_enabled`, `_visible`, `_source`) und
+Callbacks `<name>_<ereignis>`:
+*The form is a Slint component; widgets are its properties:*
+
+```rust
+impl MainForm {
+    pub fn ok_clicked(&mut self) {
+        let name = self.window.get_name_edit_text();
+        self.window.set_greeting_text(format!("Hallo {name}").into());
+        self.window.set_ok_button_enabled(false);
+        self.window.set_window_title("Fertig".into());   // <wurzel>_title
+    }
+}
+```
+
+- `start` verbindet die Callbacks mit den Handlern (`Rc<RefCell<…>>` wie bei GTK), lädt Bilder (`Image`, Datei
+  zur Laufzeit) und fragt beim Schließen `on_close`; `run` zeigt das erste Formular.
+- Layouts: `VerticalLayout`/`HorizontalLayout` (`stretch`, `align`), `GridLayout` (Zellen oder Reihenfolge),
+  Stapel (erstes Kind), absolut (`x`/`y`). Optionsfelder eines Containers bilden eine `RadioGroup`.
+- `MainMenu` wird eine `MenuBar` (Pfade, `-`, Untermenüs, Kürzel `| Ctrl+O` → `@keys(Control + "o")`).
+- Alle Slint-Bezeichner mit `_` statt `-` (Slint behandelt beide gleich): der Makro-Inhalt läuft durch
+  `prettyplease`, das `a-b` in `a - b` trennen würde.
+- Kein Tooltip (Slint 1.18 hat keinen).
+- Test: `xvfb-run -a cargo test -p tdr-core --test backend_slint` baut ein Projekt mit allen Widgets, startet es
+  und klickt Knopf und Menü.
+
 ## Backend-Pack / backend pack
 
 Ein UI-Backend ist ein Ordner `widgets/<backend>/` mit einer `pack.toml` (`kind = "backend"`):
@@ -116,6 +153,13 @@ form = """impl {{ form.struct }} { pub fn ui(&mut self, …) { … self.{{ w.eve
 run = """eframe::run_native(…)?; Ok(())"""
 # oder form-file / run-file / setup-file / app-file = "templates/…"
 ```
+
+Lizenzhinweis: `license-notice = """…"""` im Abschnitt `[pack]` (z. B. Lizenzbedingungen einer Bibliothek, von
+der das erzeugte Projekt abhängt). Die IDE zeigt ihn vor dem Anlegen eines Projekts mit dem Backend und lässt
+den Entwickler entscheiden; per API: `Ide::backend_notice`, `BackendDescriptor::license_notice`.
+*`license-notice` is shown before a project uses the backend; the developer decides.*
+
+In Templates schreibt der Filter `rust_str` einen Text als Rust-Stringliteral (`{{ item | rust_str }}`).
 
 Symbole: `icon = "switch"` am Typ; gesucht wird zuerst `icons/<name>.png` im Pack-Ordner (48 × 48 px),
 dann der eingebaute Satz der IDE (`ide/assets/palette/`, Quellen und Generator `make.py`).

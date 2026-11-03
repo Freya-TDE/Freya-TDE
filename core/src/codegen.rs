@@ -59,6 +59,9 @@
 //! optional `app` template (same context) adds items to `app.gen.rs`, e.g.
 //! helpers the forms use as `crate::app::…`.
 //!
+//! The filter `rust_str` writes a text as a Rust string literal with escapes
+//! (`{{ item | rust_str }}` → `"Don't \"x\""`), e.g. for single list items.
+//!
 //! Every rendered piece is parsed with `syn`; errors are reported for the
 //! component and template part concerned.
 //!
@@ -502,6 +505,8 @@ fn environment() -> Environment<'static> {
     let mut env = Environment::new();
     env.set_undefined_behavior(UndefinedBehavior::Strict);
     env.set_auto_escape_callback(|_| AutoEscape::None);
+    // Text als Rust-Stringliteral (auch für Einträge einer Liste).
+    env.add_filter("rust_str", |text: String| format!("{text:?}"));
     env
 }
 

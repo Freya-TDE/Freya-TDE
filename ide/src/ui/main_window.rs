@@ -41,6 +41,7 @@ pub(super) fn menu_bar() -> MenuBar {
                         .item("file.new.gtk4", "GTK 4", None)
                         .item("file.new.egui", "egui", None)
                         .item("file.new.iced", "iced", None)
+                        .item("file.new.slint", "Slint (Lizenzhinweis) …", None)
                         .separator()
                         .item("file.new.none", "Ohne Oberfläche (nur Komponenten)", None),
                 )

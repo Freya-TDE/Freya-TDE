@@ -66,6 +66,10 @@ pub struct BackendDescriptor {
     /// `crate::app::…`). Same context as `run`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub app: Option<String>,
+    /// The pack's `license-notice`: shown before a project uses the backend
+    /// (the user decides).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub license_notice: Option<String>,
 }
 
 impl BackendDescriptor {
@@ -80,6 +84,7 @@ impl BackendDescriptor {
             run: None,
             setup: None,
             app: None,
+            license_notice: None,
         }
     }
 }
