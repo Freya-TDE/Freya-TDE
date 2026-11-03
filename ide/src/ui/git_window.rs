@@ -289,6 +289,7 @@ pub(super) fn more_actions() -> Menu {
                 .item("git.commit_amend", "Commit (Amend)", None)
                 .item("git.commit_push", "Commit & Push", None)
                 .item("git.commit_sync", "Commit & Sync", None)
+                .item("git.commit_pr", "Commit & Create Pull Request", None)
                 .separator()
                 .item("git.undo_commit", "Letzten Commit rückgängig", None),
         )
@@ -365,6 +366,7 @@ fn commit_menu() -> Menu {
         .separator()
         .item("git.commit_push", "Commit & Push", None)
         .item("git.commit_sync", "Commit & Sync", None)
+        .item("git.commit_pr", "Commit & Create Pull Request", None)
 }
 
 fn icon_button(window: &RnclWindow, text: &str, tip: &str) -> RnclButton {
@@ -415,7 +417,11 @@ impl GitWindow {
         message.set_placeholder(&format!("Nachricht ({COMMIT_KEY} für Commit)"));
         message.set_word_wrap(true);
         let commit = RnclButton::new(&window, "✓ Commit");
-        let variants = icon_button(&window, "▾", "Commit (Amend), Commit & Push, Commit & Sync");
+        let variants = icon_button(
+            &window,
+            "▾",
+            "Commit (Amend), Commit & Push, Commit & Sync, Commit & Create Pull Request",
+        );
         let changes = RnclTreeView::new(&window);
         let splitter = RnclSplitter::new(&window, true);
         let graph_title = RnclLabel::new(&window, "<b>Graph</b>");
@@ -703,6 +709,7 @@ impl GitWindow {
             "git.commit_amend" => commit(After::Nothing, true),
             "git.commit_push" => commit(After::Push, false),
             "git.commit_sync" => commit(After::Sync, false),
+            "git.commit_pr" => commit(After::PullRequest, false),
             "git.undo_commit" => ide.git_now(GitOp::UndoLastCommit),
             "git.stage_all" => ide.git_now(GitOp::Stage { paths: vec![] }),
             "git.unstage_all" => ide.git_now(GitOp::Unstage { paths: vec![] }),

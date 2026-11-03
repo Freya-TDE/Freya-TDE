@@ -29,6 +29,13 @@ pub fn program() -> PathBuf {
         .map_or_else(|| PathBuf::from("git"), PathBuf::from)
 }
 
+/// The GitHub CLI for pull requests: `FREYA_TDE_GH` or `gh` from the `PATH`.
+pub fn gh_program() -> PathBuf {
+    std::env::var_os("FREYA_TDE_GH")
+        .filter(|p| !p.is_empty())
+        .map_or_else(|| PathBuf::from("gh"), PathBuf::from)
+}
+
 // --- Data ---------------------------------------------------------------------------
 
 /// The kind of a change, as VS Code shows it with a letter.
@@ -473,6 +480,10 @@ pub enum After {
     Push,
     /// Pull, then push.
     Sync,
+    /// Push (publishing the branch if needed), then open a pull request
+    /// with the GitHub CLI (`gh pr create --fill`: title and text from the
+    /// commits).
+    PullRequest,
 }
 
 /// A change to the repository; serialized as `{"op": "commit", …}`.
@@ -667,7 +678,8 @@ fn yes() -> bool {
 /// `nothing_to_discard`, `untracked_deleted` (warning), `no_commit`,
 /// `undo_pushed` (warning), `current_branch`, `remote_exists`,
 /// `unknown_remote`, `invalid_remote`, `nothing_to_stash`, `unknown_stash`,
-/// `invalid_tag_name`, `tag_exists`, `unknown_tag`.
+/// `invalid_tag_name`, `tag_exists`, `unknown_tag`, `gh_missing` (no GitHub
+/// CLI for a pull request), `pull_request_from_base` (on the main branch).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct GitIssue {
     pub severity: Severity,
@@ -694,7 +706,8 @@ impl Preview {
 /// A failure. Codes are stable: `git_missing`, `not_a_repository`,
 /// `refused` (the preview has errors), `auth_required`, `rejected` (push
 /// refused, pull first), `diverged`, `merge_conflict`, `local_changes`,
-/// `not_merged`, `signing_failed`, `network`, `failed`.
+/// `not_merged`, `signing_failed`, `network`, `gh_auth_required` (`gh auth
+/// login` needed), `pull_request_exists`, `failed`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct GitError {
     pub code: &'static str,
@@ -770,6 +783,30 @@ impl GitError {
             ("network", "Das Remote ist nicht erreichbar.")
         } else {
             ("failed", "git meldet einen Fehler.")
+        };
+        Self {
+            code,
+            detail: detail.to_owned(),
+            output,
+            issues: Vec::new(),
+        }
+    }
+
+    /// Sorts a failed `gh` run by what it printed.
+    fn from_gh_output(output: String) -> Self {
+        let has = |s: &str| output.contains(s);
+        let (code, detail) = if has("gh auth login") || has("not logged") || has("authentication") {
+            (
+                "gh_auth_required",
+                "Die GitHub-CLI ist nicht angemeldet – einmal `gh auth login` im Terminal ausführen.",
+            )
+        } else if has("already exists") {
+            (
+                "pull_request_exists",
+                "Für diesen Zweig gibt es schon einen Pull Request.",
+            )
+        } else {
+            ("failed", "gh meldet einen Fehler.")
         };
         Self {
             code,
@@ -901,6 +938,31 @@ impl Git {
 
     fn git(&self, args: &[&str], stdin: Option<&str>) -> Result<GitOutput, GitError> {
         run_git(&self.root, args, stdin, self.askpass.as_ref())
+    }
+
+    /// The remote's default branch (`origin/HEAD` → `main`), if known.
+    pub fn default_branch(&self) -> Option<String> {
+        let remotes = self.remotes().ok()?;
+        let remote = remotes
+            .iter()
+            .find(|r| *r == "origin")
+            .or(remotes.first())?;
+        let output = self
+            .git(
+                &[
+                    "symbolic-ref",
+                    "--short",
+                    &format!("refs/remotes/{remote}/HEAD"),
+                ],
+                None,
+            )
+            .ok()?
+            .check()
+            .ok()?;
+        output
+            .trim()
+            .strip_prefix(&format!("{remote}/"))
+            .map(str::to_owned)
     }
 
     /// Branch, upstream, ahead/behind and the changed files.
@@ -1311,6 +1373,37 @@ impl Git {
                         }
                         push(&mut commands, &mut issues)?;
                     }
+                    After::PullRequest => {
+                        push(&mut commands, &mut issues)?;
+                        let base = self.default_branch();
+                        if let (Some(branch), Some(base)) = (&status.branch, &base)
+                            && branch == base
+                        {
+                            issues.push(error(
+                                "pull_request_from_base",
+                                format!(
+                                    "{branch} ist der Hauptzweig – für einen Pull Request zuerst einen eigenen Zweig anlegen."
+                                ),
+                            ));
+                        }
+                        if !run_gh(&self.root, &["--version"]).is_ok_and(|o| o.success) {
+                            issues.push(error(
+                                "gh_missing",
+                                format!(
+                                    "Für Pull Requests wird die GitHub-CLI gebraucht ({} nicht gefunden; https://cli.github.com).",
+                                    gh_program().display()
+                                ),
+                            ));
+                        }
+                        let mut create = cmd(&["gh", "pr", "create", "--fill"], &[]);
+                        if let Some(branch) = &status.branch {
+                            create.extend(["--head".to_owned(), branch.clone()]);
+                        }
+                        if let Some(base) = base {
+                            create.extend(["--base".to_owned(), base]);
+                        }
+                        commands.push(create);
+                    }
                 }
             }
             GitOp::Fetch => {
@@ -1598,6 +1691,27 @@ impl Git {
         }
         for command in &preview.commands {
             let args: Vec<&str> = command.iter().map(String::as_str).collect();
+            // `gh …` ist die GitHub-CLI (Pull Request), alles andere git.
+            if args.first() == Some(&"gh") {
+                let output = run_gh(&self.root, &args[1..])?;
+                log.push_str(&output.stdout);
+                log.push_str(&output.stderr);
+                if let Some(sink) = &self.output {
+                    sink(&format!(
+                        "> {}\n{}{}\n",
+                        args.join(" "),
+                        output.stdout,
+                        output.stderr
+                    ));
+                }
+                if !output.success {
+                    return Err(GitError::from_gh_output(format!(
+                        "{}{}",
+                        output.stdout, output.stderr
+                    )));
+                }
+                continue;
+            }
             // Nachrichten kommen über stdin (`-F -`).
             let input = args
                 .windows(2)
@@ -1731,6 +1845,37 @@ fn run_git(
     let output = child
         .wait_with_output()
         .map_err(|e| GitError::new("failed", e.to_string()))?;
+    Ok(GitOutput {
+        success: output.status.success(),
+        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+    })
+}
+
+/// Runs the GitHub CLI in `dir` without prompts.
+fn run_gh(dir: &Path, args: &[&str]) -> Result<GitOutput, GitError> {
+    let program = gh_program();
+    let mut command = Command::new(&program);
+    command
+        .current_dir(dir)
+        .args(args)
+        .env("GH_PROMPT_DISABLED", "1")
+        .env("GH_NO_UPDATE_NOTIFIER", "1")
+        .env("NO_COLOR", "1")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x0800_0000);
+    }
+    let output = command.output().map_err(|e| {
+        GitError::new(
+            "gh_missing",
+            format!("GitHub-CLI nicht gefunden ({}): {e}", program.display()),
+        )
+    })?;
     Ok(GitOutput {
         success: output.status.success(),
         stdout: String::from_utf8_lossy(&output.stdout).into_owned(),

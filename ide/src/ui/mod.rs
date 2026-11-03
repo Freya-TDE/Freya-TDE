@@ -841,6 +841,10 @@ impl Ide {
             GitOp::Commit {
                 then: After::Sync, ..
             } => "Commit & Sync",
+            GitOp::Commit {
+                then: After::PullRequest,
+                ..
+            } => "Commit & Create Pull Request",
             GitOp::Commit { .. } => "Commit",
             GitOp::Fetch | GitOp::FetchAll => "Fetch",
             GitOp::Pull | GitOp::PullRebase => "Pull",
@@ -868,11 +872,19 @@ impl Ide {
     ) {
         self.git_busy.set(false);
         match result {
-            Ok(_) => {
+            Ok(log) => {
                 if clear {
                     self.git_window.set_message("");
                 }
-                self.set_status(&format!("{what} erledigt."));
+                // `gh pr create` nennt die Adresse des Pull Requests.
+                match log
+                    .lines()
+                    .map(str::trim)
+                    .find(|l| l.starts_with("https://") && l.contains("/pull/"))
+                {
+                    Some(url) => self.set_status(&format!("{what} erledigt: {url}")),
+                    None => self.set_status(&format!("{what} erledigt.")),
+                }
                 if let Some(dir) = open {
                     self.open_cloned(&dir);
                 }
