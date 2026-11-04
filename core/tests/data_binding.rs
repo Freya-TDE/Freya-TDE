@@ -193,38 +193,49 @@ fn generates_loader_with_typed_values() {
     );
 
     if std::env::var_os("FREYA_TDE_CHECK_SQLX").is_some() {
-        let dir = std::env::temp_dir().join(format!("freya-sqlx-check-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        let mut checked = self::forms(
-            |c| c.with(DISPLAY_FIELD, "name").with(VALUE_FIELD, "id"),
-            true,
-        );
-        checked[1]
-            .add_widget(
-                &name("window"),
-                Widget::from_component(
-                    Component::new(name("grid"), TypeRef::backend("gtk4", "DataGrid"))
-                        .with(
-                            DATA_SOURCE,
-                            Value::reference_on(name("services"), name("customers")),
-                        )
-                        .with(VALUE_FIELD, "id"),
-                ),
-            )
-            .unwrap();
-        let generation = self::generation(&checked);
-        write(&dir, &generation).unwrap();
-        let status = std::process::Command::new("cargo")
-            .arg("check")
-            .current_dir(&dir)
-            .env(
-                "CARGO_TARGET_DIR",
-                PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("sqlx-check-target"),
-            )
-            .status()
-            .unwrap();
-        assert!(status.success(), "cargo check of the SQLx project failed");
-        let _ = std::fs::remove_dir_all(&dir);
+        // Jeder Treiber: Pool-, Query- und Zeilentyp müssen zu SQLx passen.
+        for driver in ["Postgres", "MySql", "Sqlite"] {
+            let dir = std::env::temp_dir()
+                .join(format!("freya-sqlx-check-{driver}-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&dir);
+            let mut checked = self::forms(
+                |c| c.with(DISPLAY_FIELD, "name").with(VALUE_FIELD, "id"),
+                true,
+            );
+            checked[1]
+                .add_widget(
+                    &name("window"),
+                    Widget::from_component(
+                        Component::new(name("grid"), TypeRef::backend("gtk4", "DataGrid"))
+                            .with(
+                                DATA_SOURCE,
+                                Value::reference_on(name("services"), name("customers")),
+                            )
+                            .with(VALUE_FIELD, "id"),
+                    ),
+                )
+                .unwrap();
+            checked[0]
+                .component_mut(&name("db"))
+                .unwrap()
+                .set("driver", Value::Enum(driver.into()));
+            let generation = self::generation(&checked);
+            write(&dir, &generation).unwrap();
+            let status = std::process::Command::new("cargo")
+                .arg("check")
+                .current_dir(&dir)
+                .env(
+                    "CARGO_TARGET_DIR",
+                    PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("sqlx-check-target"),
+                )
+                .status()
+                .unwrap();
+            assert!(
+                status.success(),
+                "cargo check of the SQLx project failed ({driver})"
+            );
+            let _ = std::fs::remove_dir_all(&dir);
+        }
     }
 }
 

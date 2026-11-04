@@ -12,8 +12,28 @@ Jedes Pack ist ein Ordner mit einer `pack.toml`; Codegen-Templates stehen im Abs
 | Pack | Typen / types | Fähigkeiten / capabilities |
 |---|---|---|
 | `tokio` | `Runtime` | stellt `tokio.runtime` bereit |
-| `sqlx` | `Pool`, `Query` | `sqlx.pool`, `sqlx.query`; Pool braucht `tokio.runtime`, Query braucht `sqlx.pool` |
+| `sqlx` | `Pool`, `Query` | `sqlx.pool`, `sqlx.query`; Pool braucht `tokio.runtime`, Query braucht `sqlx.pool`; `driver` = Postgres, MySql, Sqlite |
 | `axum` | `Router` | `http.router`; braucht `sqlx.pool` nur, wenn eine Query angehängt ist |
+
+## SQLx-Treiber / SQLx drivers
+
+Der Pool hat die Eigenschaft `driver` (Postgres, MySql, Sqlite). Sie bestimmt den Pool-Typ (`sqlx::PgPool`,
+`MySqlPool`, `SqlitePool`), das Cargo-Feature (`postgres`, `mysql`, `sqlite`) und über den Verweis `pool` auch den
+Feldtyp der Query und den Zeilentyp von `on_row` (`PgRow`, `MySqlRow`, `SqliteRow`). Platzhalter in SQL
+schreibt der Entwickler im Stil der Datenbank (`$1` bei Postgres und SQLite, `?` bei MySQL).
+*The pool's `driver` selects pool type, Cargo feature, the query's field type and the row type.*
+
+Dafür gibt es zwei allgemeine Bausteine im Pack-Format / two general pack features:
+
+```toml
+# Cargo-Abhängigkeit nur bei passendem Eigenschaftswert / dependency only for a matching property value
+cargo = [{ crate = "sqlx", version = "0.9", features = ["mysql"], when = { driver = "MySql" } }]
+# Templates sehen verwiesene Komponenten / templates see referenced components
+type = "(sqlx::{{ {'Postgres': 'PgPool', 'MySql': 'MySqlPool', 'Sqlite': 'SqlitePool'}[refs.pool.props.driver] }}, &'static str)"
+```
+
+Auch Parametertypen von Ereignissen dürfen solche Templates sein (`props`, `refs`); Objektinspektor und
+Handler-Stubs zeigen den aufgelösten Typ.
 
 ## Datenquelle für Listen / data source for lists
 

@@ -576,17 +576,24 @@ pub fn analyze(forms: &[Form], registry: &TypeRegistry) -> Analysis {
         report(Severity::Error, None, ProjectIssue::Cycle(cycle.clone()));
     }
 
-    // Cargo dependencies of all used types (each type once).
+    // Cargo dependencies of all used components; a dependency with `when`
+    // only if the component's properties match.
     let mut cargo: BTreeMap<String, CargoDependency> = BTreeMap::new();
     let mut versions: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-    let used: BTreeSet<&TypeRef> = graph
-        .nodes()
-        .iter()
-        .filter_map(|n| n.ty)
-        .map(|t| &t.type_ref)
-        .collect();
-    for ty in used.into_iter().filter_map(|t| registry.get(t)) {
-        for dep in &ty.cargo {
+    for node in graph.nodes() {
+        let Some(ty) = node.ty else { continue };
+        let value_of = |name: &str| {
+            let component = node.element.component();
+            let value = component.get(name).map(|v| v.value.clone()).or_else(|| {
+                registry
+                    .property_defs(&ty.type_ref, &node.form.backend)
+                    .into_iter()
+                    .find(|d| d.name == name)
+                    .and_then(|d| d.default.clone())
+            })?;
+            value.as_condition_text()
+        };
+        for dep in ty.cargo.iter().filter(|d| d.applies(value_of)) {
             versions
                 .entry(dep.crate_name.clone())
                 .or_default()
@@ -595,6 +602,7 @@ pub fn analyze(forms: &[Form], registry: &TypeRegistry) -> Analysis {
                 .entry(dep.crate_name.clone())
                 .or_insert_with(|| CargoDependency {
                     features: Vec::new(),
+                    when: BTreeMap::new(),
                     ..dep.clone()
                 });
             merged.default_features |= dep.default_features;

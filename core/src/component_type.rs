@@ -5,6 +5,8 @@
 //! component packs. Packs and backends describe them declaratively (step 3 of
 //! the roadmap); this module only defines the data.
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
 use crate::capability::{Provide, Require};
@@ -44,6 +46,11 @@ pub struct CargoDependency {
     pub features: Vec<String>,
     #[serde(default = "yes", skip_serializing_if = "is_true")]
     pub default_features: bool,
+    /// Only needed when every listed property of the component has the
+    /// given value (`driver = "MySql"`; enums by variant, bools as
+    /// `"true"`/`"false"`, numbers as written). Empty = always.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub when: BTreeMap<String, String>,
 }
 
 fn yes() -> bool {
@@ -61,7 +68,22 @@ impl CargoDependency {
             version: version.into(),
             features: Vec::new(),
             default_features: true,
+            when: BTreeMap::new(),
         }
+    }
+
+    /// Only needed when property `name` has `value`.
+    pub fn when(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
+        self.when.insert(name.into(), value.into());
+        self
+    }
+
+    /// Is the dependency needed for a component with these property values?
+    /// `value_of` returns the value as text (set or default).
+    pub fn applies(&self, value_of: impl Fn(&str) -> Option<String>) -> bool {
+        self.when
+            .iter()
+            .all(|(name, wanted)| value_of(name).as_deref() == Some(wanted.as_str()))
     }
 
     pub fn with_features<S: Into<String>>(mut self, features: impl IntoIterator<Item = S>) -> Self {

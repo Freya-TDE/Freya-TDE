@@ -14,13 +14,26 @@ icon = "database"
 description = "A connection pool to a database"
 provides = [{ capability = "sqlx.pool", description = "A database connection pool" }]
 requires = [{ capability = "tokio.runtime", description = "SQLx runs on Tokio" }]
-cargo = [{ crate = "sqlx", version = "0.9", features = ["runtime-tokio", "postgres"] }]
+cargo = [
+    { crate = "sqlx", version = "0.9", features = ["runtime-tokio"] },
+    { crate = "sqlx", version = "0.9", features = ["postgres"], when = { driver = "Postgres" } },
+    { crate = "sqlx", version = "0.9", features = ["mysql"], when = { driver = "MySql" } },
+    { crate = "sqlx", version = "0.9", features = ["sqlite"], when = { driver = "Sqlite" } },
+]
+
+# Datenbank: bestimmt Pool-Typ, Zeilentyp und Cargo-Feature.
+# Database: decides pool type, row type and Cargo feature.
+[component.properties.driver]
+type = "enum"
+variants = ["Postgres", "MySql", "Sqlite"]
+category = "Connection"
+description = "Database: PostgreSQL, MySQL/MariaDB or SQLite"
 
 [component.properties.url]
 type = "text"
 required = true
 category = "Connection"
-description = "Connection URL, e.g. postgres://user@localhost/app"
+description = "Connection URL, e.g. postgres://user@localhost/app, mysql://user@localhost/app, sqlite://app.db"
 
 [component.properties.max_connections]
 type = "int"
@@ -37,10 +50,10 @@ category = "Connection"
 description = "Seconds to wait for a connection"
 
 [component.codegen]
-type = "sqlx::PgPool"
+type = "sqlx::{{ {'Postgres': 'PgPool', 'MySql': 'MySqlPool', 'Sqlite': 'SqlitePool'}[props.driver] }}"
 async = true
 init = """
-sqlx::postgres::PgPoolOptions::new()
+sqlx::{{ {'Postgres': 'postgres::PgPoolOptions', 'MySql': 'mysql::MySqlPoolOptions', 'Sqlite': 'sqlite::SqlitePoolOptions'}[props.driver] }}::new()
     .max_connections({{ rust.max_connections }})
     .acquire_timeout(std::time::Duration::from_secs_f64({{ rust.connect_timeout }}))
     .connect({{ rust.url }})
@@ -79,8 +92,9 @@ item = "code"
 category = "Query"
 description = "Bind parameters (Rust expressions)"
 
+# Zeilentyp nach dem Treiber des Pools / row type follows the pool's driver.
 [component.events.on_row]
-params = [{ name = "row", type = "&sqlx::postgres::PgRow" }]
+params = [{ name = "row", type = "&sqlx::{{ {'Postgres': 'postgres::PgRow', 'MySql': 'mysql::MySqlRow', 'Sqlite': 'sqlite::SqliteRow'}[refs.pool.props.driver if refs.pool is defined else 'Postgres'] }}" }]
 description = "Called for every fetched row"
 
 [component.events.on_error]
@@ -103,5 +117,5 @@ get = "sqlx::Row::try_get::<{{ type }}, _>({{ row }}, {{ column | rust_str }})?"
 # Pool und SQL-Anweisung; Ausführen und Parameter binden bleibt beim Entwickler.
 # Pool and SQL statement; running it and binding parameters is up to the developer.
 [component.codegen]
-type = "(sqlx::PgPool, &'static str)"
+type = "(sqlx::{{ {'Postgres': 'PgPool', 'MySql': 'MySqlPool', 'Sqlite': 'SqlitePool'}[refs.pool.props.driver if refs.pool is defined else 'Postgres'] }}, &'static str)"
 init = "({{ rust.pool }}, {{ rust.sql }})"

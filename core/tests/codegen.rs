@@ -556,3 +556,59 @@ fn generated_files_are_protected() {
     ));
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+/// The pool's `driver` decides pool type, the query's field type, the row
+/// type of `on_row` and the Cargo feature.
+#[test]
+fn sqlx_driver_follows_the_pool() {
+    for (driver, pool, row, feature) in [
+        (
+            "MySql",
+            "sqlx::MySqlPool",
+            "&sqlx::mysql::MySqlRow",
+            "mysql",
+        ),
+        (
+            "Sqlite",
+            "sqlx::SqlitePool",
+            "&sqlx::sqlite::SqliteRow",
+            "sqlite",
+        ),
+    ] {
+        let mut forms = forms();
+        forms[0]
+            .component_mut(&name("db_pool"))
+            .unwrap()
+            .set("driver", Value::Enum(driver.into()));
+        forms[1]
+            .component_mut(&name("load"))
+            .unwrap()
+            .events
+            .insert("on_row".into(), handler("row_loaded"));
+        let generation = generate(&project(), &forms, &registry(), &empty());
+        assert!(!generation.has_errors(), "{:#?}", generation.diagnostics);
+
+        let services = content(&generation, "src/services.gen.rs");
+        assert!(
+            services.contains(&format!("pub db_pool: {pool},")),
+            "{services}"
+        );
+        let form = content(&generation, "src/main_form.gen.rs");
+        assert!(
+            form.contains(&format!("pub load: ({pool}, &'static str),")),
+            "{form}"
+        );
+        let user = content(&generation, "src/main_form.rs");
+        assert!(
+            user.contains(&format!("pub fn row_loaded(&mut self, row: {row}) {{}}")),
+            "{user}"
+        );
+        let cargo = content(&generation, "Cargo.toml");
+        let sqlx = cargo.lines().find(|l| l.starts_with("sqlx")).unwrap();
+        assert!(sqlx.contains(&format!("\"{feature}\"")), "{cargo}");
+        assert!(
+            sqlx.contains("\"runtime-tokio\"") && !sqlx.contains("postgres"),
+            "{cargo}"
+        );
+    }
+}

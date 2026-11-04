@@ -112,13 +112,16 @@ pub fn properties(
     Some(rows)
 }
 
-/// The events of `element` on `form`.
+/// The events of `element` on `form`; `forms` (the whole project) resolves
+/// parameter types that follow referenced components (SQLx row type).
 pub fn events(
+    forms: &[Form],
     form: &Form,
     element: &ComponentName,
     registry: &TypeRegistry,
 ) -> Option<Vec<EventRow>> {
-    let component = form.element(element)?.component();
+    let el = form.element(element)?;
+    let component = el.component();
     let ty = registry.get(&component.type_ref)?;
     Some(
         ty.events
@@ -126,7 +129,7 @@ pub fn events(
             .map(|e| EventRow {
                 name: e.name.clone(),
                 description: e.description.clone(),
-                params: e.params.clone(),
+                params: tdr_core::codegen::event_params(forms, form, el, registry, e),
                 returns: e.returns.clone(),
                 handler: component.events.get(&e.name).cloned(),
             })

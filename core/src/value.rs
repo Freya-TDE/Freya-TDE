@@ -190,6 +190,18 @@ impl Value {
         }
     }
 
+    /// The value as text for conditions (`when` of Cargo dependencies):
+    /// enum variant, text, `true`/`false`, number. `None` for other kinds.
+    pub fn as_condition_text(&self) -> Option<String> {
+        match self {
+            Value::Enum(v) | Value::Text(v) => Some(v.clone()),
+            Value::Bool(b) => Some(b.to_string()),
+            Value::Int(i) => Some(i.to_string()),
+            Value::Float(f) => Some(f.to_string()),
+            _ => None,
+        }
+    }
+
     /// Does the value fit `ty`? References are only checked for their kind
     /// here – whether the target exists and provides the capability is
     /// checked by form validation, which knows the other components.

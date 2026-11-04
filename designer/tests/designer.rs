@@ -346,7 +346,7 @@ fn tray_palette_and_inspector() {
     let rows = properties(form, &name("button1"), doc.registry()).unwrap();
     let caption = rows.iter().find(|r| r.name == "caption").unwrap();
     assert_eq!(caption.effective(), Some(&Value::Text("OK".into())));
-    let events = events(form, &name("button1"), doc.registry()).unwrap();
+    let events = events(doc.forms(), form, &name("button1"), doc.registry()).unwrap();
     assert_eq!(events[0].name, "on_click");
     assert_eq!(
         suggest_handler(&name("button1"), "on_click").as_str(),

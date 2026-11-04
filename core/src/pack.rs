@@ -35,6 +35,7 @@
 //! provides = ["sqlx.pool"]              # or [{ capability = "…", description = "…" }]
 //! requires = [{ capability = "tokio.runtime" }]
 //! cargo = [{ crate = "sqlx", version = "0.9", features = ["postgres"], default-features = true }]
+//! # only if a property has a value: { crate = "sqlx", …, features = ["mysql"], when = { driver = "MySql" } }
 //!
 //! [component.properties.max_connections]   # snake_case, order is kept
 //! type = "int"
@@ -43,7 +44,7 @@
 //! default = 5
 //!
 //! [component.events.on_row]
-//! params = [{ name = "row", type = "&sqlx::postgres::PgRow" }]
+//! params = [{ name = "row", type = "&sqlx::postgres::PgRow" }]   # type may be a template over props/refs
 //! returns = "bool"                      # optional
 //!
 //! [component.codegen]                   # optional: how the component appears in generated code
@@ -116,7 +117,7 @@
 //! `when` is one of `{ property-set = "name" }`, `{ referenced-by = "cap" }`,
 //! `{ project-provides = "cap" }` (omitted = always).
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::path::{Path, PathBuf};
 
@@ -379,6 +380,8 @@ struct RawCargo {
     features: Vec<String>,
     #[serde(default = "yes")]
     default_features: bool,
+    #[serde(default)]
+    when: BTreeMap<String, toml::Value>,
 }
 
 fn yes() -> bool {
@@ -1104,6 +1107,17 @@ impl Checker<'_> {
             version: cargo.version.clone(),
             features: cargo.features.clone(),
             default_features: cargo.default_features,
+            when: cargo
+                .when
+                .iter()
+                .map(|(name, value)| {
+                    let text = match value {
+                        toml::Value::String(s) => s.clone(),
+                        other => other.to_string(),
+                    };
+                    (name.clone(), text)
+                })
+                .collect(),
         }
     }
 

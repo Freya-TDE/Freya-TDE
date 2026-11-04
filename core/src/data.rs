@@ -1,10 +1,10 @@
 //! Data binding: list widgets filled from a data source (like Delphi's
 //! `TDBLookupComboBox` with `TQuery`).
 //!
-//! A **data source** is a component type with a [`DataSpec`] (e.g. the SQLx
+//! A **data source** is a component type with a [`DataSpec`](crate::component_type::DataSpec) (e.g. the SQLx
 //! `Query`): it provides the capability [`ROWS`] and has the property
 //! `columns` – one entry per column, `name: Type` (e.g. `id: i64`,
-//! `name: String`). A **list widget** is a widget type with a [`ListSpec`]
+//! `name: String`). A **list widget** is a widget type with a [`ListSpec`](crate::component_type::ListSpec)
 //! (drop-down, list box …) or a [`TableSpec`](crate::TableSpec) (data grid);
 //! it gets the properties
 //!

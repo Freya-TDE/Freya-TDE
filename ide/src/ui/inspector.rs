@@ -315,7 +315,8 @@ impl InspectorWindow {
         };
         let registry = session.document().registry();
         let rows = properties(form, &target.name, registry).unwrap_or_default();
-        let event_rows = events(form, &target.name, registry).unwrap_or_default();
+        let event_rows =
+            events(session.document().forms(), form, &target.name, registry).unwrap_or_default();
         // Kandidaten für Verweise: alle Elemente des Projekts.
         let candidates: Vec<(ComponentPath, Option<tdr_core::TypeRef>)> = session
             .document()

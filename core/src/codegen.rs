@@ -40,6 +40,7 @@
 //! | `props.<property>` | the value as data: bool, number, string, `{r, g, b, a}`, `{x, y}`, `{width, height}`, list; references as `"form::name"` or none |
 //! | `rust.<property>` | the value as a Rust expression: literals, `vec![…]`, the dependency for references (by the target's [`ShareMode`]), `cfg` blocks for platform overrides; none if unset or unconnected |
 //! | `events.<event>` | the handler name or none |
+//! | `refs.<property>` | for a set reference: the target's `name`, `form`, `type` and `props` (e.g. `refs.pool.props.driver`); missing if unset – test with `is defined` |
 //!
 //! The backend's `form` template ([`crate::BackendDescriptor::form`]) gets
 //! `form` (`{name, struct, data_module}`), `root` (the widget tree or none),
@@ -720,6 +721,109 @@ struct Generated {
 /// How references are written in a template's `rust` values.
 type Resolve<'r> = &'r dyn Fn(&ComponentPath) -> Option<String>;
 
+/// The property values of an element as template data (with defaults).
+fn props_data(
+    form: &Form,
+    element: &dyn Element,
+    ty: &ComponentType,
+    registry: &TypeRegistry,
+) -> BTreeMap<String, JValue> {
+    let component = element.component();
+    registry
+        .property_defs(&ty.type_ref, &form.backend)
+        .into_iter()
+        .filter_map(|def| {
+            let value = match (component.get(&def.name), &def.default) {
+                (Some(value), _) => value.value.clone(),
+                (None, Some(default)) => default.clone(),
+                (None, None) => return None,
+            };
+            Some((def.name.clone(), data(&value)))
+        })
+        .collect()
+}
+
+/// `refs` for templates: per reference property the target component
+/// (`name`, `form`, `type` = type reference, `props`), so a template can
+/// depend on what it points to (`refs.pool.props.driver`). Unset or
+/// dangling references are missing (validation reports them).
+fn refs_data(
+    forms: &[Form],
+    form: &Form,
+    element: &dyn Element,
+    registry: &TypeRegistry,
+) -> JValue {
+    let component = element.component();
+    let mut refs = BTreeMap::new();
+    for (name, value) in &component.properties {
+        let Value::Reference(Some(path)) = &value.value else {
+            continue;
+        };
+        let target = path.qualified(&form.name);
+        let Some(target_form) = forms.iter().find(|f| target.form.as_ref() == Some(&f.name)) else {
+            continue;
+        };
+        let Some(target_element) = target_form.element(&target.name) else {
+            continue;
+        };
+        let Some(target_ty) = registry.get(target_element.type_ref()) else {
+            continue;
+        };
+        refs.insert(
+            name.clone(),
+            minijinja::context! {
+                name => target.name.as_str(),
+                form => target_form.name.as_str(),
+                type => target_ty.type_ref.to_string(),
+                props => props_data(target_form, target_element, target_ty, registry),
+            },
+        );
+    }
+    JValue::from(refs)
+}
+
+/// The parameters of `event` on `element`. Parameter types may be templates
+/// (`&sqlx::{{ ... }}Row`) over `props` and `refs` of the element, so they can
+/// follow its settings; a type that fails to render is kept as written.
+pub fn event_params(
+    forms: &[Form],
+    form: &Form,
+    element: &dyn Element,
+    registry: &TypeRegistry,
+    def: &crate::EventDef,
+) -> Vec<EventParam> {
+    if !def
+        .params
+        .iter()
+        .any(|p| p.rust_type.contains("{{") || p.rust_type.contains("{%"))
+    {
+        return def.params.clone();
+    }
+    let Some(ty) = registry.get(element.type_ref()) else {
+        return def.params.clone();
+    };
+    let env = environment();
+    let context = minijinja::context! {
+        name => element.name().as_str(),
+        form => form.name.as_str(),
+        props => props_data(form, element, ty, registry),
+        refs => refs_data(forms, form, element, registry),
+    };
+    def.params
+        .iter()
+        .map(|p| {
+            let rust_type = env
+                .render_str(&p.rust_type, &context)
+                .map(|t| t.trim().to_owned())
+                .unwrap_or_else(|_| p.rust_type.clone());
+            EventParam {
+                name: p.name.clone(),
+                rust_type,
+            }
+        })
+        .collect()
+}
+
 /// `props`, `rust` and `events` of an element.
 fn element_data(
     form: &Form,
@@ -798,8 +902,10 @@ fn check_rust(issues: &mut Vec<CodegenIssue>, part: &str, text: &str, result: sy
 }
 
 /// Renders the templates of one component.
+#[allow(clippy::too_many_arguments)]
 fn render_component(
     env: &Environment<'static>,
+    forms: &[Form],
     form: &Form,
     element: &dyn Element,
     ty: &ComponentType,
@@ -820,6 +926,7 @@ fn render_component(
         props => props,
         rust => rust,
         events => events,
+        refs => refs_data(forms, form, element, registry),
     };
 
     let mut issues = Vec::new();
@@ -969,7 +1076,7 @@ pub fn generate(
             }
             continue;
         };
-        match render_component(&env, form, element, ty, spec, registry, &known) {
+        match render_component(&env, forms, form, element, ty, spec, registry, &known) {
             Ok(g) => {
                 known.insert(g.path.clone(), (g.var.clone(), spec.share));
                 generated.push(g);
@@ -1008,7 +1115,7 @@ pub fn generate(
             source,
             &mut out,
         ));
-        files.push(form_user_file(form, registry, source, &mut out));
+        files.push(form_user_file(forms, form, registry, source, &mut out));
     }
 
     let mut source_map = Vec::new();
@@ -1756,7 +1863,12 @@ struct Handler {
 
 /// The form's handlers in order of first use; handlers serving events with
 /// different signatures are reported and left out.
-fn handlers(form: &Form, registry: &TypeRegistry, out: &mut Diagnostics) -> Vec<Handler> {
+fn handlers(
+    forms: &[Form],
+    form: &Form,
+    registry: &TypeRegistry,
+    out: &mut Diagnostics,
+) -> Vec<Handler> {
     let mut list: Vec<Handler> = Vec::new();
     let mut conflicts: BTreeMap<HandlerName, Vec<String>> = BTreeMap::new();
     for element in form.elements() {
@@ -1766,9 +1878,10 @@ fn handlers(form: &Form, registry: &TypeRegistry, out: &mut Diagnostics) -> Vec<
         let component = element.component();
         for (event, handler) in &component.events {
             let Some(def) = ty.event(event) else { continue };
+            let params = event_params(forms, form, element, registry, def);
             let use_ = format!("{}.{event}", component.name);
             match list.iter_mut().find(|h| &h.name == handler) {
-                Some(h) if h.params == def.params && h.returns == def.returns => h.uses.push(use_),
+                Some(h) if h.params == params && h.returns == def.returns => h.uses.push(use_),
                 Some(h) => {
                     conflicts
                         .entry(handler.clone())
@@ -1777,7 +1890,7 @@ fn handlers(form: &Form, registry: &TypeRegistry, out: &mut Diagnostics) -> Vec<
                 }
                 None => list.push(Handler {
                     name: handler.clone(),
-                    params: def.params.clone(),
+                    params,
                     returns: def.returns.clone(),
                     uses: vec![use_],
                 }),
@@ -1831,6 +1944,7 @@ fn stub(handler: &Handler) -> String {
 }
 
 fn form_user_file(
+    forms: &[Form],
     form: &Form,
     registry: &TypeRegistry,
     source: &dyn FileSource,
@@ -1839,7 +1953,7 @@ fn form_user_file(
     let path = format!("src/{}.rs", form.name);
     let struct_name = pascal_case(form.name.as_str());
     let mut stubs = Vec::new();
-    for handler in handlers(form, registry, out) {
+    for handler in handlers(forms, form, registry, out) {
         let text = stub(&handler);
         match syn::parse_str::<syn::ImplItem>(&text) {
             Ok(_) => stubs.push((handler.name, text)),

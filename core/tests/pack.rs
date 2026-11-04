@@ -64,7 +64,10 @@ fn real_packs_load() {
     let pool = registry.get(&TypeRef::pack("sqlx", "Pool")).unwrap();
     // Property order follows the file (object inspector).
     let names: Vec<&str> = pool.properties.iter().map(|p| p.name.as_str()).collect();
-    assert_eq!(names, ["url", "max_connections", "connect_timeout"]);
+    assert_eq!(
+        names,
+        ["driver", "url", "max_connections", "connect_timeout"]
+    );
     assert!(pool.property("url").unwrap().is_required());
     assert_eq!(
         pool.property("max_connections").unwrap().default,
@@ -77,10 +80,9 @@ fn real_packs_load() {
         Some(Value::Enum("MultiThread".into()))
     );
     let query = registry.get(&TypeRef::pack("sqlx", "Query")).unwrap();
-    assert_eq!(
-        query.event("on_row").unwrap().params[0].rust_type,
-        "&sqlx::postgres::PgRow"
-    );
+    // The row type follows the pool's driver (template over `refs`).
+    let row = &query.event("on_row").unwrap().params[0].rust_type;
+    assert!(row.contains("refs.pool.props.driver") && row.contains("MySqlRow"));
 }
 
 #[test]
@@ -483,7 +485,7 @@ init-file = "../secret.j2"
     let registry = registry();
     let pool = registry.get(&TypeRef::pack("sqlx", "Pool")).unwrap();
     let codegen = pool.codegen.as_ref().unwrap();
-    assert_eq!(codegen.rust_type, "sqlx::PgPool");
+    assert!(codegen.rust_type.contains("PgPool") && codegen.rust_type.contains("SqlitePool"));
     assert!(codegen.is_async);
     let runtime = registry.get(&TypeRef::pack("tokio", "Runtime")).unwrap();
     assert!(runtime.codegen.as_ref().unwrap().entry.is_some());
