@@ -15,6 +15,21 @@ Jedes Pack ist ein Ordner mit einer `pack.toml`; Codegen-Templates stehen im Abs
 | `sqlx` | `Pool`, `Query` | `sqlx.pool`, `sqlx.query`; Pool braucht `tokio.runtime`, Query braucht `sqlx.pool` |
 | `axum` | `Router` | `http.router`; braucht `sqlx.pool` nur, wenn eine Query angehängt ist |
 
+## Datenquelle für Listen / data source for lists
+
+Die SQLx-`Query` ist eine Datenquelle (`[component.data]`, Fähigkeit `data.rows`): Unter `columns` stehen ihre
+Spalten mit Typ (`id: i64`, `name: String`, `note: Option<String>`). Eine DropDown/ListBox/ComboBox … wählt im
+Objektinspektor `data_source` (die Query), `display_field` (angezeigte Spalte), `value_field` (Schlüssel) und
+`load` (`Start` = beim Öffnen laden, `Manual` = `self.<liste>_reload()`). Geladen wird im Hintergrund auf Tokio;
+`self.<liste>_selected_value()` liefert den Schlüssel der Auswahl, typisiert nach `columns`.
+*The SQLx `Query` is a data source: list widgets pick it as `data_source` plus display and value columns.*
+
+```toml
+[component.data]
+fetch = "sqlx::query(source.1).fetch_all(&source.0).await?"     # Zeilen; `source` = Wert der Komponente
+get = "sqlx::Row::try_get::<{{ type }}, _>({{ row }}, {{ column | rust_str }})?"
+```
+
 ## Neues Pack / new pack
 
 1. Ordner `components/<name>/` mit `pack.toml` anlegen – Vorlage: `sqlx/pack.toml`. Symbol: `icon = "…"`,

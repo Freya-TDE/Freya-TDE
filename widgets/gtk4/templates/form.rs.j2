@@ -253,7 +253,9 @@ impl {{ form.struct }} {
         // Schließen: `on_close` darf es verhindern; das Hauptformular beendet
         // das Programm.
         {
+        {%- if root.events.on_close %}
             let weak = weak.clone();
+        {%- endif %}
             form.{{ root.name }}.connect_close_request(move |_| {
                 #[allow(unused_mut)]
                 let mut close = true;
@@ -270,6 +272,22 @@ impl {{ form.struct }} {
             });
         }
         drop(form);
+        // Daten der Listen: beim Öffnen laden, Ergebnisse alle 100 ms übernehmen.
+        this.borrow().freya_start_data();
+    {%- if data_bound %}
+        {
+            let weak = weak.clone();
+            gtk4::glib::timeout_add_local(std::time::Duration::from_millis(100), move || {
+                let Some(form) = weak.upgrade() else {
+                    return gtk4::glib::ControlFlow::Break;
+                };
+                if let Ok(mut form) = form.try_borrow_mut() {
+                    form.freya_take_data();
+                }
+                gtk4::glib::ControlFlow::Continue
+            });
+        }
+    {%- endif %}
     {%- if root.events.on_create %}
         Self::freya_call(&weak, |f| f.{{ root.events.on_create }}());
     {%- endif %}

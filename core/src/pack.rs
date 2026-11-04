@@ -54,6 +54,14 @@
 //! share = "clone"                       # how dependents get it: "clone" (default), "arc", "ref"
 //! # entry = "#[tokio::main]"            # makes this component the async runtime
 //!
+//! [component.data]                      # optional: a data source for list widgets (see tdr_core::data)
+//! fetch = "sqlx::query(…).fetch_all(…).await?"   # rows, in an async block; `source` = the component's value
+//! get = "sqlx::Row::try_get::<{{ type }}, _>({{ row }}, {{ column | rust_str }})?"
+//!
+//! [component.list]                      # optional, backend widgets: can be filled from a data source
+//! set-items = "…"                       # statements putting `items: Vec<String>` into the widget
+//! selected = "…"                        # expression: Option<usize>
+//!
 //! [[extend]]                            # backend packs only: add properties to existing types
 //! type = "core/Button"
 //! [extend.properties.small]
@@ -209,6 +217,22 @@ struct RawComponent {
     #[serde(default)]
     cargo: Vec<RawCargo>,
     codegen: Option<RawCodegen>,
+    data: Option<RawData>,
+    list: Option<RawList>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "kebab-case")]
+struct RawData {
+    fetch: String,
+    get: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "kebab-case")]
+struct RawList {
+    set_items: String,
+    selected: String,
 }
 
 #[derive(Deserialize)]
@@ -892,7 +916,50 @@ impl Checker<'_> {
         if let Some(codegen) = &raw.codegen {
             ty.codegen = self.codegen(&format!("{location}, codegen"), kind, codegen);
         }
+        if let Some(data) = &raw.data {
+            if kind.is_widget() {
+                self.problem(
+                    &format!("{location}, data"),
+                    "a data source must be non-visual",
+                );
+            }
+            self.check_templates(
+                &format!("{location}, data"),
+                &[("fetch", &data.fetch), ("get", &data.get)],
+            );
+            ty.data = Some(crate::component_type::DataSpec {
+                fetch: data.fetch.clone(),
+                get: data.get.clone(),
+            });
+        }
+        if let Some(list) = &raw.list {
+            if !kind.is_widget() {
+                self.problem(
+                    &format!("{location}, list"),
+                    "only widgets can be list widgets",
+                );
+            }
+            self.check_templates(
+                &format!("{location}, list"),
+                &[("set-items", &list.set_items), ("selected", &list.selected)],
+            );
+            ty.list = Some(crate::component_type::ListSpec {
+                set_items: list.set_items.clone(),
+                selected: list.selected.clone(),
+            });
+        }
+        crate::data::complete(&mut ty);
         Some(ty)
+    }
+
+    fn check_templates(&mut self, location: &str, templates: &[(&str, &String)]) {
+        for (part, source) in templates {
+            if source.trim().is_empty() {
+                self.problem(location, format!("`{part}` must not be empty"));
+            } else if let Err(message) = crate::codegen::check_template(source) {
+                self.problem(location, format!("template `{part}`: {message}"));
+            }
+        }
     }
 
     fn codegen(&mut self, location: &str, kind: TypeKind, raw: &RawCodegen) -> Option<CodegenSpec> {

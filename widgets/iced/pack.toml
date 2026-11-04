@@ -183,6 +183,11 @@ category = "Value"
 description = "Index of the selected entry"
 [component.events.on_select]
 params = [{ name = "index", type = "u32" }]
+[component.list]
+set-items = """
+self.{{ name }}.items = items;
+"""
+selected = """(self.{{ name }}.value < self.{{ name }}.items.len()).then_some(self.{{ name }}.value)"""
 [component.codegen]
 type = "crate::app::Control<usize>"
 init = "crate::app::Control::new({{ props.selected }}usize).with_items::<&str>({{ rust.items }}).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
@@ -207,6 +212,11 @@ description = "Index of the selected entry (-1 = none)"
 [component.events.on_select]
 params = [{ name = "index", type = "i32" }]
 description = "Selection changed"
+[component.list]
+set-items = """
+self.{{ name }}.items = items;
+"""
+selected = """usize::try_from(self.{{ name }}.value).ok()"""
 [component.codegen]
 type = "crate::app::Control<i32>"
 init = "crate::app::Control::new({{ props.selected }}i32).with_items::<&str>({{ rust.items }}).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"

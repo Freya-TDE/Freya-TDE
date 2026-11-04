@@ -113,6 +113,22 @@ impl Props<'_> {
         texts(self.value(widget, property))
     }
 
+    /// The entries of a list widget: its `items`, or – when it is filled
+    /// from a data source – one placeholder `⟨source.column⟩`.
+    pub fn list_items(&self, widget: &Widget) -> Vec<String> {
+        use tdr_core::data::{DATA_SOURCE, DISPLAY_FIELD};
+        if let Some(Value::Reference(Some(source))) = self.value(widget, DATA_SOURCE) {
+            let display = self.text(widget, DISPLAY_FIELD).unwrap_or_default();
+            let display = if display.is_empty() {
+                "?"
+            } else {
+                display.as_str()
+            };
+            return vec![format!("⟨{source}.{display}⟩")];
+        }
+        self.texts(widget, "items")
+    }
+
     /// How the type of `widget` is drawn (`look` of its type).
     pub fn look(&self, widget: &Widget) -> Option<&str> {
         self.registry

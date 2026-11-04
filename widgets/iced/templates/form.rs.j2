@@ -133,6 +133,10 @@ pub enum Message {
 {%- if root.events.on_close %}
     close_requested(iced::window::Id),
 {%- endif %}
+{%- if data_bound %}
+    /// Rows of a list arrived (data binding).
+    freya_data,
+{%- endif %}
 }
 
 impl {{ form.struct }} {
@@ -155,6 +159,8 @@ impl {{ form.struct }} {
 
     /// Called once before the window opens.
     pub fn freya_created(&mut self) {
+        // Daten der Listen laden (im Hintergrund).
+        self.freya_start_data();
     {%- if root.events.on_create %}
         self.{{ root.events.on_create }}();
     {%- endif %}
@@ -162,17 +168,26 @@ impl {{ form.struct }} {
 
     /// Events from outside the widgets (closing the window).
     pub fn subscription(&self) -> iced::Subscription<Message> {
-    {%- if root.events.on_close %}
-        iced::window::close_requests().map(Message::close_requested)
-    {%- else %}
-        iced::Subscription::none()
-    {%- endif %}
+        iced::Subscription::batch([
+        {%- if root.events.on_close %}
+            iced::window::close_requests().map(Message::close_requested),
+        {%- endif %}
+        {%- if data_bound %}
+            iced::Subscription::run(freya_data_events),
+        {%- endif %}
+            iced::Subscription::none(),
+        ])
     }
 
     /// Applies `message` to the state and calls the handler.
     #[allow(unused_variables, clippy::needless_return)]
     pub fn update(&mut self, message: Message) -> iced::Task<Message> {
         match message {
+        {%- if data_bound %}
+            Message::freya_data => {
+                self.freya_take_data();
+            }
+        {%- endif %}
         {%- for c in widgets if c.field %}
         {%- set t = c.type %}
         {%- set e = c.events %}
@@ -415,4 +430,18 @@ impl {{ form.struct }} {
     }
 {%- endfor %}
 }
+{%- if data_bound %}
+
+/// Wakes the program when rows of a list arrived (data binding).
+fn freya_data_events() -> impl iced::futures::Stream<Item = Message> {
+    use iced::futures::StreamExt as _;
+    let (sender, receiver) = iced::futures::channel::mpsc::unbounded::<()>();
+    // Einmal sofort: schon fertige Ladevorgänge übernehmen.
+    let _ = sender.unbounded_send(());
+    crate::app::freya_set_waker(move || {
+        let _ = sender.unbounded_send(());
+    });
+    receiver.map(|()| Message::freya_data)
+}
+{%- endif %}
 {%- endif %}

@@ -165,3 +165,52 @@ fn main_menu_adds_a_menu_bar() {
     assert!(has_text(&primitives, "Datei") && has_text(&primitives, "Hilfe"));
     assert!(!has_text(&render(&plain, &a, &registry, &theme), "Datei"));
 }
+
+#[test]
+fn bound_lists_show_their_source() {
+    let mut registry = TypeRegistry::with_builtins();
+    let pack = r#"
+[pack]
+name = "demo2"
+version = "0.1.0"
+kind = "backend"
+license = "MIT"
+generated-code-license = "MIT"
+
+[[component]]
+name = "Choice"
+kind = "widget"
+look = "dropdown"
+[component.properties.items]
+type = "list"
+item = "text"
+[component.list]
+set-items = "let _ = items;"
+selected = "None"
+"#;
+    Pack::parse(pack).unwrap().register(&mut registry).unwrap();
+    let mut form = Form::new(
+        name("main_form"),
+        "demo2",
+        Widget::new(name("window"), builtin::form()),
+    );
+    form.add_widget(
+        &name("window"),
+        Widget::from_component(
+            Component::new(name("choice"), TypeRef::backend("demo2", "Choice"))
+                .with(
+                    tdr_core::data::DATA_SOURCE,
+                    Value::reference_on(name("services"), name("customers")),
+                )
+                .with(tdr_core::data::DISPLAY_FIELD, "name"),
+        ),
+    )
+    .unwrap();
+    let theme = theme();
+    let laid = layout(&form, &registry, &theme);
+    let primitives = render(&form, &laid, &registry, &theme);
+    assert!(
+        has_text(&primitives, "⟨services::customers.name⟩"),
+        "{primitives:#?}"
+    );
+}

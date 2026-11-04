@@ -223,6 +223,9 @@ pub enum CodegenIssue {
     /// A user file cannot be parsed, so missing handler stubs cannot be
     /// determined; the file is left alone.
     UserFileUnparsable { file: String, message: String },
+    /// A list widget's data binding is incomplete or wrong (unknown source
+    /// or column, no async runtime …).
+    DataBinding { message: String },
     /// `started` in `main.rs` is missing or its asyncness does not match
     /// the project (async runtime or not).
     StartedSignature { file: String, expected: String },
@@ -311,6 +314,7 @@ impl fmt::Display for CodegenIssue {
                 let forms: Vec<&str> = forms.iter().map(ComponentName::as_str).collect();
                 write!(f, "forms {} all become struct {name}", forms.join(", "))
             }
+            CodegenIssue::DataBinding { message } => write!(f, "data binding: {message}"),
             CodegenIssue::UserFileUnparsable { file, message } => write!(
                 f,
                 "{file} cannot be parsed ({message}); missing handler stubs were not added"
@@ -979,6 +983,7 @@ pub fn generate(
     }
 
     let start = start(backend, &generated, &mut out);
+    let bindings = data_bindings(forms, &generated, registry, &env, &start, &mut out);
     let mut cargo = analysis.cargo.clone();
     if let Some(backend) = backend {
         merge_cargo(&mut cargo, &backend.cargo);
@@ -987,11 +992,21 @@ pub fn generate(
     let mut files = vec![
         manifest(project, &cargo, source, &mut out),
         main_file(start.started_is_async(), source, &mut out),
-        app_file(forms, &generated, &start, backend, &env, source, &mut out),
+        app_file(
+            forms, &generated, &bindings, &start, backend, &env, source, &mut out,
+        ),
     ];
     for form in forms {
+        let form_bindings = bindings.get(&form.name).map_or(&[][..], Vec::as_slice);
         files.push(form_gen_file(
-            form, &generated, registry, backend, &env, source, &mut out,
+            form,
+            &generated,
+            form_bindings,
+            registry,
+            backend,
+            &env,
+            source,
+            &mut out,
         ));
         files.push(form_user_file(form, registry, source, &mut out));
     }
@@ -1371,9 +1386,11 @@ fn form_data(form: &Form) -> JValue {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn app_file(
     forms: &[Form],
     generated: &[Generated],
+    bindings: &HashMap<ComponentName, Vec<Binding>>,
     start: &Start,
     backend: Option<&BackendDescriptor>,
     env: &Environment<'static>,
@@ -1411,6 +1428,16 @@ fn app_file(
         code.push_str(&g.statement);
         code.push('\n');
     }
+    // Datenquellen der Listen: Kopien, bevor die Formulare ihre Felder nehmen.
+    for form in forms {
+        for b in bindings.get(&form.name).into_iter().flatten() {
+            let _ = writeln!(
+                code,
+                "let {}__{}__source = {}.clone();",
+                form.name, b.widget, b.source_var
+            );
+        }
+    }
     code.push_str("Ok(Self {\n");
     for form in forms {
         let _ = write!(
@@ -1423,9 +1450,19 @@ fn app_file(
         for g in form_components(form, generated) {
             let _ = write!(code, "{}: {},", g.path.name, g.var);
         }
+        for b in bindings.get(&form.name).into_iter().flatten() {
+            let _ = write!(
+                code,
+                "{0}_source: {1}__{0}__source, {0}_values: Vec::new(), {0}_pending: crate::app::Pending::default(),",
+                b.widget, form.name
+            );
+        }
         code.push_str("},\n");
     }
     code.push_str("})\n}\n}\n");
+    if bindings.values().any(|b| !b.is_empty()) {
+        code.push_str(DATA_HELPERS);
+    }
 
     // The event loop of the backend.
     let runtime_var = matches!(start, Start::Runtime(_)).then_some("runtime");
@@ -1504,6 +1541,8 @@ fn app_file(
                 code,
                 "pub fn run() -> Result<(), Error> {{\n{setup}\n\
                  let runtime = {runtime};\n\
+                 // Tokio-Kontext für den UI-Thread (z. B. Daten im Hintergrund laden).\n\
+                 let _runtime_guard = runtime.enter();\n\
                  let mut app = runtime.block_on(App::init())?;\n\
                  crate::started(&mut app)?;\n{ui}\n}}\n"
             );
@@ -1634,9 +1673,11 @@ fn placement_data(placement: &Placement) -> JValue {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn form_gen_file(
     form: &Form,
     generated: &[Generated],
+    bindings: &[Binding],
     registry: &TypeRegistry,
     backend: Option<&BackendDescriptor>,
     env: &Environment<'static>,
@@ -1664,7 +1705,19 @@ fn form_gen_file(
             g.type_ref, g.path.name, g.field_type
         );
     }
+    for b in bindings {
+        let _ = writeln!(
+            code,
+            "/// Data source of `{0}`.\npub {0}_source: {1},\n\
+             /// Values (`{2}`) of the entries of `{0}`.\npub {0}_values: Vec<{3}>,\n\
+             /// Rows of `{0}` loaded in the background.\npub {0}_pending: crate::app::Pending<Vec<({3}, String)>>,",
+            b.widget, b.source_type, b.value_field, b.value_type
+        );
+    }
     code.push_str("}\n");
+    if form.root.is_some() {
+        code.push_str(&data_impl(form, bindings));
+    }
 
     // The backend's code for the form (drawing, building, event dispatch).
     if let Some(template) = backend.and_then(|b| b.form.as_ref()) {
@@ -1675,6 +1728,7 @@ fn form_gen_file(
         };
         let context = minijinja::context! {
             form => form_data(form),
+            data_bound => !bindings.is_empty(),
             root => form.root.as_ref().map(|r| data.widget(r)),
             widgets => form.widgets().into_iter().map(|w| data.widget(w)).collect::<Vec<_>>(),
             components => form.components.iter().map(|c| data.node(c, Vec::new(), None)).collect::<Vec<_>>(),
@@ -1886,6 +1940,339 @@ fn form_user_file(
     content.push_str(&block);
     file(&path, FileKind::User, content, source)
 }
+
+// --- Data binding ----------------------------------------------------------------------
+
+/// A list widget filled from a data source (see [`crate::data`]).
+struct Binding {
+    widget: String,
+    /// `App::init` variable of the data source.
+    source_var: String,
+    source_type: String,
+    /// Column with the key (empty = the text).
+    value_field: String,
+    value_type: String,
+    /// Rendered templates of the source and the widget.
+    fetch: String,
+    get_text: String,
+    get_value: Option<String>,
+    start: bool,
+    set_items: String,
+    selected: String,
+}
+
+/// The data bindings of all forms, checked.
+fn data_bindings(
+    forms: &[Form],
+    generated: &[Generated],
+    registry: &TypeRegistry,
+    env: &Environment<'static>,
+    start: &Start,
+    out: &mut Diagnostics,
+) -> HashMap<ComponentName, Vec<Binding>> {
+    use crate::data::{
+        COLUMNS, DATA_SOURCE, DISPLAY_FIELD, LOAD, VALUE_FIELD, parse_columns, texts,
+    };
+    let mut all: HashMap<ComponentName, Vec<Binding>> = HashMap::new();
+    for form in forms {
+        let root_name = form.root.as_ref().map(|r| r.component.name.to_string());
+        for widget in form.widgets() {
+            let Some(list) = registry
+                .get(&widget.component.type_ref)
+                .and_then(|t| t.list.as_ref())
+            else {
+                continue;
+            };
+            let Some(Value::Reference(Some(target))) =
+                widget.component.get(DATA_SOURCE).map(|v| &v.value)
+            else {
+                continue;
+            };
+            let path = ComponentPath::on(form.name.clone(), widget.component.name.clone());
+            let mut fail = |message: String| {
+                out.error(Some(path.clone()), CodegenIssue::DataBinding { message });
+            };
+            let target_form = target.target_form(&form.name).clone();
+            let target_path = ComponentPath::on(target_form.clone(), target.name.clone());
+            let Some(source) = generated.iter().find(|g| g.path == target_path) else {
+                fail(format!(
+                    "data source {target} does not exist or has no code"
+                ));
+                continue;
+            };
+            let Some((source_form, element)) = forms
+                .iter()
+                .find(|f| f.name == target_form)
+                .and_then(|f| Some((f, f.element(&target.name)?)))
+            else {
+                fail(format!("data source {target} does not exist"));
+                continue;
+            };
+            let Some((source_ty, data)) = registry
+                .get(element.type_ref())
+                .and_then(|t| Some((t, t.data.as_ref()?)))
+            else {
+                fail(format!("{target} is not a data source"));
+                continue;
+            };
+            let columns =
+                match parse_columns(&texts(element.component().get(COLUMNS).map(|v| &v.value))) {
+                    Ok(columns) => columns,
+                    Err(message) => {
+                        fail(format!("{target}: {message}"));
+                        continue;
+                    }
+                };
+            let text_prop = |name: &str| match widget.component.get(name).map(|v| &v.value) {
+                Some(Value::Text(t)) => t.trim().to_owned(),
+                _ => String::new(),
+            };
+            let names = || {
+                columns
+                    .iter()
+                    .map(|c| c.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            };
+            let display = text_prop(DISPLAY_FIELD);
+            let Some(display) = columns.iter().find(|c| c.name == display) else {
+                fail(if display.is_empty() {
+                    format!(
+                        "`display_field` is empty (columns of {target}: {})",
+                        names()
+                    )
+                } else {
+                    format!("{target} has no column `{display}` (columns: {})", names())
+                });
+                continue;
+            };
+            let value_name = text_prop(VALUE_FIELD);
+            let value = if value_name.is_empty() {
+                None
+            } else {
+                match columns.iter().find(|c| c.name == value_name) {
+                    Some(c) => Some(c),
+                    None => {
+                        fail(format!(
+                            "{target} has no column `{value_name}` (columns: {})",
+                            names()
+                        ));
+                        continue;
+                    }
+                }
+            };
+            if matches!(start, Start::Plain) {
+                fail("loading needs an async runtime in the project (e.g. tokio Runtime)".into());
+                continue;
+            }
+            let load_start = !matches!(widget.component.get(LOAD).map(|v| &v.value), Some(Value::Enum(l)) if l == "Manual");
+
+            // Templates of the source and of the widget.
+            let (props, rust, _) =
+                element_data(source_form, element, source_ty, registry, &|_| None);
+            let mut issues = Vec::new();
+            let fetch = render(
+                env,
+                "fetch",
+                &data.fetch,
+                &minijinja::context! { source => "source", props => props, rust => rust },
+                &mut issues,
+            );
+            let get = |column: &crate::data::Column, issues: &mut Vec<CodegenIssue>| {
+                render(
+                    env,
+                    "get",
+                    &data.get,
+                    &minijinja::context! { row => "row", column => column.name.as_str(), type => column.rust_type.as_str() },
+                    issues,
+                )
+            };
+            let text = get(display, &mut issues);
+            let value_get = value.map(|c| get(c, &mut issues));
+            let list_context = minijinja::context! {
+                name => widget.component.name.as_str(),
+                root => root_name.clone(),
+                form => form_data(form),
+            };
+            let set_items = render(
+                env,
+                "set-items",
+                &list.set_items,
+                &list_context,
+                &mut issues,
+            );
+            let selected = render(env, "selected", &list.selected, &list_context, &mut issues);
+            if !issues.is_empty() {
+                for issue in issues {
+                    out.error(Some(path.clone()), issue);
+                }
+                continue;
+            }
+            let (Some(fetch), Some(text), Some(set_items), Some(selected)) =
+                (fetch, text, set_items, selected)
+            else {
+                continue;
+            };
+            let text = if display.rust_type.starts_with("Option<") {
+                format!("({text}).map(|v| v.to_string()).unwrap_or_default()")
+            } else {
+                format!("({text}).to_string()")
+            };
+            all.entry(form.name.clone()).or_default().push(Binding {
+                widget: widget.component.name.to_string(),
+                source_var: source.var.clone(),
+                source_type: source.field_type.clone(),
+                value_field: value.map_or_else(|| display.name.clone(), |c| c.name.clone()),
+                value_type: value.map_or_else(|| "String".to_owned(), |c| c.rust_type.clone()),
+                fetch,
+                get_text: text,
+                get_value: value_get.flatten(),
+                start: load_start,
+                set_items,
+                selected,
+            });
+        }
+    }
+    all
+}
+
+/// Loading and taking over the data of a form's list widgets (empty
+/// methods without bindings – the backends call them anyway).
+fn data_impl(form: &Form, bindings: &[Binding]) -> String {
+    let mut code = format!(
+        "#[allow(dead_code, unused_variables)]\nimpl {} {{\n",
+        pascal_case(form.name.as_str())
+    );
+    for b in bindings {
+        let value = match &b.get_value {
+            Some(get) => get.clone(),
+            None => "text.clone()".to_owned(),
+        };
+        let _ = write!(
+            code,
+            "/// Loads the entries of `{w}` from its data source in the background (Tokio);\n\
+             /// the form shows them when they arrive.\n\
+             pub fn {w}_reload(&self) {{\n\
+             let source = self.{w}_source.clone();\n\
+             crate::app::freya_spawn_load(self.{w}_pending.clone(), async move {{\n\
+             let rows = {fetch};\n\
+             let mut entries = Vec::new();\n\
+             for row in &rows {{\n\
+             let text: String = {text};\n\
+             let value: {vt} = {value};\n\
+             entries.push((value, text));\n\
+             }}\n\
+             Ok(entries)\n\
+             }});\n\
+             }}\n\
+             /// The value (`{vf}`) of the selected entry of `{w}`.\n\
+             pub fn {w}_selected_value(&self) -> Option<{vt}> {{\n\
+             let index: Option<usize> = {selected};\n\
+             index.and_then(|i| self.{w}_values.get(i).cloned())\n\
+             }}\n",
+            w = b.widget,
+            fetch = b.fetch,
+            text = b.get_text,
+            vt = b.value_type,
+            vf = b.value_field,
+            selected = b.selected,
+        );
+    }
+    code.push_str(
+        "/// Starts the loads marked `Start` (the backend calls it when the form opens).\n\
+         pub fn freya_start_data(&self) {\n",
+    );
+    for b in bindings.iter().filter(|b| b.start) {
+        let _ = writeln!(code, "self.{}_reload();", b.widget);
+    }
+    code.push_str(
+        "}\n/// Takes loaded rows into the list widgets; `true` if something arrived.\n\
+         pub fn freya_take_data(&mut self) -> bool {\n\
+         #[allow(unused_mut)]\n\
+         let mut changed = false;\n",
+    );
+    for b in bindings {
+        let _ = write!(
+            code,
+            "if let Some(result) = self.{w}_pending.take() {{\n\
+             changed = true;\n\
+             match result {{\n\
+             Ok(entries) => {{\n\
+             let (values, items): (Vec<{vt}>, Vec<String>) = entries.into_iter().unzip();\n\
+             self.{w}_values = values;\n\
+             {set}\n\
+             }}\n\
+             Err(error) => eprintln!(\"{w}: {{error}}\"),\n\
+             }}\n\
+             }}\n",
+            w = b.widget,
+            vt = b.value_type,
+            set = b.set_items,
+        );
+    }
+    code.push_str("changed\n}\n}\n");
+    code
+}
+
+/// Helpers in `app.gen.rs` when a form has data bindings.
+const DATA_HELPERS: &str = r#"
+/// The result of a background load, taken over by its form.
+#[allow(dead_code)]
+pub struct Pending<T>(std::sync::Arc<std::sync::Mutex<Option<Result<T, Error>>>>);
+
+impl<T> Default for Pending<T> {
+    fn default() -> Self {
+        Self(Default::default())
+    }
+}
+
+impl<T> Clone for Pending<T> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
+
+#[allow(dead_code)]
+impl<T> Pending<T> {
+    /// The result, once it is there.
+    pub fn take(&self) -> Option<Result<T, Error>> {
+        self.0.lock().ok()?.take()
+    }
+
+    fn put(&self, result: Result<T, Error>) {
+        if let Ok(mut slot) = self.0.lock() {
+            *slot = Some(result);
+        }
+    }
+}
+
+/// Called when a background load is done (set by the UI backend).
+static FREYA_WAKER: std::sync::Mutex<Option<Box<dyn Fn() + Send + Sync>>> =
+    std::sync::Mutex::new(None);
+
+/// Sets what wakes the UI when a background load is done.
+#[allow(dead_code)]
+pub fn freya_set_waker(waker: impl Fn() + Send + Sync + 'static) {
+    if let Ok(mut slot) = FREYA_WAKER.lock() {
+        *slot = Some(Box::new(waker));
+    }
+}
+
+/// Runs `load` on the Tokio runtime and hands the result to `pending`.
+pub fn freya_spawn_load<T: Send + 'static>(
+    pending: Pending<T>,
+    load: impl std::future::Future<Output = Result<T, Error>> + Send + 'static,
+) {
+    tokio::runtime::Handle::current().spawn(async move {
+        pending.put(load.await);
+        if let Ok(waker) = FREYA_WAKER.lock() {
+            if let Some(waker) = waker.as_ref() {
+                waker();
+            }
+        }
+    });
+}
+"#;
 
 #[cfg(test)]
 mod tests {

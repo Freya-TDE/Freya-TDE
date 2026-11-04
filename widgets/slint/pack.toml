@@ -169,6 +169,13 @@ category = "Value"
 description = "Index of the selected entry"
 [component.events.on_select]
 params = [{ name = "index", type = "i32" }]
+[component.list]
+set-items = """
+self.{{ root }}.set_{{ name }}_items(slint::ModelRc::new(slint::VecModel::from(
+    items.into_iter().map(slint::SharedString::from).collect::<Vec<_>>(),
+)));
+"""
+selected = """usize::try_from(self.{{ root }}.get_{{ name }}_selected()).ok()"""
 
 [[component]]
 name = "ListView"
@@ -189,6 +196,13 @@ category = "Value"
 description = "Index of the selected entry (-1 = none)"
 [component.events.on_select]
 params = [{ name = "index", type = "i32" }]
+[component.list]
+set-items = """
+self.{{ root }}.set_{{ name }}_items(slint::ModelRc::new(slint::VecModel::from(
+    items.iter().map(|item| slint::StandardListViewItem::from(item.as_str())).collect::<Vec<_>>(),
+)));
+"""
+selected = """usize::try_from(self.{{ root }}.get_{{ name }}_selected()).ok()"""
 
 [[component]]
 name = "TextEdit"

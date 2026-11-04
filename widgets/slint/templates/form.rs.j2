@@ -485,7 +485,9 @@ impl {{ form.struct }} {
         );
     {%- endfor %}
         if main {
+        {%- if root.events.on_close %}
             let weak = weak.clone();
+        {%- endif %}
             form.{{ root.name }}.window().on_close_requested(move || {
                 #[allow(unused_mut)]
                 let mut close = true;
@@ -500,6 +502,23 @@ impl {{ form.struct }} {
             });
         }
         drop(form);
+        // Daten der Listen: beim Öffnen laden, Ergebnisse alle 100 ms übernehmen.
+        this.borrow().freya_start_data();
+    {%- if data_bound %}
+        {
+            let weak = weak.clone();
+            let timer = slint::Timer::default();
+            timer.start(slint::TimerMode::Repeated, std::time::Duration::from_millis(100), move || {
+                if let Some(form) = weak.upgrade() {
+                    if let Ok(mut form) = form.try_borrow_mut() {
+                        form.freya_take_data();
+                    }
+                }
+            });
+            // Der Zeitgeber läuft so lange wie das Programm.
+            std::mem::forget(timer);
+        }
+    {%- endif %}
     {%- if root.events.on_create %}
         Self::freya_call(&weak, |f| f.{{ root.events.on_create }}());
     {%- endif %}

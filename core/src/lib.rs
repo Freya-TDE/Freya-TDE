@@ -61,6 +61,7 @@ mod capability;
 pub mod codegen;
 mod component;
 mod component_type;
+pub mod data;
 mod element;
 mod error;
 mod event;
@@ -82,7 +83,9 @@ mod widget;
 pub use backend::{BackendDescriptor, EventLoop};
 pub use capability::{Capability, Condition, Provide, Require, RequireKind};
 pub use component::Component;
-pub use component_type::{CargoDependency, CodegenSpec, ComponentType, ShareMode, TypeKind};
+pub use component_type::{
+    CargoDependency, CodegenSpec, ComponentType, DataSpec, ListSpec, ShareMode, TypeKind,
+};
 pub use element::Element;
 pub use error::ModelError;
 pub use event::{EventDef, EventParam, Events};

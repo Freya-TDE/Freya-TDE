@@ -12,6 +12,9 @@ use tdr_core::codegen::{generate, write};
 use tdr_core::pack::load_all;
 use tdr_core::*;
 
+#[path = "support/data.rs"]
+mod data;
+
 fn name(n: &str) -> ComponentName {
     ComponentName::new(n).unwrap()
 }
@@ -30,6 +33,7 @@ fn registry() -> TypeRegistry {
             pack.register(&mut registry).unwrap();
         }
     }
+    data::register(&mut registry);
     registry
 }
 
@@ -261,6 +265,15 @@ fn form() -> Form {
             .on("on_select", handler("menu_selected")),
     )
     .unwrap();
+    // Aus der Datenquelle `services::fruits` gefüllt.
+    form.add_widget(
+        &name("window"),
+        Widget::from_component(data::bind(widget(
+            "bound",
+            TypeRef::backend("gtk4", "DropDown"),
+        ))),
+    )
+    .unwrap();
     form
 }
 
@@ -287,7 +300,7 @@ fn started(app: &mut app::App) -> Result<(), app::Error> {
     let window = app.main_form.window.clone();
     let pages = app.main_form.pages.clone();
     let colors = app.main_form.colors.clone();
-    gtk4::glib::timeout_add_local_once(std::time::Duration::from_millis(300), move || {
+    gtk4::glib::timeout_add_local_once(std::time::Duration::from_millis(800), move || {
         edit.set_text("Freya");
         button.emit_clicked();
         blue.set_active(true);
@@ -322,6 +335,10 @@ impl MainForm {
     pub fn ok_clicked(&mut self) {
         let name = self.name_edit.text();
         self.greeting.set_text(&format!("Hallo {name}"));
+        // Daten der Liste: 3 Einträge, der zweite hat den Schlüssel 2.
+        self.bound.set_selected(1);
+        println!("bound_items={}", self.bound.model().map_or(0, |m| m.n_items()));
+        println!("bound={:?}", self.bound_selected_value());
     }
     pub fn agree_toggled(&mut self, _checked: bool) {}
     pub fn blue_toggled(&mut self, checked: bool) {
@@ -375,14 +392,15 @@ fn generated_project_builds_and_runs() {
     unsafe { std::env::set_var("CARGO_TARGET_DIR", &target) };
     let _ = std::fs::remove_dir_all(&dir);
     let project = ProjectFile::new("gtk4_demo", "1.85", "gtk4").unwrap();
-    let generation = generate(&project, std::slice::from_ref(&form), &registry, &dir);
+    let forms = [data::services("gtk4"), form.clone()];
+    let generation = generate(&project, &forms, &registry, &dir);
     assert!(!generation.has_errors(), "{:#?}", generation.diagnostics);
     write(&dir, &generation).unwrap();
     // Nutzercode wie nach dem Ausfüllen der Handler.
     std::fs::write(dir.join("src/main.rs"), MAIN_RS).unwrap();
     std::fs::write(dir.join("src/main_form.rs"), FORM_RS).unwrap();
     // Ein zweiter Lauf ändert die Nutzerdateien nicht (alle Handler da).
-    let again = generate(&project, std::slice::from_ref(&form), &registry, &dir);
+    let again = generate(&project, &forms, &registry, &dir);
     for file in &again.files {
         if file.path == "src/main_form.rs" || file.path == "src/main.rs" {
             assert_eq!(file.change, codegen::Change::Unchanged, "{}", file.path);
@@ -419,6 +437,8 @@ fn generated_project_builds_and_runs() {
     assert!(stdout.contains("created"), "{stdout}");
     assert!(stdout.contains("name=Freya"), "{stdout}");
     assert!(stdout.contains("label=Hallo Freya"), "{stdout}");
+    assert!(stdout.contains("bound_items=3"), "{stdout}");
+    assert!(stdout.contains("bound=Some(2)"), "{stdout}");
     assert!(stdout.contains("blue=true"), "{stdout}");
     assert!(stdout.contains("radio_group=true"), "{stdout}");
     assert!(stdout.contains("visible=true"), "{stdout}");

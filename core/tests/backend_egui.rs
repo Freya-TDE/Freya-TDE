@@ -15,6 +15,9 @@ use tdr_core::codegen::{generate, write};
 use tdr_core::pack::load_all;
 use tdr_core::*;
 
+#[path = "support/data.rs"]
+mod data;
+
 fn name(n: &str) -> ComponentName {
     ComponentName::new(n).unwrap()
 }
@@ -33,6 +36,7 @@ fn registry() -> TypeRegistry {
             pack.register(&mut registry).unwrap();
         }
     }
+    data::register(&mut registry);
     registry
 }
 
@@ -266,6 +270,15 @@ fn form() -> Form {
             .on("on_select", handler("menu_selected")),
     )
     .unwrap();
+    // Aus der Datenquelle `services::fruits` gefüllt.
+    form.add_widget(
+        &name("window"),
+        Widget::from_component(data::bind(Component::new(
+            name("bound"),
+            TypeRef::backend("egui", "ComboBox"),
+        ))),
+    )
+    .unwrap();
     form
 }
 
@@ -287,6 +300,9 @@ impl MainForm {
         true
     }
     pub fn ok_clicked(&mut self) {
+        self.bound.value = 1;
+        say(&format!("bound_items={}", self.bound.items.len()));
+        say(&format!("bound={:?}", self.bound_selected_value()));
         self.greeting.value = format!("Hallo {}", *self.name_edit);
         self.ok_button.enabled = false;
         self.window.caption = "geklickt".into();
@@ -349,7 +365,8 @@ fn generated_project_builds_runs_and_reacts_to_clicks() {
     unsafe { std::env::set_var("CARGO_TARGET_DIR", &target) };
     let _ = std::fs::remove_dir_all(&dir);
     let project = ProjectFile::new("egui_demo", "1.95", "egui").unwrap();
-    let generation = generate(&project, std::slice::from_ref(&form), &registry, &dir);
+    let forms = [data::services("egui"), form.clone()];
+    let generation = generate(&project, &forms, &registry, &dir);
     assert!(!generation.has_errors(), "{:#?}", generation.diagnostics);
     write(&dir, &generation).unwrap();
     std::fs::write(dir.join("src/main_form.rs"), FORM_RS).unwrap();
@@ -418,6 +435,8 @@ fn generated_project_builds_runs_and_reacts_to_clicks() {
         .unwrap();
     assert!(stdout.contains("created"), "{stdout}");
     assert!(stdout.contains("label=Hallo Freya"), "{stdout}");
+    assert!(stdout.contains("bound_items=3"), "{stdout}");
+    assert!(stdout.contains("bound=Some(2)"), "{stdout}");
     assert!(stdout.contains("menu=Datei/Neu"), "{stdout}");
 
     if std::env::var_os("FREYA_TDE_KEEP_DEMO").is_none() {

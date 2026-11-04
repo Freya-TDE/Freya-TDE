@@ -173,5 +173,14 @@ gezeichnet in den Farben der Theme-Tabelle; ohne `look` ein Kasten mit Symbol un
 Platz oben (Rahmentitel, Reiterleiste).
 *Designer drawing: `look` on the type (same looks for every backend); sizes and `header` in the theme tables.*
 
+Listen-Widgets mit Daten: `[component.list]` mit `set-items` (Anweisungen, die `items: Vec<String>` ins Widget
+setzen) und `selected` (Ausdruck `Option<usize>`); Kontext `name`, `root`, `form`. Solche Widgets bekommen
+`data_source`, `display_field`, `value_field` und `load`; der Kern erzeugt `<name>_reload()`,
+`<name>_selected_value()`, `freya_start_data()` und `freya_take_data()`. Das Backend ruft beim Öffnen
+`freya_start_data()` und, wenn Daten da sind, `freya_take_data()` (GTK/Slint: Zeitgeber 100 ms, egui: Repaint über
+`crate::app::freya_set_waker`, iced: Subscription). Im Kontext des `form`-Templates zeigt `data_bound`, ob das
+Formular gebundene Listen hat. Datenmodell: Modul-Doku von `tdr_core::data`.
+*List widgets declare `set-items`/`selected`; the core generates loading, the backend polls or is woken.*
+
 Kontext der Templates und Einzelheiten: Modul-Doku von `tdr_core::codegen` und `tdr_core::pack`.
 *Template context and details: module docs of `tdr_core::codegen` and `tdr_core::pack`.*

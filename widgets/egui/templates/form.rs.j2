@@ -208,6 +208,8 @@ impl {{ form.struct }} {
 
     /// Called once before the first frame.
     pub fn freya_created(&mut self) {
+        // Daten der Listen laden (im Hintergrund).
+        self.freya_start_data();
     {%- if root.events.on_create %}
         self.{{ root.events.on_create }}();
     {%- endif %}
@@ -215,6 +217,16 @@ impl {{ form.struct }} {
 
     /// Draws the form (every frame) and handles its events.
     pub fn ui(&mut self, ui: &mut egui::Ui) {
+    {%- if data_bound %}
+        // Geladene Daten übernehmen; ist ein Ladevorgang fertig, zeichnet egui neu.
+        let waker_id = egui::Id::unique("freya_waker");
+        if !ui.ctx().data(|d| d.get_temp::<bool>(waker_id).unwrap_or(false)) {
+            let ctx = ui.ctx().clone();
+            crate::app::freya_set_waker(move || ctx.request_repaint());
+            ui.ctx().data_mut(|d| d.insert_temp(waker_id, true));
+        }
+    {%- endif %}
+        self.freya_take_data();
         // Titel nachführen, wenn ein Handler ihn geändert hat.
         let title_id = egui::Id::unique("freya_title");
         let title_changed = ui.ctx().data_mut(|d| {

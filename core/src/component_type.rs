@@ -166,6 +166,39 @@ pub struct ComponentType {
     /// or that have no code yet.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub codegen: Option<CodegenSpec>,
+    /// A data source (e.g. an SQL query): how it delivers rows. See
+    /// [`crate::data`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data: Option<DataSpec>,
+    /// A list widget that can be filled from a data source. See
+    /// [`crate::data`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub list: Option<ListSpec>,
+}
+
+/// How a data source delivers rows – MiniJinja templates of its pack.
+///
+/// `fetch` is an expression inside an `async` block returning
+/// `Result<_, crate::app::Error>` that yields the rows (`?` and `.await`
+/// allowed); context: `source` (the source's value, a variable), `props`,
+/// `rust`. `get` is an expression reading one column of a row (`?`
+/// allowed); context: `row`, `column`, `type`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DataSpec {
+    pub fetch: String,
+    pub get: String,
+}
+
+/// How a list widget shows entries and reports its selection – MiniJinja
+/// templates of its backend pack.
+///
+/// `set_items` are statements putting `items: Vec<String>` into the widget;
+/// `selected` is an expression of type `Option<usize>`. Context: `name`
+/// (the widget), `root` (the form's root widget), `form`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ListSpec {
+    pub set_items: String,
+    pub selected: String,
 }
 
 impl ComponentType {
@@ -183,6 +216,8 @@ impl ComponentType {
             requires: Vec::new(),
             cargo: Vec::new(),
             codegen: None,
+            data: None,
+            list: None,
         }
     }
 

@@ -184,8 +184,9 @@ impl Painter<'_> {
             "dropdown" => {
                 self.out
                     .push(rect(r, Some(c.control), Some(c.control_border), radius));
-                let items = self.props.texts(widget, "items");
+                let items = self.props.list_items(widget);
                 let selected = self.props.int(widget, "selected", 0).max(0) as usize;
+                let selected = if selected < items.len() { selected } else { 0 };
                 let text = items.get(selected).cloned().unwrap_or_default();
                 let padding = self.theme.metrics(&widget.component.type_ref).padding_x;
                 self.text_in(r, r.x + padding, &text, text_color, false);
@@ -199,7 +200,7 @@ impl Painter<'_> {
                 let row = font + 10;
                 let (lines, selected) = if look == "list" {
                     (
-                        self.props.texts(widget, "items"),
+                        self.props.list_items(widget),
                         self.props.int(widget, "selected", -1),
                     )
                 } else {
