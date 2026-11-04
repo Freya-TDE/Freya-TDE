@@ -56,6 +56,14 @@ fn parse(text: &str, ty: &PropertyType) -> Result<Value, String> {
             .map(|(width, height)| Value::Size(Size { width, height }))
             .ok_or_else(|| "eine Größe erwartet, z. B. 640 × 480".to_owned()),
         PropertyType::Color => {
+            // Leer = Standardfarbe; aus „Rot #c0392b“ zählt die Hex-Angabe.
+            if text.trim().is_empty() {
+                return Ok(Value::Color(tdr_core::builtin::STANDARD_COLOR));
+            }
+            let text = text
+                .split_whitespace()
+                .find(|t| t.starts_with('#'))
+                .unwrap_or(text.trim());
             let hex = text.strip_prefix('#').unwrap_or(text);
             let byte = |i: usize| u8::from_str_radix(hex.get(i..i + 2)?, 16).ok();
             match hex.len() {
@@ -89,6 +97,23 @@ fn parse(text: &str, ty: &PropertyType) -> Result<Value, String> {
     }
 }
 
+/// Colours offered in the inspector (name and value).
+const COLOR_PRESETS: &[&str] = &[
+    "",
+    "Weiß #ffffff",
+    "Hellgrau #f0f0f0",
+    "Grau #808080",
+    "Dunkelgrau #333333",
+    "Schwarz #000000",
+    "Rot #c0392b",
+    "Orange #e67e22",
+    "Gelb #f1c40f",
+    "Grün #27ae60",
+    "Blau #2980b9",
+    "Hellblau #d6eaf8",
+    "Violett #8e44ad",
+];
+
 /// Value → text for a text field.
 fn format(value: &Value) -> String {
     match value {
@@ -96,6 +121,7 @@ fn format(value: &Value) -> String {
         Value::Int(i) => i.to_string(),
         Value::Float(x) => x.to_string(),
         Value::Text(s) | Value::Enum(s) | Value::Code(s) => s.clone(),
+        Value::Color(c) if c.a == 0 => String::new(),
         Value::Color(c) if c.a == 255 => format!("#{:02x}{:02x}{:02x}", c.r, c.g, c.b),
         Value::Color(c) => format!("#{:02x}{:02x}{:02x}{:02x}", c.r, c.g, c.b, c.a),
         Value::Point(p) => format!("{}, {}", p.x, p.y),
@@ -443,6 +469,32 @@ impl InspectorWindow {
                     if let Some(v) = usize::try_from(i).ok().and_then(|i| variants.get(i)) {
                         ide.apply_from_inspector(command(Value::Enum(v.clone())));
                     }
+                }));
+                combo.widget().clone()
+            }
+            PropertyType::Color => {
+                // Auswahl mit Vorgaben, eigene Werte als #rrggbb, leer = Standard.
+                let combo = RnclComboBox::new(page);
+                combo.set_editable(true);
+                combo.set_items(COLOR_PRESETS);
+                combo.set_placeholder("Standard oder #rrggbb");
+                combo.set_current_text(&effective.as_ref().map(format).unwrap_or_default());
+                let f = combo.clone();
+                let command = Rc::new(command);
+                combo.on_text_changed(with(ide, move |ide, _: String| {
+                    if ide.is_refreshing() {
+                        return;
+                    }
+                    let (f, command) = (f.clone(), command.clone());
+                    let weak = Rc::downgrade(ide);
+                    *ide.inspector.pending.borrow_mut() = Some(Box::new(move || {
+                        let Some(ide) = weak.upgrade() else { return };
+                        match parse(&f.current_text(), &PropertyType::Color) {
+                            Ok(value) => ide.apply_from_inspector(command(value)),
+                            Err(hint) => ide.main.set_status(&hint),
+                        }
+                    }));
+                    ide.inspector.timer.start(TYPING_PAUSE);
                 }));
                 combo.widget().clone()
             }

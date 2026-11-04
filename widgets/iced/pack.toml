@@ -20,7 +20,7 @@ generated-code-license = "MIT OR Apache-2.0"
 event-loop = "main-thread"
 absolute-positioning = true
 platforms = ["linux", "windows", "macos"]
-cargo = [{ crate = "iced", version = "0.14" }]
+cargo = [{ crate = "iced", version = "0.14", features = ["image"] }]
 app-file = "templates/app.rs.j2"
 form-file = "templates/form.rs.j2"
 run-file = "templates/run.rs.j2"

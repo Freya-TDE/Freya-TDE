@@ -257,3 +257,83 @@ selected = "None"
         "{primitives:#?}"
     );
 }
+
+#[test]
+fn appearance_is_drawn_and_passed_on() {
+    let registry = TypeRegistry::with_builtins();
+    let mut form = Form::new(
+        name("main_form"),
+        "none",
+        Widget::from_component(
+            Component::new(name("window"), builtin::form())
+                .with("background", Value::Color(Color::rgb(0x20, 0x30, 0x40)))
+                .with("foreground", Value::Color(Color::rgb(0xff, 0xee, 0xdd)))
+                .with("font_family", "Noto Serif")
+                .with("background_image", "bilder/hintergrund.png")
+                .with("background_fit", Value::Enum("Stretch".into())),
+        ),
+    );
+    form.add_widget(
+        &name("window"),
+        Widget::from_component(
+            Component::new(name("title"), builtin::label())
+                .with("text", "Überschrift")
+                .with("font_size", 24i64)
+                .with("bold", true)
+                .with("italic", true),
+        ),
+    )
+    .unwrap();
+    form.add_widget(
+        &name("window"),
+        Widget::from_component(
+            Component::new(name("ok"), builtin::button())
+                .with("caption", "OK")
+                .with("background", Value::Color(Color::rgb(0xc0, 0x39, 0x2b))),
+        ),
+    )
+    .unwrap();
+    let theme = theme();
+    let laid = layout(&form, &registry, &theme);
+    let primitives = render(&form, &laid, &registry, &theme);
+    // Formular: eigene Hintergrundfarbe und Bild.
+    assert!(primitives.iter().any(|p| matches!(p,
+        Primitive::Rect { fill: Some(c), .. } if *c == Color::rgb(0x20, 0x30, 0x40))));
+    assert!(primitives.iter().any(|p| matches!(p,
+        Primitive::Image { path, fit, .. } if path == "bilder/hintergrund.png" && fit == "Stretch")));
+    // Label: eigene Schrift, Farbe und Familie vom Formular.
+    let title = primitives
+        .iter()
+        .find_map(|p| match p {
+            Primitive::Text {
+                text,
+                size,
+                bold,
+                italic,
+                family,
+                color,
+                ..
+            } if text == "Überschrift" => Some((*size, *bold, *italic, family.clone(), *color)),
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(
+        title,
+        (
+            24,
+            true,
+            true,
+            Some("Noto Serif".into()),
+            Color::rgb(0xff, 0xee, 0xdd)
+        )
+    );
+    // Knopf: eigene Hintergrundfarbe.
+    assert!(primitives.iter().any(|p| matches!(p,
+        Primitive::Rect { fill: Some(c), .. } if *c == Color::rgb(0xc0, 0x39, 0x2b))));
+    // Größere Schrift → breiteres Label.
+    let wide = laid.rect(&name("title")).unwrap().width;
+    assert!(
+        wide >= theme.text_width("Überschrift") * 24 / theme.font_size,
+        "{wide}"
+    );
+}

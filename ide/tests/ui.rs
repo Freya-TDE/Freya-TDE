@@ -183,6 +183,85 @@ fn main() {
         .unwrap();
     println!("test notebook_tabs ... ok");
 
+    // Größe ziehen: Formular unten rechts, Widget in absolutem Layout oben links.
+    let size_of = |ide: &freya_tde::Ide| match ide
+        .session()
+        .form()
+        .unwrap()
+        .widget(&name("window"))
+        .unwrap()
+        .component
+        .get("size")
+        .map(|v| v.value.clone())
+    {
+        Some(tdr_core::Value::Size(s)) => (s.width, s.height),
+        _ => (640, 480),
+    };
+    let before = size_of(&ide);
+    ide.select(vec![name("window")]);
+    let window = ide
+        .session()
+        .layout()
+        .unwrap()
+        .rect(&name("window"))
+        .unwrap();
+    let corner = tdr_designer::Point::new(window.right(), window.bottom());
+    mouse(&surface, MouseAction::Pressed, corner);
+    mouse(
+        &surface,
+        MouseAction::Moved,
+        tdr_designer::Point::new(corner.x + 40, corner.y + 30),
+    );
+    mouse(
+        &surface,
+        MouseAction::Released,
+        tdr_designer::Point::new(corner.x + 40, corner.y + 30),
+    );
+    assert_eq!(size_of(&ide), (before.0 + 40, before.1 + 30));
+    ide.undo();
+    assert_eq!(size_of(&ide), before);
+    ide.run_commands(
+        r#"[
+        {"command": "add_widget", "form": "main_form", "parent": "window", "type": "core/Container", "name": "free"},
+        {"command": "set_layout", "form": "main_form", "element": "free", "layout": {"kind": "Absolute", "spacing": 0, "padding": {"left": 0, "top": 0, "right": 0, "bottom": 0}}},
+        {"command": "add_widget", "form": "main_form", "parent": "free", "type": "core/Button", "name": "moved"},
+        {"command": "set_placement", "form": "main_form", "element": "moved", "placement": {"Absolute": {"position": {"x": 20, "y": 10}, "size": {"width": 100, "height": 30}}}}
+    ]"#,
+    )
+    .unwrap();
+    ide.select(vec![name("moved")]);
+    let button = ide
+        .session()
+        .layout()
+        .unwrap()
+        .rect(&name("moved"))
+        .unwrap();
+    let top_left = tdr_designer::Point::new(button.x, button.y);
+    mouse(&surface, MouseAction::Pressed, top_left);
+    mouse(
+        &surface,
+        MouseAction::Moved,
+        tdr_designer::Point::new(top_left.x - 10, top_left.y - 5),
+    );
+    mouse(
+        &surface,
+        MouseAction::Released,
+        tdr_designer::Point::new(top_left.x - 10, top_left.y - 5),
+    );
+    let placement = ide
+        .session()
+        .form()
+        .unwrap()
+        .widget(&name("moved"))
+        .unwrap()
+        .visual
+        .placement
+        .clone();
+    assert_eq!(placement, tdr_core::Placement::absolute(10, 5, 110, 35));
+    ide.run_commands(r#"[{"command": "remove", "form": "main_form", "element": "free"}]"#)
+        .unwrap();
+    println!("test resize ... ok");
+
     // Befehle als JSON (Skripte, KI).
     let count = ide
         .run_commands(

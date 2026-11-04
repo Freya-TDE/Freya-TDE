@@ -119,6 +119,51 @@ impl {{ form.struct }} {
     {%- endfor %}
     }
 
+    /// Colours, fonts and background pictures from the designer, as CSS
+    /// (one class per widget; fonts and colours pass on to children).
+    #[allow(unused_mut, deprecated)]
+    fn freya_appearance(&self) {
+        let mut css = String::new();
+    {%- for w in widgets if w.field %}
+        {%- set p = w.props %}
+        {%- set cls = "freya-" ~ form.name ~ "-" ~ w.name %}
+        {%- set rule = namespace(text="") %}
+        {%- if p.background.a > 0 %}{% set rule.text = rule.text ~ "background-color: rgba(" ~ p.background.r ~ "," ~ p.background.g ~ "," ~ p.background.b ~ "," ~ (p.background.a / 255) ~ "); background-image: none; " %}{% endif %}
+        {%- if p.foreground.a > 0 %}{% set rule.text = rule.text ~ "color: rgb(" ~ p.foreground.r ~ "," ~ p.foreground.g ~ "," ~ p.foreground.b ~ "); " %}{% endif %}
+        {%- if p.font_size > 0 %}{% set rule.text = rule.text ~ "font-size: " ~ p.font_size ~ "px; " %}{% endif %}
+        {%- if p.bold %}{% set rule.text = rule.text ~ "font-weight: bold; " %}{% endif %}
+        {%- if p.italic %}{% set rule.text = rule.text ~ "font-style: italic; " %}{% endif %}
+        {%- if p.font_family is defined and p.font_family %}{% set rule.text = rule.text ~ "font-family: \"" ~ p.font_family ~ "\"; " %}{% endif %}
+        {%- set image = p.background_image is defined and p.background_image %}
+        {%- if rule.text or image %}
+        self.{{ w.name }}.add_css_class("{{ cls }}");
+        {%- endif %}
+        {%- if rule.text %}
+        css.push_str({{ ("." ~ cls ~ " { " ~ rule.text ~ "}\n") | rust_str }});
+        {%- endif %}
+        {%- if image %}
+        {
+            let file = gtk4::gio::File::for_path(std::env::current_dir().unwrap_or_default().join({{ w.rust.background_image }}));
+            css.push_str({{ ("." ~ cls ~ " { background-image: url(\"") | rust_str }});
+            css.push_str(&file.uri());
+            css.push_str({{ ("\"); background-repeat: no-repeat; background-position: center; background-size: " ~ {"Cover": "cover", "Stretch": "100% 100%", "Contain": "contain", "Center": "auto"}[p.background_fit] ~ "; }\n") | rust_str }});
+        }
+        {%- endif %}
+    {%- endfor %}
+        if css.is_empty() {
+            return;
+        }
+        let provider = gtk4::CssProvider::new();
+        provider.load_from_data(&css);
+        if let Some(display) = gtk4::gdk::Display::default() {
+            gtk4::style_context_add_provider_for_display(
+                &display,
+                &provider,
+                gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
+            );
+        }
+    }
+
     /// Calls `f` with the form, unless it is gone or busy (a handler that
     /// changes a widget can trigger another event of the same form).
     #[allow(dead_code)]
@@ -140,9 +185,26 @@ impl {{ form.struct }} {
         main_loop: Option<gtk4::glib::MainLoop>,
     ) {
         this.borrow().build_ui();
+        this.borrow().freya_appearance();
         let form = this.borrow();
         let weak = std::rc::Rc::downgrade(this);
         let _ = &weak;
+        // Fenster: Mindestgröße, Zustand, Hell/Dunkel (die Lage bestimmt unter
+        // GTK 4 das System; eine Höchstgröße kennt GTK 4 nicht).
+    {%- set rp = root.props %}
+    {%- if rp.min_size.width > 0 or rp.min_size.height > 0 %}
+        form.{{ root.name }}.set_size_request({{ rp.min_size.width }}, {{ rp.min_size.height }});
+    {%- endif %}
+    {%- if rp.start_state == "Maximized" %}
+        form.{{ root.name }}.maximize();
+    {%- elif rp.start_state == "Fullscreen" %}
+        form.{{ root.name }}.fullscreen();
+    {%- endif %}
+    {%- if rp.theme != "System" %}
+        if let Some(settings) = gtk4::Settings::default() {
+            settings.set_gtk_application_prefer_dark_theme({{ "true" if rp.theme == "Dark" else "false" }});
+        }
+    {%- endif %}
     {%- for w in widgets if w.field %}
     {%- for event, handler in w.events | items if handler and w.type != "core/Form" %}
     {%- set key = w.type ~ "." ~ event %}

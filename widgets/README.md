@@ -134,6 +134,29 @@ impl MainForm {
 - Test: `xvfb-run -a cargo test -p tdr-core --test backend_slint` baut ein Projekt mit allen Widgets, startet es
   und klickt Knopf und Menü.
 
+## Aussehen und Fenster / appearance and window
+
+Jedes Widget hat `background`, `foreground` (Farbe; Alpha 0 = Standard des Backends), `font_size`
+(0 = Standard), `bold` und `italic`. Das Formular hat dazu `font_family`, `background_image` (Pfad relativ zum
+Arbeitsordner des Programms) mit `background_fit` (Cover, Stretch, Contain, Center), `position` (Center,
+System, Manual mit `location`), `min_size`/`max_size` (0 = ohne Grenze), `start_state` (Normal, Maximized,
+Fullscreen) und `theme` (System, Light, Dark). Container haben ebenfalls ein Hintergrundbild. Schrift und
+Vordergrund des Formulars erben die Widgets, im Designer wie im erzeugten Programm.
+*Every widget has colours and font settings; the form adds font family, background picture and window
+settings. Alpha 0 means "backend default".*
+
+| | GTK 4 | egui | iced | Slint |
+|---|---|---|---|---|
+| Farben, Schriftgröße | CSS je Widget | ja | ja | Text: ja; Standard-Widgets nur Hintergrundfläche |
+| fett / kursiv | ja | nur kursiv | ja | ja (Text, Fenster-Standard) |
+| Schriftfamilie | ja | nein | ja | ja |
+| Hintergrundbild | ja (CSS) | ja | ja | ja (Formular) |
+| Position, Höchstgröße | nein (GTK 4 kann es nicht) | ja | ja | ja |
+| Mindestgröße, Zustand, Hell/Dunkel | ja | ja | ja | ja |
+
+Grenzen: iced wendet `enabled` nicht auf Container an; Slints Standard-Widgets haben keine Farb-Properties.
+*Limits: see table; iced ignores `enabled` on containers, Slint std widgets have no colour properties.*
+
 ## Backend-Pack / backend pack
 
 Ein UI-Backend ist ein Ordner `widgets/<backend>/` mit einer `pack.toml` (`kind = "backend"`):

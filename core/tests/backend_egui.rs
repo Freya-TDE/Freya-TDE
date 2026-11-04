@@ -17,6 +17,8 @@ use tdr_core::*;
 
 #[path = "support/data.rs"]
 mod data;
+#[path = "support/style.rs"]
+mod style;
 
 fn name(n: &str) -> ComponentName {
     ComponentName::new(n).unwrap()
@@ -347,7 +349,11 @@ fn have(program: &str, arg: &str) -> bool {
 }
 
 fn gui_available() -> bool {
-    let display = std::env::var_os("DISPLAY").is_some();
+    // Nur unter Xvfb (xvfb-run) – nie Fenster und Klicks auf dem echten Bildschirm,
+    // außer ausdrücklich gewünscht (FREYA_TDE_REAL_DISPLAY=1).
+    let display = std::env::var_os("DISPLAY").is_some()
+        && (std::env::var("XAUTHORITY").is_ok_and(|a| a.contains("xvfb-run"))
+            || std::env::var_os("FREYA_TDE_REAL_DISPLAY").is_some());
     let ok = display && have("xdotool", "version");
     if !ok && std::env::var_os("FREYA_TDE_REQUIRE_GUI").is_some() {
         panic!("display or xdotool missing");
@@ -363,7 +369,8 @@ fn xdotool(args: &[&str]) -> String {
 #[test]
 fn generated_project_builds_runs_and_reacts_to_clicks() {
     let registry = registry();
-    let form = form();
+    let mut form = form();
+    style::apply(&mut form, "greeting", "ok_button");
     let issues = validate(&form, &ValidationContext::for_backend(&registry, "egui"));
     assert!(
         issues.iter().all(|i| i.severity != Severity::Error),
@@ -380,6 +387,7 @@ fn generated_project_builds_runs_and_reacts_to_clicks() {
     let generation = generate(&project, &forms, &registry, &dir);
     assert!(!generation.has_errors(), "{:#?}", generation.diagnostics);
     write(&dir, &generation).unwrap();
+    style::picture(&dir);
     std::fs::write(dir.join("src/main_form.rs"), FORM_RS).unwrap();
 
     if !gui_available() {

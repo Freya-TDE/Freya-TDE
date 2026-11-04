@@ -19,7 +19,7 @@ use crate::component_type::{ComponentType, TypeKind};
 use crate::event::EventDef;
 use crate::property::PropertyDef;
 use crate::type_ref::TypeRef;
-use crate::value::{PropertyType, Size};
+use crate::value::{Point, PropertyType, Size, Value};
 
 pub fn form() -> TypeRef {
     TypeRef::core("Form")
@@ -57,6 +57,55 @@ pub(crate) fn common() -> Vec<PropertyDef> {
         PropertyDef::new("tooltip", PropertyType::Text, "")
             .with_category("Behavior")
             .with_description("Hint shown on hover"),
+        PropertyDef::new("background", PropertyType::Color, STANDARD_COLOR)
+            .with_category("Appearance")
+            .with_description("Background colour (empty = standard of the theme)"),
+        PropertyDef::new("foreground", PropertyType::Color, STANDARD_COLOR)
+            .with_category("Appearance")
+            .with_description("Text colour (empty = standard; containers pass it on)"),
+        PropertyDef::new(
+            "font_size",
+            PropertyType::Int {
+                min: Some(0),
+                max: Some(200),
+            },
+            0i64,
+        )
+        .with_category("Appearance")
+        .with_description("Font size in pixels (0 = standard; containers pass it on)"),
+        PropertyDef::new("bold", PropertyType::Bool, false).with_category("Appearance"),
+        PropertyDef::new("italic", PropertyType::Bool, false).with_category("Appearance"),
+    ]
+}
+
+/// A colour that is not set: the theme's colour applies (alpha 0).
+pub const STANDARD_COLOR: crate::value::Color = crate::value::Color::rgba(0, 0, 0, 0);
+
+/// Is `color` set (not [`STANDARD_COLOR`])?
+pub fn is_set(color: &crate::value::Color) -> bool {
+    color.a != 0
+}
+
+/// Background picture of forms and containers.
+fn background_image() -> [PropertyDef; 2] {
+    [
+        PropertyDef::new("background_image", PropertyType::Text, "")
+            .with_category("Appearance")
+            .with_description("Picture behind the content (path relative to the project; PNG, JPEG)"),
+        PropertyDef::new(
+            "background_fit",
+            PropertyType::Enum(vec![
+                "Cover".into(),
+                "Stretch".into(),
+                "Contain".into(),
+                "Center".into(),
+            ]),
+            Value::Enum("Cover".into()),
+        )
+        .with_category("Appearance")
+        .with_description(
+            "Cover: fill, keep proportions; Stretch: fill, distort; Contain: whole picture; Center: original size",
+        ),
     ]
 }
 
@@ -90,13 +139,83 @@ pub fn types() -> Vec<ComponentType> {
             .with_property(
                 PropertyDef::new("resizable", PropertyType::Bool, true).with_category("Behavior"),
             )
+            .with_property(
+                PropertyDef::new(
+                    "position",
+                    PropertyType::Enum(vec!["Center".into(), "System".into(), "Manual".into()]),
+                    Value::Enum("Center".into()),
+                )
+                .with_category("Window")
+                .with_description(
+                    "Where the window opens: centred, where the system puts it, or at `location`",
+                ),
+            )
+            .with_property(
+                PropertyDef::new("location", PropertyType::Point, Point { x: 100, y: 100 })
+                    .with_category("Window")
+                    .with_description("Screen position for `position = Manual`"),
+            )
+            .with_property(
+                PropertyDef::new(
+                    "min_size",
+                    PropertyType::Size,
+                    Size {
+                        width: 0,
+                        height: 0,
+                    },
+                )
+                .with_category("Window")
+                .with_description("Smallest size (0 × 0 = no limit)"),
+            )
+            .with_property(
+                PropertyDef::new(
+                    "max_size",
+                    PropertyType::Size,
+                    Size {
+                        width: 0,
+                        height: 0,
+                    },
+                )
+                .with_category("Window")
+                .with_description("Largest size (0 × 0 = no limit)"),
+            )
+            .with_property(
+                PropertyDef::new(
+                    "start_state",
+                    PropertyType::Enum(vec![
+                        "Normal".into(),
+                        "Maximized".into(),
+                        "Fullscreen".into(),
+                    ]),
+                    Value::Enum("Normal".into()),
+                )
+                .with_category("Window"),
+            )
+            .with_property(
+                PropertyDef::new(
+                    "theme",
+                    PropertyType::Enum(vec!["System".into(), "Light".into(), "Dark".into()]),
+                    Value::Enum("System".into()),
+                )
+                .with_category("Window")
+                .with_description("Light or dark look (System = as the operating system)"),
+            )
+            .with_property(
+                PropertyDef::new("font_family", PropertyType::Text, "")
+                    .with_category("Appearance")
+                    .with_description(
+                        "Font of the whole form, e.g. `Noto Sans` (empty = standard)",
+                    ),
+            )
+            .with_properties(background_image())
             .with_event(EventDef::new("on_create").with_description("After the form was built"))
             .with_event(
                 EventDef::new("on_close")
                     .returning("bool")
                     .with_description("Before closing; return false to keep the form open"),
             ),
-        widget(container(), true, "Groups child widgets with a layout"),
+        widget(container(), true, "Groups child widgets with a layout")
+            .with_properties(background_image()),
         widget(label(), false, "Static text").with_property(
             PropertyDef::new("text", PropertyType::Text, "").with_category("Appearance"),
         ),

@@ -187,6 +187,52 @@ fn texts(value: Option<Value>) -> Vec<String> {
     }
 }
 
+/// The appearance of an element: its own settings, else those of the form
+/// (fonts and text colour are passed on like in CSS), else the theme.
+pub(crate) struct Appearance {
+    pub background: Option<tdr_core::Color>,
+    pub foreground: Option<tdr_core::Color>,
+    pub font_size: i32,
+    pub bold: bool,
+    pub italic: bool,
+    pub family: Option<String>,
+}
+
+pub(crate) fn appearance(props: &Props<'_>, widget: &Widget, theme: &Theme) -> Appearance {
+    let color = |w: &Widget, name: &str| match props.value(w, name) {
+        Some(Value::Color(c)) if tdr_core::builtin::is_set(&c) => Some(c),
+        _ => None,
+    };
+    let size = |w: &Widget| match props.value(w, "font_size") {
+        Some(Value::Int(s)) if s > 0 => Some(s as i32),
+        _ => None,
+    };
+    let root = props
+        .form
+        .root
+        .as_ref()
+        .filter(|r| !std::ptr::eq(*r, widget));
+    let family = props
+        .form
+        .root
+        .as_ref()
+        .and_then(|r| props.text(r, "font_family"))
+        .filter(|f| !f.trim().is_empty());
+    Appearance {
+        background: color(widget, "background"),
+        foreground: color(widget, "foreground")
+            .or_else(|| root.and_then(|r| color(r, "foreground"))),
+        font_size: size(widget)
+            .or_else(|| root.and_then(size))
+            .unwrap_or(theme.font_size),
+        bold: props.bool(widget, "bold", false)
+            || root.is_some_and(|r| props.bool(r, "bold", false)),
+        italic: props.bool(widget, "italic", false)
+            || root.is_some_and(|r| props.bool(r, "italic", false)),
+        family,
+    }
+}
+
 pub(crate) fn display_text(props: &Props<'_>, widget: &Widget) -> Option<String> {
     let type_ref = &widget.component.type_ref;
     if *type_ref == builtin::label() {
@@ -244,8 +290,9 @@ impl Layouter<'_> {
         }
         let metrics = self.theme.metrics(&widget.component.type_ref);
         if !self.props.is_container(widget) {
+            let scale = appearance(&self.props, widget, self.theme).font_size;
             let text = display_text(&self.props, widget)
-                .map(|t| self.theme.text_width(&t))
+                .map(|t| self.theme.text_width(&t) * scale / self.theme.font_size.max(1))
                 .unwrap_or_else(|| {
                     if self
                         .props
@@ -264,7 +311,9 @@ impl Layouter<'_> {
                 0
             };
             let width = (text + 2 * metrics.padding_x + check).max(metrics.min_width);
-            return (width, metrics.height);
+            // Größere Schrift: die Zeile wächst mit.
+            let height = metrics.height + (scale - self.theme.font_size).max(0);
+            return (width, height);
         }
 
         let (kind, spacing, [left, top, right, bottom]) = self.params(widget);

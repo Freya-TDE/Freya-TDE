@@ -14,7 +14,8 @@ let title = form.title();
 eframe::run_native(
     &title,
     {{ main.name }}::{{ main.struct }}::native_options(),
-    Box::new(move |_cc| {
+    Box::new(move |cc| {
+        {{ main.name }}::{{ main.struct }}::freya_setup(&cc.egui_ctx);
         form.freya_created();
         Ok(Box::new(FreyaApp(form)))
     }),

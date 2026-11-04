@@ -157,6 +157,8 @@ impl TerminalView {
                     color: palette().ansi[1],
                     size: FONT,
                     bold: false,
+                    italic: false,
+                    family: None,
                 }]);
             }
         }

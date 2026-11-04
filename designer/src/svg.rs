@@ -63,12 +63,23 @@ pub fn to_svg(primitives: &[Primitive], width: i32, height: i32) -> String {
                 color: c,
                 size,
                 bold,
+                italic,
+                family,
             } => writeln!(
                 out,
-                "<text x=\"{x}\" y=\"{}\" font-size=\"{size}\" fill=\"{}\"{}>{}</text>",
+                "<text x=\"{x}\" y=\"{}\" font-size=\"{size}\" fill=\"{}\"{}{}{}>{}</text>",
                 y + size * 4 / 5,
                 color(*c),
                 if *bold { " font-weight=\"bold\"" } else { "" },
+                if *italic {
+                    " font-style=\"italic\""
+                } else {
+                    ""
+                },
+                family
+                    .as_ref()
+                    .map(|f| format!(" font-family=\"{}\"", escape(f)))
+                    .unwrap_or_default(),
                 escape(text)
             ),
             Primitive::Line { from, to, color: c } => writeln!(
@@ -88,6 +99,20 @@ pub fn to_svg(primitives: &[Primitive], width: i32, height: i32) -> String {
                 rect.width,
                 rect.height,
                 escape(name)
+            ),
+            Primitive::Image { rect, path, fit } => writeln!(
+                out,
+                "<image x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" href=\"{}\" preserveAspectRatio=\"{}\"/>",
+                rect.x,
+                rect.y,
+                rect.width,
+                rect.height,
+                escape(path),
+                match fit.as_str() {
+                    "Stretch" => "none",
+                    "Contain" => "xMidYMid meet",
+                    _ => "xMidYMid slice",
+                }
             ),
         };
     }

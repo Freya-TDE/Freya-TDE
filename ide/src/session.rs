@@ -37,7 +37,12 @@ struct Press {
     element: ComponentName,
     at: Point,
     dragging: bool,
+    /// A resize handle was grabbed: which one and the element's rectangle.
+    resize: Option<(tdr_designer::Handle, tdr_designer::Rect)>,
 }
+
+/// Smallest size a resize leaves.
+const MIN_RESIZE: i32 = 16;
 
 /// What a gesture changed (the UI refreshes accordingly).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -363,10 +368,16 @@ impl Session {
         } else if !self.selection.contains(&hit.element) {
             self.selection = vec![hit.element.clone()];
         }
+        // Anfasser: Formular und frei platzierte Widgets ändern ihre Größe.
+        let resize = hit
+            .handle
+            .filter(|_| self.resizable(&hit.element))
+            .zip(layout.rect(&hit.element));
         self.press = Some(Press {
             element: hit.element,
             at,
             dragging: false,
+            resize,
         });
         Ok(Changes::selection())
     }
@@ -383,9 +394,58 @@ impl Session {
         press.dragging
     }
 
+    /// Can `element` be resized with the mouse? The form (its size) and
+    /// widgets at absolute positions; in a layout the layout decides.
+    fn resizable(&self, element: &ComponentName) -> bool {
+        self.is_root(element)
+            || self
+                .form()
+                .and_then(|f| f.widget(element))
+                .is_some_and(|w| w.visual.placement.is_absolute())
+    }
+
+    /// The rectangle a resize drag to `at` would give (`None` if no resize
+    /// is going on).
+    pub fn resize_preview(&self, at: Point) -> Option<tdr_designer::Rect> {
+        use tdr_designer::Handle as H;
+        let press = self.press.as_ref().filter(|p| p.dragging)?;
+        let (handle, r) = press.resize?;
+        let (dx, dy) = (at.x - press.at.x, at.y - press.at.y);
+        let (left, right) = match handle {
+            H::TopLeft | H::Left | H::BottomLeft => (dx, 0),
+            H::TopRight | H::Right | H::BottomRight => (0, dx),
+            H::Top | H::Bottom => (0, 0),
+        };
+        let (top, bottom) = match handle {
+            H::TopLeft | H::Top | H::TopRight => (dy, 0),
+            H::BottomLeft | H::Bottom | H::BottomRight => (0, dy),
+            H::Left | H::Right => (0, 0),
+        };
+        // Das Formular wächst nur nach rechts und unten (seine Lage ist kein Entwurf).
+        let (left, top) = if self.is_root(&press.element) {
+            (0, 0)
+        } else {
+            (
+                left.min(r.width - MIN_RESIZE),
+                top.min(r.height - MIN_RESIZE),
+            )
+        };
+        let width = (r.width - left + right).max(MIN_RESIZE);
+        let height = (r.height - top + bottom).max(MIN_RESIZE);
+        Some(tdr_designer::Rect::new(
+            r.x + left,
+            r.y + top,
+            width,
+            height,
+        ))
+    }
+
     /// Where a drag would drop the dragged widget (container, index).
     pub fn drop_preview(&self, at: Point) -> Option<(ComponentName, usize)> {
-        let press = self.press.as_ref().filter(|p| p.dragging)?;
+        let press = self
+            .press
+            .as_ref()
+            .filter(|p| p.dragging && p.resize.is_none())?;
         let form = self.form()?;
         let target = drop_target(form, self.doc.registry(), &self.layout()?, at)?;
         // Not into itself or its own subtree.
@@ -399,6 +459,9 @@ impl Session {
 
     /// Mouse released: a drag moves the widget there.
     pub fn release(&mut self, at: Point) -> Result<Changes, CommandError> {
+        if let Some(rect) = self.resize_preview(at) {
+            return self.finish_resize(rect);
+        }
         let target = self.drop_preview(at);
         let Some(press) = self.press.take().filter(|p| p.dragging) else {
             return Ok(Changes::default());
@@ -425,6 +488,65 @@ impl Session {
             element: press.element,
             parent,
             index,
+        })
+    }
+
+    /// Applies a resize: the form's `size`, or position and size of an
+    /// absolutely placed widget.
+    fn finish_resize(&mut self, rect: tdr_designer::Rect) -> Result<Changes, CommandError> {
+        let Some(press) = self.press.take() else {
+            return Ok(Changes::default());
+        };
+        let (Some(form), Some((_, old))) = (self.form.clone(), press.resize) else {
+            return Ok(Changes::default());
+        };
+        if rect == old {
+            return Ok(Changes::default());
+        }
+        if self.is_root(&press.element) {
+            // Titel- und Menüleiste gehören nicht zur Formulargröße.
+            let size = self
+                .form()
+                .and_then(|f| f.widget(&press.element))
+                .and_then(|w| match w.component.get("size").map(|v| &v.value) {
+                    Some(tdr_core::Value::Size(s)) => Some(*s),
+                    _ => None,
+                })
+                .unwrap_or(Size {
+                    width: 640,
+                    height: 480,
+                });
+            let chrome = old.height - size.height;
+            return self.apply(Command::SetProperty {
+                form,
+                element: press.element,
+                property: "size".into(),
+                value: Some(tdr_core::PropertyValue::new(tdr_core::Value::Size(Size {
+                    width: rect.width,
+                    height: (rect.height - chrome).max(MIN_RESIZE),
+                }))),
+            });
+        }
+        let Some(Placement::Absolute { position, .. }) = self
+            .form()
+            .and_then(|f| f.widget(&press.element))
+            .map(|w| w.visual.placement.clone())
+        else {
+            return Ok(Changes::default());
+        };
+        self.apply(Command::SetPlacement {
+            form,
+            element: press.element,
+            placement: Placement::Absolute {
+                position: tdr_core::Point {
+                    x: position.x + rect.x - old.x,
+                    y: position.y + rect.y - old.y,
+                },
+                size: Size {
+                    width: rect.width,
+                    height: rect.height,
+                },
+            },
         })
     }
 

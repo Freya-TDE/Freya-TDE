@@ -20,7 +20,12 @@ generated-code-license = "MIT OR Apache-2.0"
 event-loop = "main-thread"
 absolute-positioning = true
 platforms = ["linux", "windows", "macos"]
-cargo = [{ crate = "eframe", version = "0.37" }]
+cargo = [
+    { crate = "eframe", version = "0.37" },
+    # Hintergrundbilder (PNG, JPEG) / background pictures
+    { crate = "egui_extras", version = "0.37", features = ["file", "image"] },
+    { crate = "image", version = "0.25", default-features = false, features = ["png", "jpeg"] },
+]
 app-file = "templates/app.rs.j2"
 form-file = "templates/form.rs.j2"
 run-file = "templates/run.rs.j2"

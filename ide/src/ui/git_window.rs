@@ -230,6 +230,8 @@ fn graph_shapes(commits: &[Commit], rows: &[GraphRow]) -> Vec<Shape> {
             color: subject_color,
             size: 13,
             bold: commit.head,
+            italic: false,
+            family: None,
         });
         // Geschätzte Textbreite (13 px ≈ 8 px je Zeichen), danach Autor und Zweige.
         text_x += commit.subject.chars().count() as i32 * 8 + 10;
@@ -240,6 +242,8 @@ fn graph_shapes(commits: &[Commit], rows: &[GraphRow]) -> Vec<Shape> {
             color: dim_color(),
             size: 11,
             bold: false,
+            italic: false,
+            family: None,
         });
         text_x += commit.author.chars().count() as i32 * 7 + 10;
         for name in &commit.refs {
@@ -265,6 +269,8 @@ fn graph_shapes(commits: &[Commit], rows: &[GraphRow]) -> Vec<Shape> {
                 color: Color::rgb(0xff, 0xff, 0xff),
                 size: 11,
                 bold: false,
+                italic: false,
+                family: None,
             });
             text_x += w + 4;
         }

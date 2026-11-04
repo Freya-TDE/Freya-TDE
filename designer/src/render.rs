@@ -31,6 +31,9 @@ pub enum Primitive {
         color: Color,
         size: i32,
         bold: bool,
+        italic: bool,
+        /// Font family (`None` = the UI's standard font).
+        family: Option<String>,
     },
     Line {
         from: Point,
@@ -40,6 +43,22 @@ pub enum Primitive {
     /// A component icon (`name` as given by the type, e.g. `"database"`);
     /// the UI draws a symbol for it, or a placeholder.
     Icon { rect: Rect, name: String },
+    /// A picture file (relative to the project), e.g. a form's background.
+    /// `fit`: `Cover`, `Stretch`, `Contain` or `Center`.
+    Image {
+        rect: Rect,
+        path: String,
+        fit: String,
+    },
+}
+
+/// The text style of the element being painted.
+#[derive(Debug, Clone, Default)]
+struct TextStyle {
+    size: i32,
+    bold: bool,
+    italic: bool,
+    family: Option<String>,
 }
 
 fn rect(rect: Rect, fill: Option<Color>, stroke: Option<Color>, radius: i32) -> Primitive {
@@ -56,6 +75,10 @@ struct Painter<'a> {
     props: Props<'a>,
     theme: &'a Theme,
     out: Vec<Primitive>,
+    /// Colours and text style of the element being painted (theme plus its
+    /// own and inherited settings).
+    colors: crate::theme::Colors,
+    style: TextStyle,
 }
 
 impl Painter<'_> {
@@ -66,30 +89,73 @@ impl Painter<'_> {
                 y,
                 text: text.to_owned(),
                 color,
-                size: self.theme.font_size,
-                bold,
+                size: self.style.size,
+                bold: bold || self.style.bold,
+                italic: self.style.italic,
+                family: self.style.family.clone(),
             });
         }
     }
 
     /// Text vertically centred in `r`, left-aligned at `x`.
     fn text_in(&mut self, r: Rect, x: i32, text: &str, color: Color, bold: bool) {
-        let y = r.y + (r.height - self.theme.font_size) / 2;
+        let y = r.y + (r.height - self.style.size) / 2;
         self.text(x, y, text, color, bold);
     }
 
     /// Text centred in `r` both ways.
     fn text_centered(&mut self, r: Rect, text: &str, color: Color) {
-        let x = r.x + (r.width - self.theme.text_width(text)) / 2;
+        let width = self.theme.text_width(text) * self.style.size / self.theme.font_size.max(1);
+        let x = r.x + (r.width - width) / 2;
         self.text_in(r, x, text, color, false);
+    }
+
+    /// Takes the element's own and inherited appearance (colours, font).
+    fn take_style(&mut self, widget: &Widget) {
+        let own = crate::layout::appearance(&self.props, widget, self.theme);
+        let mut colors = self.theme.colors.clone();
+        if let Some(fg) = own.foreground {
+            colors.text = fg;
+        }
+        if let Some(bg) = own.background {
+            colors.control = bg;
+            colors.input = bg;
+            colors.window = bg;
+        }
+        self.colors = colors;
+        self.style = TextStyle {
+            size: own.font_size,
+            bold: own.bold,
+            italic: own.italic,
+            family: own.family,
+        };
+    }
+
+    /// The background picture of a form or container in `r`.
+    fn background_image(&mut self, widget: &Widget, r: Rect) {
+        let path = self
+            .props
+            .text(widget, "background_image")
+            .unwrap_or_default();
+        if !path.trim().is_empty() {
+            let fit = match self.props.value(widget, "background_fit") {
+                Some(Value::Enum(fit)) => fit,
+                _ => "Cover".to_owned(),
+            };
+            self.out.push(Primitive::Image {
+                rect: r,
+                path: path.trim().to_owned(),
+                fit,
+            });
+        }
     }
 
     /// A backend widget drawn by its type's `look` – close to the real thing,
     /// from the theme colors (the real look comes from the debug run).
     fn look(&mut self, look: &str, widget: &Widget, r: Rect, caption: &str, text_color: Color) {
-        let c = self.theme.colors.clone();
+        let c = self.colors.clone();
         let radius = self.theme.radius;
-        let font = self.theme.font_size;
+        let font = self.style.size;
         let white = Color::rgb(255, 255, 255);
         let value_fraction = |p: &Props<'_>| {
             let (min, max) = (
@@ -408,7 +474,9 @@ impl Painter<'_> {
     }
 
     fn widget(&mut self, widget: &Widget, r: Rect, kind: ItemKind) {
-        let c = &self.theme.colors;
+        self.take_style(widget);
+        let own_background = crate::layout::appearance(&self.props, widget, self.theme).background;
+        let c = &self.colors.clone();
         let enabled = self.props.bool(widget, "enabled", true);
         let text_color = if enabled { c.text } else { c.disabled_text };
         let type_ref = &widget.component.type_ref;
@@ -427,6 +495,17 @@ impl Painter<'_> {
                 to: Point::new(r.right(), bar.bottom()),
                 color: border,
             });
+            // Hintergrundbild unter der Titel- und Menüleiste.
+            let bars = self.theme.title_bar_height
+                + if self.props.menu_bar().is_some() {
+                    self.theme.menu_bar_height
+                } else {
+                    0
+                };
+            self.background_image(
+                widget,
+                Rect::new(r.x + 1, r.y + bars + 1, r.width - 2, r.height - bars - 2),
+            );
             let x = bar.x + (bar.width - self.theme.text_width(&title)) / 2;
             self.text_in(bar, x, &title, title_text, true);
             // Hauptmenü wie bei Delphi: die Menüleiste steht im Formular.
@@ -457,6 +536,9 @@ impl Painter<'_> {
                 .push(rect(r, Some(control), Some(border), self.theme.radius));
             self.text_centered(r, &caption, text_color);
         } else if *type_ref == builtin::label() {
+            if let Some(bg) = own_background {
+                self.out.push(rect(r, Some(bg), None, 0));
+            }
             self.text_in(r, r.x, &caption, text_color, false);
         } else if *type_ref == builtin::edit() {
             let (input, border, placeholder_color) = (c.input, c.control_border, c.placeholder);
@@ -495,6 +577,10 @@ impl Painter<'_> {
                 false,
             );
         } else if self.props.is_container(widget) {
+            if let Some(bg) = own_background {
+                self.out.push(rect(r, Some(bg), None, 0));
+            }
+            self.background_image(widget, r);
             self.out.push(Primitive::Rect {
                 rect: r,
                 fill: None,
@@ -602,6 +688,11 @@ pub fn render(
     let mut painter = Painter {
         props: Props { form, registry },
         theme,
+        colors: theme.colors.clone(),
+        style: TextStyle {
+            size: theme.font_size,
+            ..TextStyle::default()
+        },
         out: vec![rect(
             Rect::new(0, 0, layout.width, layout.height),
             Some(theme.colors.desktop),

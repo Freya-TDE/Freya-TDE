@@ -175,15 +175,58 @@ RadioGroup {
 }
 {%- endmacro %}
 
-{#- One widget (containers: with their layout). -#}
+{#- A colour property as Slint colour. -#}
+{%- macro scolor(v) -%}
+{%- if v.a == 255 %}rgb({{ v.r }}, {{ v.g }}, {{ v.b }}){% else %}rgba({{ v.r }}, {{ v.g }}, {{ v.b }}, {{ v.a / 255 }}){% endif -%}
+{%- endmacro %}
+
+{#- One widget, with a background area if it has its own background colour
+    (Slint's standard widgets have no colour properties). -#}
 {%- macro element(c) -%}
+{%- if c.type not in ["core/Label", "core/Container", "backend:slint/GroupBox", "backend:slint/TabWidget"] and c.props.background.a > 0 %}
+Rectangle {
+    background: {{ scolor(c.props.background) }};
+    border_radius: 4px;
+    HorizontalLayout {
+        {{ element_inner(c) }}
+    }
+}
+{%- else -%}
+{{ element_inner(c) }}
+{%- endif -%}
+{%- endmacro %}
+
+{#- One widget (containers: with their layout). -#}
+{%- macro element_inner(c) -%}
 {%- set t = c.type -%}
 {%- set e = c.events -%}
 {%- if t == "core/Label" %}
+{%- set rp = root.props %}
 Text {
     text: root.{{ c.name }}_text;
     visible: root.{{ c.name }}_visible;
     vertical_alignment: center;
+    {%- if c.props.foreground.a > 0 %}
+    color: {{ scolor(c.props.foreground) }};
+    {%- elif rp.foreground.a > 0 %}
+    color: {{ scolor(rp.foreground) }};
+    {%- endif %}
+    {%- if c.props.font_size > 0 %}
+    font_size: {{ c.props.font_size }}px;
+    {%- endif %}
+    {%- if c.props.bold %}
+    font_weight: 700;
+    {%- endif %}
+    {%- if c.props.italic or rp.italic %}
+    font_italic: true;
+    {%- endif %}
+    {%- if c.props.background.a > 0 %}
+    // Hintergrund: Text hat keinen, deshalb ein Rechteck dahinter.
+    Rectangle {
+        z: -1;
+        background: {{ scolor(c.props.background) }};
+    }
+    {%- endif %}
 }
 {%- elif t == "core/Button" %}
 Button {
@@ -413,6 +456,37 @@ slint::slint! {
         height: {{ root.props.size.height }}px;
         {%- endif %}
         in_out property <string> {{ root.name }}_title: {{ root.rust.title }};
+        {%- set rp = root.props %}
+        {%- if rp.background.a > 0 %}
+        background: {{ scolor(rp.background) }};
+        {%- endif %}
+        {%- if rp.font_family %}
+        default_font_family: {{ root.rust.font_family }};
+        {%- endif %}
+        {%- if rp.font_size > 0 %}
+        default_font_size: {{ rp.font_size }}px;
+        {%- endif %}
+        {%- if rp.bold %}
+        default_font_weight: 700;
+        {%- endif %}
+        {%- if rp.min_size.width > 0 or rp.min_size.height > 0 %}
+        min_width: {{ rp.min_size.width }}px;
+        min_height: {{ rp.min_size.height }}px;
+        {%- endif %}
+        {%- if rp.max_size.width > 0 %}
+        max_width: {{ rp.max_size.width }}px;
+        {%- endif %}
+        {%- if rp.max_size.height > 0 %}
+        max_height: {{ rp.max_size.height }}px;
+        {%- endif %}
+        {%- if rp.theme != "System" %}
+        init => {
+            Palette.color_scheme = ColorScheme.{{ "dark" if rp.theme == "Dark" else "light" }};
+        }
+        {%- endif %}
+        {%- if rp.background_image %}
+        in_out property <image> {{ root.name }}_background;
+        {%- endif %}
         {%- for c in widgets if c.name != root.name %}
         {{ properties(c) | indent(8) }}
         {%- endfor %}
@@ -439,6 +513,15 @@ slint::slint! {
             {{ menu(ns.items, "", m.name) | indent(12) }}
         }
         {%- endfor %}
+        {%- if root.props.background_image %}
+        // Hintergrundbild hinter dem Inhalt (geladen in `start`).
+        Image {
+            source: root.{{ root.name }}_background;
+            width: parent.width;
+            height: parent.height;
+            image_fit: {{ {"Cover": "cover", "Stretch": "fill", "Contain": "contain", "Center": "preserve"}[root.props.background_fit] }};
+        }
+        {%- endif %}
         {{ layout(root) | indent(8) }}
     }
 }
@@ -500,6 +583,21 @@ impl {{ form.struct }} {
             slint::Image::load_from_path(std::path::Path::new({{ c.rust.file }})).unwrap_or_default(),
         );
     {%- endfor %}
+    {%- set rp = root.props %}
+    {%- if rp.background_image %}
+        form.{{ root.name }}.set_{{ root.name }}_background(
+            slint::Image::load_from_path(&std::env::current_dir().unwrap_or_default().join({{ root.rust.background_image }}))
+                .unwrap_or_default(),
+        );
+    {%- endif %}
+    {%- if rp.start_state == "Maximized" %}
+        form.{{ root.name }}.window().set_maximized(true);
+    {%- elif rp.start_state == "Fullscreen" %}
+        form.{{ root.name }}.window().set_fullscreen(true);
+    {%- endif %}
+    {%- if rp.position == "Manual" %}
+        form.{{ root.name }}.window().set_position(slint::LogicalPosition::new({{ rp.location.x }} as f32, {{ rp.location.y }} as f32));
+    {%- endif %}
         if main {
         {%- if root.events.on_close %}
             let weak = weak.clone();

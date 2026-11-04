@@ -44,13 +44,37 @@ impl DesignerWindow {
 
     /// Redraws the form; `drop` marks where a dragged widget would land.
     fn draw(&self, ide: &Ide, drop: Option<(ComponentName, usize)>) {
+        self.draw_with(ide, drop, None);
+    }
+
+    /// Like `draw`, with the outline of a resize in progress.
+    fn draw_with(
+        &self,
+        ide: &Ide,
+        drop: Option<(ComponentName, usize)>,
+        resize: Option<tdr_designer::Rect>,
+    ) {
         let session = ide.session();
         let Some((layout, primitives)) = session.picture() else {
             self.canvas.set_shapes(Vec::new());
             return;
         };
         let theme = session.theme();
-        let mut shapes = convert::shapes(&primitives, theme.colors.window);
+        let project = session.project_dir();
+        let mut shapes = convert::shapes(&primitives, theme.colors.window, project.as_deref());
+        if let Some(r) = resize {
+            shapes.push(Shape::Rect {
+                rect: ruf::Rect::new(r.x, r.y, r.width, r.height),
+                fill: None,
+                stroke: Some(ruf::Color::rgb(
+                    theme.colors.selection.r,
+                    theme.colors.selection.g,
+                    theme.colors.selection.b,
+                )),
+                radius: 0,
+                dashed: true,
+            });
+        }
         if let Some((parent, index)) = drop
             && let Some(marker) = drop_marker(&session, &layout, &parent, index)
         {
@@ -205,8 +229,13 @@ pub fn connect(ide: &Rc<Ide>) {
             (MouseAction::Moved, _) => {
                 let dragging = ide.session.borrow_mut().drag(at);
                 if dragging {
-                    let target = ide.session().drop_preview(at);
-                    ide.designer.draw(ide, target);
+                    let resize = ide.session().resize_preview(at);
+                    if resize.is_some() {
+                        ide.designer.draw_with(ide, None, resize);
+                    } else {
+                        let target = ide.session().drop_preview(at);
+                        ide.designer.draw(ide, target);
+                    }
                 }
             }
             (MouseAction::Released, 1) => {

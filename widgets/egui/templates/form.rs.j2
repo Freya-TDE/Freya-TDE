@@ -9,14 +9,28 @@
 {%- set natural = ["core/Label", "core/CheckBox", "backend:egui/RadioButton", "backend:egui/Switch", "backend:egui/Hyperlink", "backend:egui/DragValue", "backend:egui/Slider"] %}
 {%- set menus = components | selectattr("type", "eq", "backend:egui/MainMenu") | selectattr("field") | list %}
 
+{#- A colour property as `egui::Color32` (or `None` if not set). -#}
+{%- macro color(value) -%}
+{%- if value.a > 0 %}Some(egui::Color32::from_rgba_unmultiplied({{ value.r }}, {{ value.g }}, {{ value.b }}, {{ value.a }})){% else %}None{% endif -%}
+{%- endmacro %}
+
+{#- A caption with the widget's bold/italic. -#}
+{%- macro rich(c, text) -%}
+{%- if c.props.bold or c.props.italic -%}
+egui::RichText::new({{ text }}){% if c.props.bold %}.strong(){% endif %}{% if c.props.italic %}.italics(){% endif %}
+{%- else -%}
+{{ text }}
+{%- endif -%}
+{%- endmacro %}
+
 {#- The widget of `c` as an `impl egui::Widget` expression. `fill`: take the
     full width (vertical layouts with align Fill). -#}
 {%- macro widget(c, fill) -%}
 {%- set t = c.type -%}
 {%- if t == "core/Label" -%}
-egui::Label::new(self.{{ c.name }}.value.as_str()){% if c.props.wrap %}.wrap(){% else %}.extend(){% endif %}
+egui::Label::new({{ rich(c, "self." ~ c.name ~ ".value.as_str()") }}){% if c.props.wrap %}.wrap(){% else %}.extend(){% endif %}
 {%- elif t == "core/Button" -%}
-egui::Button::new(self.{{ c.name }}.caption.as_str())
+egui::Button::new({{ rich(c, "self." ~ c.name ~ ".caption.as_str()") }})
 {%- elif t == "core/Edit" -%}
 egui::TextEdit::singleline(&mut self.{{ c.name }}.value)
     {%- if c.props.placeholder %}.hint_text({{ c.rust.placeholder }}){% endif -%}
@@ -25,9 +39,9 @@ egui::TextEdit::singleline(&mut self.{{ c.name }}.value)
     {%- if c.props.max_length > 0 %}.char_limit({{ c.props.max_length }}){% endif -%}
     {%- if fill %}.desired_width(f32::INFINITY){% endif %}
 {%- elif t == "core/CheckBox" -%}
-egui::Checkbox::new(&mut self.{{ c.name }}.value, self.{{ c.name }}.caption.as_str())
+egui::Checkbox::new(&mut self.{{ c.name }}.value, {{ rich(c, "self." ~ c.name ~ ".caption.as_str()") }})
 {%- elif t == "backend:egui/RadioButton" -%}
-egui::RadioButton::new(self.{{ c.name }}.value, self.{{ c.name }}.caption.as_str())
+egui::RadioButton::new(self.{{ c.name }}.value, {{ rich(c, "self." ~ c.name ~ ".caption.as_str()") }})
 {%- elif t == "backend:egui/Switch" -%}
 crate::app::switch(&mut self.{{ c.name }}.value)
 {%- elif t == "backend:egui/DragValue" -%}
@@ -238,9 +252,35 @@ impl {{ form.struct }} {
             viewport: egui::ViewportBuilder::default()
                 .with_title({{ root.rust.title }})
                 .with_inner_size([{{ root.props.size.width }} as f32, {{ root.props.size.height }} as f32])
-                .with_resizable({{ root.rust.resizable }}),
+                .with_resizable({{ root.rust.resizable }})
+            {%- set rp = root.props %}
+            {%- if rp.min_size.width > 0 or rp.min_size.height > 0 %}
+                .with_min_inner_size([{{ rp.min_size.width }} as f32, {{ rp.min_size.height }} as f32])
+            {%- endif %}
+            {%- if rp.max_size.width > 0 or rp.max_size.height > 0 %}
+                .with_max_inner_size([{{ rp.max_size.width if rp.max_size.width > 0 else 100000 }} as f32, {{ rp.max_size.height if rp.max_size.height > 0 else 100000 }} as f32])
+            {%- endif %}
+            {%- if rp.position == "Manual" %}
+                .with_position([{{ rp.location.x }} as f32, {{ rp.location.y }} as f32])
+            {%- endif %}
+            {%- if rp.start_state == "Maximized" %}
+                .with_maximized(true)
+            {%- elif rp.start_state == "Fullscreen" %}
+                .with_fullscreen(true)
+            {%- endif %},
+            centered: {{ "true" if rp.position == "Center" else "false" }},
             ..Default::default()
         }
+    }
+
+    /// Theme and picture loaders, once before the first frame.
+    pub fn freya_setup(ctx: &egui::Context) {
+        egui_extras::install_image_loaders(ctx);
+    {%- if root.props.theme == "Dark" %}
+        ctx.set_theme(egui::ThemePreference::Dark);
+    {%- elif root.props.theme == "Light" %}
+        ctx.set_theme(egui::ThemePreference::Light);
+    {%- endif %}
     }
 
     /// The window title (the caption of `{{ root.name }}`).
@@ -301,9 +341,25 @@ impl {{ form.struct }} {
             {%- endif %}
         });
     {%- endfor %}
+        {%- set rp = root.props %}
         egui::CentralPanel::default()
-            .frame(egui::Frame::central_panel(&ui.style()).inner_margin(egui::Margin::ZERO))
+            .frame(
+                egui::Frame::central_panel(&ui.style())
+                    .inner_margin(egui::Margin::ZERO)
+                {%- if rp.background.a > 0 %}
+                    .fill(egui::Color32::from_rgba_unmultiplied({{ rp.background.r }}, {{ rp.background.g }}, {{ rp.background.b }}, {{ rp.background.a }}))
+                {%- endif %},
+            )
             .show(ui, |ui| {
+            {%- if rp.background_image %}
+                crate::app::background(ui, ui.max_rect(), {{ root.rust.background_image }}, {{ rp.background_fit | rust_str }});
+            {%- endif %}
+            {%- if rp.foreground.a > 0 %}
+                ui.visuals_mut().override_text_color = Some(egui::Color32::from_rgb({{ rp.foreground.r }}, {{ rp.foreground.g }}, {{ rp.foreground.b }}));
+            {%- endif %}
+            {%- if rp.font_size > 0 %}
+                ui.style_mut().override_font_id = Some(egui::FontId::proportional({{ rp.font_size }} as f32));
+            {%- endif %}
                 ui.add_enabled_ui(self.{{ root.name }}.enabled, |ui| self.freya_ui_{{ root.name }}(ui));
             });
     }
@@ -380,6 +436,9 @@ impl {{ form.struct }} {
                 {%- set p = c.placement %}
                 {%- set align = p.align if p and p.kind == "layout" else "Fill" %}
                 {%- set item = container(c) if c.type in containers else widget(c, l.kind == "vertical" and align == "Fill" and c.type not in natural) %}
+                {%- if c.type not in containers and (c.props.foreground.a > 0 or c.props.background.a > 0 or c.props.font_size > 0) %}
+                {%- set item = "crate::app::styled(" ~ color(c.props.foreground) ~ ", " ~ color(c.props.background) ~ ", " ~ (("Some(" ~ c.props.font_size ~ " as f32)") if c.props.font_size > 0 else "None") ~ ", " ~ item ~ ")" %}
+                {%- endif %}
                     if self.{{ c.name }}.visible {
                     {%- if l.kind == "absolute" and p and p.kind == "absolute" %}
                         let rect = egui::Rect::from_min_size(area.min + egui::vec2({{ p.x }} as f32, {{ p.y }} as f32), egui::vec2({{ p.width }} as f32, {{ p.height }} as f32));

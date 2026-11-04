@@ -18,7 +18,11 @@ fn rect(r: tdr_designer::Rect) -> Rect {
 
 /// Converts the display list; `background` is what transparent colors are
 /// mixed with (the form's window color).
-pub fn shapes(primitives: &[Primitive], background: tdr_core::Color) -> Vec<Shape> {
+pub fn shapes(
+    primitives: &[Primitive],
+    background: tdr_core::Color,
+    project: Option<&std::path::Path>,
+) -> Vec<Shape> {
     let mut out = Vec::with_capacity(primitives.len());
     for p in primitives {
         match p {
@@ -42,6 +46,8 @@ pub fn shapes(primitives: &[Primitive], background: tdr_core::Color) -> Vec<Shap
                 color: c,
                 size,
                 bold,
+                italic,
+                family,
             } => out.push(Shape::Text {
                 x: *x,
                 y: *y,
@@ -49,6 +55,8 @@ pub fn shapes(primitives: &[Primitive], background: tdr_core::Color) -> Vec<Shap
                 color: color(*c, background),
                 size: *size,
                 bold: *bold,
+                italic: *italic,
+                family: family.clone(),
             }),
             Primitive::Line { from, to, color: c } => out.push(Shape::Line {
                 from: Point::new(from.x, from.y),
@@ -59,8 +67,53 @@ pub fn shapes(primitives: &[Primitive], background: tdr_core::Color) -> Vec<Shap
             Primitive::Icon { rect: r, name } => out.push(Shape::Image {
                 rect: rect(*r),
                 image: super::icons::icon_or_fallback(Some(name)),
+                fit: ruf::ImageFit::Contain,
             }),
+            Primitive::Image { rect: r, path, fit } => {
+                if let Some(image) = picture(project, path) {
+                    out.push(Shape::Image {
+                        rect: rect(*r),
+                        image,
+                        fit: match fit.as_str() {
+                            "Stretch" => ruf::ImageFit::Stretch,
+                            "Contain" => ruf::ImageFit::Contain,
+                            "Center" => ruf::ImageFit::Center,
+                            _ => ruf::ImageFit::Cover,
+                        },
+                    });
+                }
+            }
         }
     }
     out
+}
+
+/// A loaded picture with the modification time of its file.
+type Picture = (Option<std::time::SystemTime>, Option<ruf::Image>);
+
+thread_local! {
+    /// Pictures of the design surface by file.
+    static PICTURES: std::cell::RefCell<std::collections::HashMap<std::path::PathBuf, Picture>> =
+        Default::default();
+}
+
+/// A picture file (relative to the project), loaded again when it changed.
+fn picture(project: Option<&std::path::Path>, path: &str) -> Option<ruf::Image> {
+    let path = std::path::Path::new(path);
+    let file = match project {
+        Some(dir) if path.is_relative() => dir.join(path),
+        _ => path.to_path_buf(),
+    };
+    let modified = std::fs::metadata(&file).and_then(|m| m.modified()).ok();
+    PICTURES.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        if let Some((time, image)) = cache.get(&file)
+            && *time == modified
+        {
+            return image.clone();
+        }
+        let image = std::fs::read(&file).ok().map(ruf::Image::from_bytes);
+        cache.insert(file, (modified, image.clone()));
+        image
+    })
 }

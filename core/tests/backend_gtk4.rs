@@ -14,6 +14,8 @@ use tdr_core::*;
 
 #[path = "support/data.rs"]
 mod data;
+#[path = "support/style.rs"]
+mod style;
 
 fn name(n: &str) -> ComponentName {
     ComponentName::new(n).unwrap()
@@ -380,8 +382,11 @@ fn gtk_available() -> bool {
         .args(["--exists", "gtk4"])
         .status()
         .is_ok_and(|s| s.success());
-    let display =
-        std::env::var_os("DISPLAY").is_some() || std::env::var_os("WAYLAND_DISPLAY").is_some();
+    // Nur unter Xvfb (xvfb-run) – nie Fenster und Klicks auf dem echten Bildschirm,
+    // außer ausdrücklich gewünscht (FREYA_TDE_REAL_DISPLAY=1).
+    let display = std::env::var_os("DISPLAY").is_some()
+        && (std::env::var("XAUTHORITY").is_ok_and(|a| a.contains("xvfb-run"))
+            || std::env::var_os("FREYA_TDE_REAL_DISPLAY").is_some());
     if !(found && display) && std::env::var_os("FREYA_TDE_REQUIRE_GTK").is_some() {
         panic!("GTK 4 or a display is missing");
     }
@@ -391,7 +396,8 @@ fn gtk_available() -> bool {
 #[test]
 fn generated_project_builds_and_runs() {
     let registry = registry();
-    let form = form();
+    let mut form = form();
+    style::apply(&mut form, "greeting", "ok_button");
     let issues = validate(&form, &ValidationContext::for_backend(&registry, "gtk4"));
     assert!(
         issues.iter().all(|i| i.severity != Severity::Error),
@@ -410,6 +416,7 @@ fn generated_project_builds_and_runs() {
     let generation = generate(&project, &forms, &registry, &dir);
     assert!(!generation.has_errors(), "{:#?}", generation.diagnostics);
     write(&dir, &generation).unwrap();
+    style::picture(&dir);
     // Nutzercode wie nach dem Ausfüllen der Handler.
     std::fs::write(dir.join("src/main.rs"), MAIN_RS).unwrap();
     std::fs::write(dir.join("src/main_form.rs"), FORM_RS).unwrap();

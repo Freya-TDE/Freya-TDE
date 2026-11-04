@@ -67,6 +67,7 @@ fn card(
         Shape::Image {
             rect: Rect::new(24, 22, width - 48, logo_height),
             image: logo(),
+            fit: ruf::ImageFit::Contain,
         },
     ];
     let mut y = 22 + logo_height + 16;
@@ -79,6 +80,8 @@ fn card(
             color: *color,
             size: *size,
             bold: *bold,
+            italic: false,
+            family: None,
         });
         y += measured.height + 6;
     }
