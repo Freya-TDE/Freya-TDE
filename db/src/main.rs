@@ -10,6 +10,7 @@
 //! `tdr_core::schema`.*
 
 mod catalog;
+mod keyspace;
 
 use std::collections::HashMap;
 use std::time::Duration;
@@ -27,6 +28,7 @@ pub enum Pool {
     Postgres(sqlx::PgPool),
     MySql(sqlx::MySqlPool),
     Sqlite(sqlx::SqlitePool),
+    Redis(redis::aio::ConnectionManager),
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -79,6 +81,7 @@ async fn main() {
             Pool::Postgres(p) => p.close().await,
             Pool::MySql(p) => p.close().await,
             Pool::Sqlite(p) => p.close().await,
+            Pool::Redis(_) => {}
         }
     }
 }
@@ -90,18 +93,46 @@ async fn handle(
     match request {
         Request::Quit => Ok(Answer::Bye),
         Request::Test { connection } => {
-            let pool = pool(pools, &connection).await?;
-            let server = catalog::server(pool).await?;
+            let server = match pool(pools, &connection).await? {
+                Pool::Redis(manager) => keyspace::server(manager).await?,
+                pool => catalog::server(pool).await?,
+            };
             Ok(Answer::Connected { server })
         }
         Request::Schema { connection } => {
+            not_redis(&connection)?;
             let pool = pool(pools, &connection).await?;
             Ok(Answer::Schema(catalog::schema(pool).await?))
         }
         Request::Describe { connection, sql } => {
+            not_redis(&connection)?;
             let pool = pool(pools, &connection).await?;
             Ok(Answer::Described(catalog::describe(pool, &sql).await?))
         }
+        Request::Keys {
+            connection,
+            pattern,
+            limit,
+        } => match pool(pools, &connection).await? {
+            Pool::Redis(manager) => Ok(Answer::Keys(
+                keyspace::keys(manager, &pattern, limit).await?,
+            )),
+            _ => Err(DbError::new(
+                codes::UNSUPPORTED,
+                "keys are for Redis; SQL databases have tables (schema)",
+            )),
+        },
+    }
+}
+
+fn not_redis(connection: &Connection) -> Result<(), DbError> {
+    if connection.driver.is_sql() {
+        Ok(())
+    } else {
+        Err(DbError::new(
+            codes::UNSUPPORTED,
+            "Redis has keys, not tables: use the keys request",
+        ))
     }
 }
 
@@ -144,6 +175,7 @@ async fn connect(connection: &Connection) -> Result<Pool, DbError> {
                     .map_err(connect_error)?,
             )
         }
+        Driver::Redis => Pool::Redis(keyspace::connect(url).await?),
         Driver::Sqlite => {
             // Nur lesen und nie anlegen: der Designer soll keine Datei erzeugen.
             let options = sqlx::sqlite::SqliteConnectOptions::from_str(url)

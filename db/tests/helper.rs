@@ -276,3 +276,102 @@ async fn mysql() {
         pool.execute(s).await.unwrap();
     }
 }
+
+/// Redis: `FREYA_TDE_TEST_REDIS=redis://127.0.0.1:6379/` (the test uses only
+/// keys under `freya:test:` and deletes them afterwards).
+#[tokio::test]
+async fn redis() {
+    let Ok(url) = std::env::var("FREYA_TDE_TEST_REDIS") else {
+        eprintln!("FREYA_TDE_TEST_REDIS not set, skipped");
+        return;
+    };
+    let client = redis::Client::open(url.as_str()).unwrap();
+    let mut con = client.get_multiplexed_async_connection().await.unwrap();
+    let setup: [&[&str]; 6] = [
+        &["SET", "freya:test:greeting", "Hallo Freya"],
+        &["RPUSH", "freya:test:todo", "a", "b", "c"],
+        &["SADD", "freya:test:tags", "rust", "redis"],
+        &["ZADD", "freya:test:rank", "2", "zwei", "1", "eins"],
+        &["HSET", "freya:test:user", "name", "Freya", "lang", "de"],
+        &["EXPIRE", "freya:test:greeting", "600"],
+    ];
+    for args in setup {
+        let mut cmd = redis::cmd(args[0]);
+        for a in &args[1..] {
+            cmd.arg(*a);
+        }
+        let _: redis::Value = cmd.query_async(&mut con).await.unwrap();
+    }
+
+    let mut helper = Helper::start(&std::env::temp_dir());
+    let c = connection(Driver::Redis, &url);
+    let Answer::Connected { server } = helper.ok(Request::Test {
+        connection: c.clone(),
+    }) else {
+        panic!()
+    };
+    assert!(
+        server.starts_with("Redis ") || server.starts_with("Valkey "),
+        "{server}"
+    );
+
+    let Answer::Keys(keys) = helper.ok(Request::Keys {
+        connection: c.clone(),
+        pattern: "freya:test:*".into(),
+        limit: 100,
+    }) else {
+        panic!()
+    };
+    let find = |k: &str| keys.keys.iter().find(|x| x.key == k).unwrap();
+    assert_eq!(keys.keys.len(), 5);
+    assert!(!keys.truncated);
+    let greeting = find("freya:test:greeting");
+    assert_eq!(greeting.kind, "string");
+    assert!(greeting.ttl.is_some_and(|t| t > 0 && t <= 600));
+    assert_eq!(greeting.preview, ["Hallo Freya"]);
+    let todo = find("freya:test:todo");
+    assert_eq!((todo.kind.as_str(), todo.length), ("list", Some(3)));
+    assert_eq!(todo.preview, ["a", "b", "c"]);
+    assert_eq!(todo.ttl, None);
+    assert_eq!(find("freya:test:rank").preview, ["eins (1)", "zwei (2)"]);
+    let user = find("freya:test:user");
+    assert_eq!((user.kind.as_str(), user.length), ("hash", Some(2)));
+    assert!(user.preview.contains(&"name = Freya".to_owned()));
+    assert_eq!(find("freya:test:tags").length, Some(2));
+
+    // Obergrenze.
+    let Answer::Keys(two) = helper.ok(Request::Keys {
+        connection: c.clone(),
+        pattern: "freya:test:*".into(),
+        limit: 2,
+    }) else {
+        panic!()
+    };
+    assert_eq!(two.keys.len(), 2);
+    assert!(two.truncated);
+
+    // Tabellen gibt es bei Redis nicht.
+    let Outcome::Error(error) = helper.ask(Request::Schema { connection: c }) else {
+        panic!()
+    };
+    assert_eq!(error.code, codes::UNSUPPORTED);
+    let Outcome::Error(error) = helper.ask(Request::Test {
+        connection: connection(Driver::Redis, "redis://127.0.0.1:1/"),
+    }) else {
+        panic!()
+    };
+    assert_eq!(error.code, codes::CONNECT_FAILED);
+    helper.quit();
+
+    let _: i64 = redis::cmd("DEL")
+        .arg(&[
+            "freya:test:greeting",
+            "freya:test:todo",
+            "freya:test:tags",
+            "freya:test:rank",
+            "freya:test:user",
+        ])
+        .query_async(&mut con)
+        .await
+        .unwrap();
+}

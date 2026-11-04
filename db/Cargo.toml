@@ -18,4 +18,6 @@ serde_json.workspace = true
 # Datenbankzugriff nur in diesem Hilfsprogramm, nicht in der IDE.
 # Database access only in this helper, not in the IDE.
 sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "tls-rustls-ring-native-roots", "postgres", "mysql", "sqlite"] }
+# Redis (redis-rs, BSD-3-Clause), async auf Tokio.
+redis = { version = "1.8.1", default-features = false, features = ["tokio-comp", "tokio-rustls-comp", "connection-manager"] }
 tokio = { version = "1.54.1", features = ["rt", "macros", "io-std", "io-util", "time"] }

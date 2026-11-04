@@ -380,13 +380,21 @@ impl InspectorWindow {
             };
             lines.push(self.property_line(ide, page, target, row, refs));
         }
-        // SQLx-Pool und -Query: Datenbank zur Entwurfszeit (Helfer freya-tde-db).
+        // SQLx-Pool/-Query und Redis-Client/-Read: Datenbank zur Entwurfszeit (Helfer freya-tde-db).
         let element_type = form.element(&target.name).map(|e| e.type_ref().clone());
         drop(session);
         let pool =
             tdr_core::TypeRef::pack(crate::database::POOL_TYPE.0, crate::database::POOL_TYPE.1);
         let query =
             tdr_core::TypeRef::pack(crate::database::QUERY_TYPE.0, crate::database::QUERY_TYPE.1);
+        let redis_client = tdr_core::TypeRef::pack(
+            crate::database::REDIS_CLIENT_TYPE.0,
+            crate::database::REDIS_CLIENT_TYPE.1,
+        );
+        let redis_read = tdr_core::TypeRef::pack(
+            crate::database::REDIS_READ_TYPE.0,
+            crate::database::REDIS_READ_TYPE.1,
+        );
         let actions: &[(&str, &str, Option<DbJob>)] = if element_type.as_ref() == Some(&pool) {
             &[
                 ("Verbindung", "Testen", Some(DbJob::Test)),
@@ -395,6 +403,16 @@ impl InspectorWindow {
         } else if element_type.as_ref() == Some(&query) {
             &[
                 ("columns", "Aus Datenbank übernehmen", Some(DbJob::Columns)),
+                ("Verbindung", "Testen", Some(DbJob::Test)),
+            ]
+        } else if element_type.as_ref() == Some(&redis_client) {
+            &[
+                ("Verbindung", "Testen", Some(DbJob::Test)),
+                ("Schlüssel", "Datenbank-Fenster", None),
+            ]
+        } else if element_type.as_ref() == Some(&redis_read) {
+            &[
+                ("columns", "Aus der Art übernehmen", Some(DbJob::Columns)),
                 ("Verbindung", "Testen", Some(DbJob::Test)),
             ]
         } else {

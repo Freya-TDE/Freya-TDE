@@ -113,7 +113,14 @@ mod tests {
         assert!(output.version() > before);
         assert_eq!(
             output.channels(),
-            ["Build", "Programm", "Git", "rust-analyzer", "Eigener"]
+            [
+                "Build",
+                "Programm",
+                "Git",
+                "rust-analyzer",
+                "Datenbank",
+                "Eigener"
+            ]
         );
         let line = "ä".repeat(100) + "\n";
         for _ in 0..(Output::LIMIT / line.len() + 10) {

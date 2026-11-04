@@ -194,6 +194,23 @@ impl Database {
         }
     }
 
+    /// Redis keys matching `pattern` (at most `limit`).
+    pub fn keys(
+        &mut self,
+        connection: &Connection,
+        pattern: &str,
+        limit: usize,
+    ) -> Result<tdr_core::schema::Keys, DbError> {
+        match self.request(Request::Keys {
+            connection: connection.clone(),
+            pattern: pattern.to_owned(),
+            limit,
+        })? {
+            Answer::Keys(keys) => Ok(keys),
+            other => Err(unexpected(&other)),
+        }
+    }
+
     /// Result columns of `sql` (not executed).
     pub fn describe(&mut self, connection: &Connection, sql: &str) -> Result<Described, DbError> {
         match self.request(Request::Describe {
@@ -227,19 +244,25 @@ fn unexpected(answer: &Answer) -> DbError {
     )
 }
 
-// --- The SQLx components of a project ------------------------------------------------------
+// --- The database components of a project -------------------------------------------------
 
 /// Type of the SQLx pool and query (pack `sqlx`).
 pub const POOL_TYPE: (&str, &str) = ("sqlx", "Pool");
 pub const QUERY_TYPE: (&str, &str) = ("sqlx", "Query");
+/// Type of the Redis client and data source (pack `redis`).
+pub const REDIS_CLIENT_TYPE: (&str, &str) = ("redis", "Client");
+pub const REDIS_READ_TYPE: (&str, &str) = ("redis", "Read");
+
+/// Keys the window shows per Redis client.
+pub const KEY_LIMIT: usize = 500;
 
 /// Why a component has no usable connection (stable codes).
 pub mod lookup {
     /// The path names no component.
     pub const NOT_FOUND: &str = "component_not_found";
-    /// Neither a pool nor a query with a pool.
+    /// Neither a pool/client nor a query/read using one.
     pub const NOT_A_DATABASE: &str = "not_a_database";
-    /// The query has no pool.
+    /// The query has no pool (the Redis read no client).
     pub const NO_POOL: &str = "no_pool";
     /// The pool has no URL.
     pub const NO_URL: &str = "no_url";
@@ -258,31 +281,60 @@ fn find<'f>(forms: &'f [Form], path: &ComponentPath) -> Option<&'f Form> {
         .find(|f| path.form.as_ref() == Some(&f.name) && f.element(&path.name).is_some())
 }
 
-/// The pools of the project (paths `form::name`), in form order.
+/// The connections of the project – SQLx pools and Redis clients (paths
+/// `form::name`), in form order.
 pub fn pools(forms: &[Form]) -> Vec<ComponentPath> {
     forms
         .iter()
         .flat_map(|f| {
             f.elements().into_iter().filter_map(move |e| {
                 let path = ComponentPath::on(f.name.clone(), e.name().clone());
-                is_type(f, &path, POOL_TYPE).then_some(path)
+                (is_type(f, &path, POOL_TYPE) || is_type(f, &path, REDIS_CLIENT_TYPE))
+                    .then_some(path)
             })
         })
         .collect()
 }
 
-/// The connection of a pool, or of the pool a query uses.
+/// The URL for display: a password (`user:secret@`) becomes `***`.
+pub fn display_url(url: &str) -> String {
+    let Some((scheme, rest)) = url.split_once("://") else {
+        return url.to_owned();
+    };
+    let Some((auth, host)) = rest.rsplit_once('@') else {
+        return url.to_owned();
+    };
+    let user = auth.split_once(':').map_or("", |(user, _)| user);
+    if auth.contains(':') {
+        format!("{scheme}://{user}:***@{host}")
+    } else {
+        url.to_owned()
+    }
+}
+
+/// Is `path` a Redis read (a data source whose columns follow its kind)?
+pub fn is_redis_read(forms: &[Form], path: &ComponentPath) -> bool {
+    find(forms, path).is_some_and(|f| is_type(f, path, REDIS_READ_TYPE))
+}
+
+/// The connection of a pool or Redis client, or of the one a query or
+/// Redis read uses.
 pub fn connection(forms: &[Form], path: &ComponentPath) -> Result<Connection, DbError> {
     let form =
         find(forms, path).ok_or_else(|| DbError::new(lookup::NOT_FOUND, path.to_string()))?;
-    let pool_path = if is_type(form, path, POOL_TYPE) {
+    let via = |property: &str| {
+        let component = form.element(&path.name).expect("found").component();
+        match component.get(property).map(|v| &v.value) {
+            Some(Value::Reference(Some(target))) => Ok(target.qualified(&form.name)),
+            _ => Err(DbError::new(lookup::NO_POOL, path.to_string())),
+        }
+    };
+    let pool_path = if is_type(form, path, POOL_TYPE) || is_type(form, path, REDIS_CLIENT_TYPE) {
         path.clone()
     } else if is_type(form, path, QUERY_TYPE) {
-        let component = form.element(&path.name).expect("found").component();
-        match component.get("pool").map(|v| &v.value) {
-            Some(Value::Reference(Some(target))) => target.qualified(&form.name),
-            _ => return Err(DbError::new(lookup::NO_POOL, path.to_string())),
-        }
+        via("pool")?
+    } else if is_type(form, path, REDIS_READ_TYPE) {
+        via("client")?
     } else {
         return Err(DbError::new(lookup::NOT_A_DATABASE, path.to_string()));
     };
@@ -292,9 +344,13 @@ pub fn connection(forms: &[Form], path: &ComponentPath) -> Result<Connection, Db
         .element(&pool_path.name)
         .expect("found")
         .component();
-    let driver = match pool.get("driver").map(|v| &v.value) {
-        Some(Value::Enum(name)) => Driver::from_name(name).unwrap_or(Driver::Postgres),
-        _ => Driver::Postgres,
+    let driver = if is_type(pool_form, &pool_path, REDIS_CLIENT_TYPE) {
+        Driver::Redis
+    } else {
+        match pool.get("driver").map(|v| &v.value) {
+            Some(Value::Enum(name)) => Driver::from_name(name).unwrap_or(Driver::Postgres),
+            _ => Driver::Postgres,
+        }
     };
     let url = match pool.get("url").map(|v| &v.value) {
         Some(Value::Text(url)) if !url.trim().is_empty() => url.clone(),
@@ -321,6 +377,38 @@ pub fn query_sql(forms: &[Form], path: &ComponentPath) -> Result<String, DbError
         .ok_or_else(|| DbError::new(lookup::SQL_NOT_LITERAL, code))
 }
 
+/// The columns of a Redis read, given by its kind (`field: String; value:
+/// String` for a hash …) – no server needed.
+pub fn redis_columns(
+    forms: &[Form],
+    path: &ComponentPath,
+    registry: &tdr_core::TypeRegistry,
+) -> Result<Described, DbError> {
+    let form =
+        find(forms, path).ok_or_else(|| DbError::new(lookup::NOT_FOUND, path.to_string()))?;
+    if !is_type(form, path, REDIS_READ_TYPE) {
+        return Err(DbError::new(lookup::NOT_A_DATABASE, path.to_string()));
+    }
+    let element = form.element(&path.name).expect("found");
+    let texts = tdr_core::codegen::implied_columns(form, element, registry).unwrap_or_default();
+    let columns = tdr_core::data::parse_columns(&texts)
+        .map_err(|e| DbError::new(tdr_core::schema::codes::QUERY_FAILED, e))?
+        .into_iter()
+        .map(|c| tdr_core::schema::Column {
+            name: c.name,
+            sql_type: "redis".to_owned(),
+            nullable: Some(false),
+            primary_key: false,
+            rust_type: Some(c.rust_type),
+            feature: None,
+        })
+        .collect();
+    Ok(Described {
+        columns,
+        parameters: None,
+    })
+}
+
 /// The command that writes the result columns of a query into its
 /// `columns` property (undoable like every designer command). Columns
 /// without a known Rust type keep an entry the developer wrote by hand.
@@ -331,7 +419,7 @@ pub fn columns_command(
 ) -> Result<tdr_designer::Command, DbError> {
     let form =
         find(forms, path).ok_or_else(|| DbError::new(lookup::NOT_FOUND, path.to_string()))?;
-    if !is_type(form, path, QUERY_TYPE) {
+    if !is_type(form, path, QUERY_TYPE) && !is_type(form, path, REDIS_READ_TYPE) {
         return Err(DbError::new(lookup::NOT_A_DATABASE, path.to_string()));
     }
     let component = form.element(&path.name).expect("found").component();

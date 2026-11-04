@@ -14,7 +14,9 @@ use std::sync::{Arc, Mutex};
 use rncl::prelude::*;
 use ruf::Color;
 use tdr_core::ComponentPath;
-use tdr_core::schema::{Connection, DbError, Described, RoutineKind, Schema, TableKind};
+use tdr_core::schema::{
+    Connection, DbError, Described, Driver, Keys, RoutineKind, Schema, TableKind,
+};
 use tdr_designer::Command;
 
 use super::{Ide, with, with0};
@@ -29,7 +31,7 @@ pub enum DbJob {
     Test,
     /// Read the result columns of a query into `columns`.
     Columns,
-    /// Load the schema for the window.
+    /// Load the schema (SQL) or the keys (Redis) for the window.
     Schema,
 }
 
@@ -39,6 +41,7 @@ pub enum DbAnswer {
     Server(String),
     Described(Described),
     Schema(Schema),
+    Keys(Keys),
 }
 
 /// Delivered to the GUI thread: (job, component, answer).
@@ -65,6 +68,9 @@ impl DbAccess {
         let db = guard.as_mut().expect("set above");
         match job {
             DbJob::Test => db.test(connection).map(DbAnswer::Server),
+            DbJob::Schema if connection.driver == Driver::Redis => db
+                .keys(connection, "*", database::KEY_LIMIT)
+                .map(DbAnswer::Keys),
             DbJob::Schema => db.schema(connection).map(DbAnswer::Schema),
             DbJob::Columns => db
                 .describe(connection, sql.unwrap_or_default())
@@ -93,7 +99,9 @@ impl Ide {
         let forms = session.document().forms();
         let connection = database::connection(forms, path)?;
         let sql = match job {
-            DbJob::Columns => Some(database::query_sql(forms, path)?),
+            DbJob::Columns if !database::is_redis_read(forms, path) => {
+                Some(database::query_sql(forms, path)?)
+            }
             _ => None,
         };
         Ok((connection, sql))
@@ -114,18 +122,40 @@ impl Ide {
         }
     }
 
-    /// The schema of the pool `path` (also kept for the window).
+    /// The schema of the SQL pool `path` (also kept for the window).
     pub fn database_schema(&self, path: &ComponentPath) -> Result<Schema, DbError> {
-        let result = match self.database_run(DbJob::Schema, path) {
-            Ok(DbAnswer::Schema(schema)) => Ok(schema),
-            Ok(_) => unreachable!("schema answers with a schema"),
-            Err(e) => Err(e),
-        };
+        let result = self.database_run(DbJob::Schema, path);
         self.db_schemas
             .borrow_mut()
             .insert(path.clone(), result.clone());
         self.database_window.refresh(self);
-        result
+        match result? {
+            DbAnswer::Schema(schema) => Ok(schema),
+            _ => Err(DbError::new(
+                tdr_core::schema::codes::UNSUPPORTED,
+                "Redis has keys, not tables: use database_keys",
+            )),
+        }
+    }
+
+    /// Keys of the Redis client `path` (or of a Redis read's client) matching
+    /// `pattern`, at most `limit`.
+    pub fn database_keys(
+        &self,
+        path: &ComponentPath,
+        pattern: &str,
+        limit: usize,
+    ) -> Result<Keys, DbError> {
+        let (connection, _) = self.database_target(DbJob::Test, path)?;
+        let mut guard = self.db_access.0.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = self.database_dir();
+        if guard.as_ref().is_none_or(|d| d.dir() != dir) {
+            *guard = Some(Database::new(dir));
+        }
+        guard
+            .as_mut()
+            .expect("set above")
+            .keys(&connection, pattern, limit)
     }
 
     /// Preview of "take columns from the database" for query `path`: the
@@ -134,9 +164,20 @@ impl Ide {
         &self,
         path: &ComponentPath,
     ) -> Result<(Command, Described), DbError> {
-        let described = match self.database_run(DbJob::Columns, path)? {
-            DbAnswer::Described(d) => d,
-            _ => unreachable!("describe answers with columns"),
+        let redis = database::is_redis_read(self.session().document().forms(), path);
+        let described = if redis {
+            // Redis: die Spalten folgen aus der Art, kein Server nötig.
+            let session = self.session();
+            database::redis_columns(
+                session.document().forms(),
+                path,
+                session.document().registry(),
+            )?
+        } else {
+            match self.database_run(DbJob::Columns, path)? {
+                DbAnswer::Described(d) => d,
+                _ => unreachable!("describe answers with columns"),
+            }
         };
         let command =
             database::columns_command(self.session().document().forms(), path, &described)?;
@@ -154,10 +195,19 @@ impl Ide {
     /// Runs `job` for `path` in the background; the result appears in the
     /// status line, the output channel "Datenbank" and the window.
     pub fn database_job(&self, job: DbJob, path: &ComponentPath) {
-        let target = self.database_target(job, path);
         let Some(sender) = self.db_results.borrow().clone() else {
             return;
         };
+        if job == DbJob::Columns && database::is_redis_read(self.session().document().forms(), path)
+        {
+            let result = self
+                .query_columns_preview(path)
+                .map(|(_, d)| DbAnswer::Described(d));
+            self.db_busy.set(self.db_busy.get() + 1);
+            sender.send((job, path.clone(), result));
+            return;
+        }
+        let target = self.database_target(job, path);
         let (connection, sql) = match target {
             Ok(t) => t,
             Err(error) => {
@@ -214,7 +264,19 @@ impl Ide {
                 );
                 self.db_schemas
                     .borrow_mut()
-                    .insert(path.clone(), Ok(schema));
+                    .insert(path.clone(), Ok(DbAnswer::Schema(schema)));
+                text
+            }
+            (_, Ok(DbAnswer::Keys(keys))) => {
+                let more = if keys.truncated { "+" } else { "" };
+                let text = format!(
+                    "{path}: {} – {}{more} Schlüssel",
+                    keys.server,
+                    keys.keys.len()
+                );
+                self.db_schemas
+                    .borrow_mut()
+                    .insert(path.clone(), Ok(DbAnswer::Keys(keys)));
                 text
             }
         };
@@ -248,14 +310,18 @@ impl Ide {
 /// Node ids: `pool:<path>`, `table:<path>:<schema>.<name>`, others below.
 fn tree(
     pools: &[(ComponentPath, Option<Connection>)],
-    schemas: &BTreeMap<ComponentPath, Result<Schema, DbError>>,
+    schemas: &BTreeMap<ComponentPath, Result<DbAnswer, DbError>>,
 ) -> Vec<TreeItem> {
     pools
         .iter()
         .map(|(path, connection)| {
             let id = format!("pool:{path}");
             let label = match connection {
-                Some(c) => format!("{path} ({}, {})", c.driver.name(), c.url),
+                Some(c) => format!(
+                    "{path} ({}, {})",
+                    c.driver.name(),
+                    database::display_url(&c.url)
+                ),
                 None => format!("{path} (ohne URL)"),
             };
             let mut item = TreeItem::new(&id, &label);
@@ -263,6 +329,7 @@ fn tree(
                 None => {
                     item = item.with_child(TreeItem::new(&format!("{id}:wait"), "… wird geladen"));
                 }
+                Some(Ok(DbAnswer::Server(_) | DbAnswer::Described(_))) => {}
                 Some(Err(error)) => {
                     item = item.with_child(
                         TreeItem::new(
@@ -272,7 +339,46 @@ fn tree(
                         .with_color(Color::rgb(0xc0, 0x39, 0x2b)),
                     );
                 }
-                Some(Ok(schema)) => {
+                Some(Ok(DbAnswer::Keys(keys))) => {
+                    item = item.with_child(TreeItem::new(&format!("{id}:server"), &keys.server));
+                    let count = if keys.truncated {
+                        format!("{}+", keys.keys.len())
+                    } else {
+                        keys.keys.len().to_string()
+                    };
+                    let mut group =
+                        TreeItem::new(&format!("{id}:keys"), "Schlüssel").with_badge(&count);
+                    for key in &keys.keys {
+                        let key_id = format!("key:{path}:{}", key.key);
+                        let mut node = TreeItem::new(&key_id, &key.key)
+                            .with_badge(&key.kind)
+                            .collapsed();
+                        let mut facts = Vec::new();
+                        if let Some(length) = key.length {
+                            facts.push(format!("Länge {length}"));
+                        }
+                        facts.push(match key.ttl {
+                            Some(ttl) => format!("läuft ab in {ttl} s"),
+                            None => "ohne Ablauf".to_owned(),
+                        });
+                        node = node.with_child(TreeItem::new(
+                            &format!("{key_id}:facts"),
+                            &facts.join(", "),
+                        ));
+                        for (i, value) in key.preview.iter().enumerate() {
+                            node = node.with_child(TreeItem::new(&format!("{key_id}:{i}"), value));
+                        }
+                        group = group.with_child(node);
+                    }
+                    if keys.truncated {
+                        group = group.with_child(TreeItem::new(
+                            &format!("{id}:more"),
+                            &format!("… weitere (die ersten {} gezeigt)", database::KEY_LIMIT),
+                        ));
+                    }
+                    item = item.with_child(group);
+                }
+                Some(Ok(DbAnswer::Schema(schema))) => {
                     item = item.with_child(TreeItem::new(&format!("{id}:server"), &schema.server));
                     for (kind, title) in
                         [(TableKind::Table, "Tabellen"), (TableKind::View, "Sichten")]
@@ -403,7 +509,7 @@ impl DatabaseWindow {
             .collect();
         drop(session);
         let hint = if pools.is_empty() {
-            "Keine Datenbank im Projekt – einen SQLx-Pool aus der Palette ablegen."
+            "Keine Datenbank im Projekt – einen SQLx-Pool oder Redis-Client aus der Palette ablegen."
         } else if ide.db_busy.get() > 0 {
             "Lädt …"
         } else {
@@ -423,7 +529,8 @@ impl DatabaseWindow {
         let rest = id
             .strip_prefix("pool:")
             .or_else(|| id.strip_prefix("table:"))
-            .or_else(|| id.strip_prefix("routine:"))?;
+            .or_else(|| id.strip_prefix("routine:"))
+            .or_else(|| id.strip_prefix("key:"))?;
         // `form::name` – danach folgt höchstens `:…`.
         let mut parts = rest.splitn(4, ':');
         let form = parts.next()?;

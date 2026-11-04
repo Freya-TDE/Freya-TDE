@@ -179,7 +179,7 @@ pub struct Ide {
     db_schemas: RefCell<
         std::collections::BTreeMap<
             tdr_core::ComponentPath,
-            Result<tdr_core::schema::Schema, tdr_core::schema::DbError>,
+            Result<database_window::DbAnswer, tdr_core::schema::DbError>,
         >,
     >,
     /// Running background database requests.

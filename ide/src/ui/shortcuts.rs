@@ -52,6 +52,9 @@ fn description(id: &str) -> &'static str {
         "window.terminal" => "Zeigt das Terminal und startet die Shell im Projektordner.",
         "window.git" => "Zeigt die Quellcodeverwaltung.",
         "window.debugger" => "Zeigt das Debugger-Fenster (Variablen, Aufrufstapel …).",
+        "window.database" => {
+            "Zeigt das Fenster Datenbank (Tabellen, Spalten, Routinen, Redis-Schlüssel)."
+        }
         "window.debug_console" => "Zeigt die Debug-Konsole.",
         "code.save" => "Speichert die Datei im vorderen Reiter.",
         "code.save_all" => "Speichert alle geänderten Dateien.",

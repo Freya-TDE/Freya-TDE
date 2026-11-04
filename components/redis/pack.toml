@@ -1,0 +1,127 @@
+# Redis – Schlüssel-Wert-Speicher / key-value store (redis-rs)
+[pack]
+name = "redis"
+version = "0.1.0"
+description = "Redis client and Redis data as rows for lists and grids (redis-rs)"
+authors = ["Dragon Software <info@dragon-software.net>"]
+license = "MIT OR Apache-2.0"
+generated-code-license = "MIT OR Apache-2.0"
+
+[[component]]
+name = "Client"
+category = "Database"
+icon = "database"
+description = "A Redis connection that reconnects by itself (redis::aio::ConnectionManager); clone it to send commands"
+provides = [{ capability = "redis.client", description = "A Redis connection" }]
+requires = [{ capability = "tokio.runtime", description = "redis-rs runs on Tokio here" }]
+cargo = [{ crate = "redis", version = "1.8.1", features = ["tokio-comp", "connection-manager"] }]
+
+[component.properties.url]
+type = "text"
+required = true
+category = "Connection"
+description = "Connection URL, e.g. redis://127.0.0.1/0 or redis://user:password@host:6379/1"
+
+[component.properties.connect_timeout]
+type = "float"
+min = 0.1
+default = 10.0
+category = "Connection"
+description = "Seconds to wait for a connection"
+
+[component.codegen]
+type = "redis::aio::ConnectionManager"
+async = true
+share = "clone"
+init = """
+redis::Client::open({{ rust.url }})?
+    .get_connection_manager_with_config(
+        redis::aio::ConnectionManagerConfig::new()
+            .set_connection_timeout(Some(std::time::Duration::from_secs_f64({{ rust.connect_timeout }}))),
+    )
+    .await?
+"""
+
+[[component]]
+name = "Read"
+category = "Database"
+icon = "table"
+description = "Reads a Redis list, set, sorted set, hash or the keys matching a pattern as rows"
+requires = [{ capability = "redis.client", via = "client" }]
+cargo = [{ crate = "redis", version = "1.8.1", features = ["tokio-comp", "connection-manager"] }]
+
+[component.properties.client]
+type = "reference"
+capability = "redis.client"
+category = "Connection"
+
+[component.properties.kind]
+type = "enum"
+variants = ["List", "Set", "SortedSet", "Hash", "Keys"]
+category = "Data"
+description = "What is read: LRANGE, SMEMBERS, ZRANGE … WITHSCORES, HGETALL, or SCAN MATCH (key = pattern)"
+
+[component.properties.key]
+type = "text"
+required = true
+category = "Data"
+description = "The key (for Keys: a pattern like user:*)"
+
+# Zeilen als Liste aus (Spalte, Text); `get` wandelt in den Spaltentyp um.
+# Rows are (column, text) pairs; `get` parses into the column type.
+[component.data]
+fetch = """
+{
+    let mut redis = source.0.clone();
+{%- if props.kind == "List" %}
+    let values: Vec<String> = redis::AsyncCommands::lrange(&mut redis, source.1, 0, -1).await?;
+    values.into_iter().map(|v| vec![("value", v)]).collect::<Vec<_>>()
+{%- elif props.kind == "Set" %}
+    let mut values: Vec<String> = redis::AsyncCommands::smembers(&mut redis, source.1).await?;
+    values.sort();
+    values.into_iter().map(|v| vec![("value", v)]).collect::<Vec<_>>()
+{%- elif props.kind == "SortedSet" %}
+    let values: Vec<(String, f64)> = redis::AsyncCommands::zrange_withscores(&mut redis, source.1, 0, -1).await?;
+    values
+        .into_iter()
+        .map(|(m, s)| vec![("member", m), ("score", s.to_string())])
+        .collect::<Vec<_>>()
+{%- elif props.kind == "Hash" %}
+    let values: std::collections::BTreeMap<String, String> = redis::AsyncCommands::hgetall(&mut redis, source.1).await?;
+    values
+        .into_iter()
+        .map(|(f, v)| vec![("field", f), ("value", v)])
+        .collect::<Vec<_>>()
+{%- else %}
+    let mut keys: Vec<String> = Vec::new();
+    {
+        let mut iter = redis::AsyncCommands::scan_match::<_, String>(&mut redis, source.1).await?;
+        while let Some(key) = iter.next_item().await {
+            keys.push(key?);
+        }
+    }
+    keys.sort();
+    keys.into_iter().map(|k| vec![("key", k)]).collect::<Vec<_>>()
+{%- endif %}
+}
+"""
+get = """
+{%- if type[:7] == "Option<" -%}
+{{ row }}.iter().find(|(c, _)| *c == {{ column | rust_str }}).map(|(_, v)| v.parse::<{{ type[7:-1] }}>()).transpose()?
+{%- else -%}
+{{ row }}.iter().find(|(c, _)| *c == {{ column | rust_str }}).map(|(_, v)| v.as_str()).unwrap_or_default().parse::<{{ type }}>()?
+{%- endif -%}
+"""
+# Spalten je Art (wenn `columns` leer ist) / columns per kind
+columns = """
+{%- if props.kind == "SortedSet" %}member: String; score: f64
+{%- elif props.kind == "Hash" %}field: String; value: String
+{%- elif props.kind == "Keys" %}key: String
+{%- else %}value: String{% endif -%}
+"""
+
+# Client und Schlüssel; Lesen und Schreiben im Handler bleibt beim Entwickler.
+# Client and key; reading and writing in handlers is up to the developer.
+[component.codegen]
+type = "(redis::aio::ConnectionManager, &'static str)"
+init = "({{ rust.client }}, {{ rust.key }})"

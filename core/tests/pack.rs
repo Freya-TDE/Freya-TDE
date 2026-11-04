@@ -52,7 +52,7 @@ fn real_packs_load() {
     let (packs, errors) = load_all(&components_dir());
     assert!(errors.is_empty(), "{errors:#?}");
     let names: Vec<&str> = packs.iter().map(|p| p.info.name.as_str()).collect();
-    assert_eq!(names, ["axum", "sqlx", "tokio"]);
+    assert_eq!(names, ["axum", "redis", "sqlx", "tokio"]);
     assert!(
         packs
             .iter()
@@ -60,7 +60,7 @@ fn real_packs_load() {
     );
 
     let registry = registry();
-    assert_eq!(registry.len(), 6 + 4);
+    assert_eq!(registry.len(), 6 + 6);
     let pool = registry.get(&TypeRef::pack("sqlx", "Pool")).unwrap();
     // Property order follows the file (object inspector).
     let names: Vec<&str> = pool.properties.iter().map(|p| p.name.as_str()).collect();

@@ -59,6 +59,7 @@
 //! [component.data]                      # optional: a data source for list widgets (see tdr_core::data)
 //! fetch = "sqlx::query(…).fetch_all(…).await?"   # rows, in an async block; `source` = the component's value
 //! get = "sqlx::Row::try_get::<{{ type }}, _>({{ row }}, {{ column | rust_str }})?"
+//! columns = "field: String; value: String"   # optional: columns the source always has (template over props)
 //!
 //! [component.list]                      # optional, backend widgets: can be filled from a data source
 //! set-items = "…"                       # statements putting `items: Vec<String>` into the widget
@@ -240,6 +241,7 @@ struct RawTable {
 struct RawData {
     fetch: String,
     get: String,
+    columns: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -945,9 +947,13 @@ impl Checker<'_> {
                 &format!("{location}, data"),
                 &[("fetch", &data.fetch), ("get", &data.get)],
             );
+            if let Some(columns) = &data.columns {
+                self.check_templates(&format!("{location}, data"), &[("columns", columns)]);
+            }
             ty.data = Some(crate::component_type::DataSpec {
                 fetch: data.fetch.clone(),
                 get: data.get.clone(),
+                columns: data.columns.clone(),
             });
         }
         if let Some(list) = &raw.list {

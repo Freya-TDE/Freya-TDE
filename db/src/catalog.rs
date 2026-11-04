@@ -8,6 +8,13 @@ use tdr_core::schema::{
 
 use crate::{Pool, query_error};
 
+fn unsupported() -> DbError {
+    DbError::new(
+        tdr_core::schema::codes::UNSUPPORTED,
+        "Redis has keys, not tables: use the keys request",
+    )
+}
+
 pub async fn server(pool: &Pool) -> Result<String, DbError> {
     let version: String = match pool {
         Pool::Postgres(p) => sqlx::query_scalar("SELECT version()").fetch_one(p).await,
@@ -26,6 +33,7 @@ pub async fn server(pool: &Pool) -> Result<String, DbError> {
                 .fetch_one(p)
                 .await
         }
+        Pool::Redis(manager) => return crate::keyspace::server(manager).await,
     }
     .map_err(query_error)?;
     Ok(version)
@@ -197,6 +205,7 @@ pub async fn schema(pool: &Pool) -> Result<Schema, DbError> {
             }
             (Driver::Sqlite, rows, Vec::new())
         }
+        Pool::Redis(_) => return Err(unsupported()),
     };
     let mut tables: Vec<Table> = Vec::new();
     for (schema, table, kind, name, ty, nullable, pk) in rows {
@@ -289,6 +298,7 @@ pub async fn describe(pool: &Pool, sql: &str) -> Result<Described, DbError> {
         Pool::Postgres(p) => (Driver::Postgres, prepare(p, sql).await?),
         Pool::MySql(p) => (Driver::MySql, prepare(p, sql).await?),
         Pool::Sqlite(p) => (Driver::Sqlite, prepare(p, sql).await?),
+        Pool::Redis(_) => return Err(unsupported()),
     };
     // Nullbarkeit aus dem Katalog, wenn die Spalte aus einer Tabelle stammt;
     // sonst unbekannt (→ Option<…>).

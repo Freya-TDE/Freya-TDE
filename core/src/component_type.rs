@@ -238,11 +238,16 @@ pub struct TableSpec {
 /// `Result<_, crate::app::Error>` that yields the rows (`?` and `.await`
 /// allowed); context: `source` (the source's value, a variable), `props`,
 /// `rust`. `get` is an expression reading one column of a row (`?`
-/// allowed); context: `row`, `column`, `type`.
+/// allowed); context: `row`, `column`, `type`. The optional `columns`
+/// renders the columns the source always has (`field: String; value:
+/// String`, separated by `;`) from `props` – used when the `columns`
+/// property is empty.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DataSpec {
     pub fetch: String,
     pub get: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub columns: Option<String>,
 }
 
 /// How a list widget shows entries and reports its selection – MiniJinja

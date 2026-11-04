@@ -13,6 +13,7 @@ Jedes Pack ist ein Ordner mit einer `pack.toml`; Codegen-Templates stehen im Abs
 |---|---|---|
 | `tokio` | `Runtime` | stellt `tokio.runtime` bereit |
 | `sqlx` | `Pool`, `Query` | `sqlx.pool`, `sqlx.query`; Pool braucht `tokio.runtime`, Query braucht `sqlx.pool`; `driver` = Postgres, MySql, Sqlite |
+| `redis` | `Client`, `Read` | `redis.client`; Client braucht `tokio.runtime`, Read braucht `redis.client`; Read ist Datenquelle (`data.rows`) |
 | `axum` | `Router` | `http.router`; braucht `sqlx.pool` nur, wenn eine Query angehängt ist |
 
 ## SQLx-Treiber / SQLx drivers
@@ -40,6 +41,26 @@ DataGrid zeigen Werte mit `to_string()`, Vektoren (`Vec<u8>`, Arrays) mit `{:?}`
 
 Auch Parametertypen von Ereignissen dürfen solche Templates sein (`props`, `refs`); Objektinspektor und
 Handler-Stubs zeigen den aufgelösten Typ.
+
+## Redis
+
+`Client` ist ein `redis::aio::ConnectionManager` (redis-rs 1.8, BSD-3-Clause), der sich nach Abbrüchen selbst neu
+verbindet; ein Handler schickt Befehle über einen Klon (`let mut c = self.cache.clone();
+redis::AsyncCommands::set(&mut c, "k", "v").await?`). `Read` liefert Redis-Daten als Zeilen für Listen und DataGrid;
+die Spalten folgen aus `kind` (oder stehen von Hand in `columns`, z. B. `score: Option<i64>`):
+
+| `kind` | Befehl / command | Spalten / columns |
+|---|---|---|
+| `List` | `LRANGE key 0 -1` | `value: String` |
+| `Set` | `SMEMBERS key` (sortiert) | `value: String` |
+| `SortedSet` | `ZRANGE key 0 -1 WITHSCORES` | `member: String`, `score: f64` |
+| `Hash` | `HGETALL key` | `field: String`, `value: String` |
+| `Keys` | `SCAN MATCH key` (Muster) | `key: String` |
+
+Werte werden mit `parse` in den Spaltentyp gewandelt. Allgemein im Pack-Format: `[component.data] columns` ist ein
+Template, das die Spalten aus den Eigenschaften ableitet (gilt, wenn `columns` leer ist).
+*`Client` is a self-reconnecting connection manager; `Read` turns a list, set, sorted set, hash or key pattern into
+rows; its columns follow `kind`.*
 
 ## Datenquelle für Listen / data source for lists
 

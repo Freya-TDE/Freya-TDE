@@ -29,10 +29,17 @@ pub enum Driver {
     Postgres,
     MySql,
     Sqlite,
+    /// Redis (and compatible servers such as Valkey): keys instead of tables.
+    Redis,
 }
 
 impl Driver {
-    pub const ALL: [Driver; 3] = [Driver::Postgres, Driver::MySql, Driver::Sqlite];
+    pub const ALL: [Driver; 4] = [
+        Driver::Postgres,
+        Driver::MySql,
+        Driver::Sqlite,
+        Driver::Redis,
+    ];
 
     /// From the property value (`"Postgres"`, `"MySql"`, `"Sqlite"`).
     pub fn from_name(name: &str) -> Option<Self> {
@@ -44,7 +51,13 @@ impl Driver {
             Driver::Postgres => "Postgres",
             Driver::MySql => "MySql",
             Driver::Sqlite => "Sqlite",
+            Driver::Redis => "Redis",
         }
+    }
+
+    /// SQL databases have tables and columns; Redis has keys.
+    pub fn is_sql(self) -> bool {
+        self != Driver::Redis
     }
 }
 
@@ -77,6 +90,14 @@ pub enum Request {
         #[serde(flatten)]
         connection: Connection,
         sql: String,
+    },
+    /// Redis: keys matching `pattern` (`SCAN MATCH`), at most `limit`, with
+    /// type, time to live, length and a preview of the value.
+    Keys {
+        #[serde(flatten)]
+        connection: Connection,
+        pattern: String,
+        limit: usize,
     },
     /// Ends the helper.
     Quit,
@@ -111,6 +132,7 @@ pub enum Answer {
     Connected { server: String },
     Schema(Schema),
     Described(Described),
+    Keys(Keys),
     Bye,
 }
 
@@ -134,6 +156,8 @@ pub mod codes {
     pub const AUTH_FAILED: &str = "auth_failed";
     /// The statement or a catalog query failed (syntax, unknown table …).
     pub const QUERY_FAILED: &str = "query_failed";
+    /// The request does not fit the driver (tables of Redis, keys of SQL).
+    pub const UNSUPPORTED: &str = "unsupported";
     /// The helper program was not found (IDE side).
     pub const HELPER_MISSING: &str = "helper_missing";
     /// The helper did not answer in time and was stopped (IDE side).
@@ -286,6 +310,31 @@ impl Described {
     }
 }
 
+/// The result of [`Request::Keys`].
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct Keys {
+    pub server: String,
+    /// Sorted by key.
+    pub keys: Vec<RedisKey>,
+    /// More keys match than `limit`.
+    pub truncated: bool,
+}
+
+/// A Redis key.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RedisKey {
+    pub key: String,
+    /// `string`, `list`, `set`, `zset`, `hash`, `stream` …
+    pub kind: String,
+    /// Seconds to live; `None` = no expiry.
+    pub ttl: Option<i64>,
+    /// Length (characters, entries, members, fields).
+    pub length: Option<u64>,
+    /// The first few values (`field = value` for hashes, `member (score)`
+    /// for sorted sets), shortened.
+    pub preview: Vec<String>,
+}
+
 /// How SQLx decodes a SQL type.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TypeMapping {
@@ -389,6 +438,8 @@ pub fn rust_type(driver: Driver, sql_type: &str) -> Option<TypeMapping> {
             // NUMERIC-Affinität: als f64 lesbar.
             _ => plain("f64"),
         },
+        // Redis-Werte sind Text; die Spalten kommen aus dem Pack.
+        Driver::Redis => plain("String"),
     }
 }
 

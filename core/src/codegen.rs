@@ -782,6 +782,31 @@ fn refs_data(
     JValue::from(refs)
 }
 
+/// The columns a data source always has (its `[component.data] columns`
+/// template over `props`), e.g. `["field: String", "value: String"]` for a
+/// Redis hash; `None` if the type has no such template.
+pub fn implied_columns(
+    form: &Form,
+    element: &dyn Element,
+    registry: &TypeRegistry,
+) -> Option<Vec<String>> {
+    let ty = registry.get(element.type_ref())?;
+    let template = ty.data.as_ref()?.columns.as_ref()?;
+    let context = minijinja::context! {
+        name => element.name().as_str(),
+        form => form.name.as_str(),
+        props => props_data(form, element, ty, registry),
+    };
+    let text = environment().render_str(template, &context).ok()?;
+    Some(
+        text.split(';')
+            .map(str::trim)
+            .filter(|c| !c.is_empty())
+            .map(str::to_owned)
+            .collect(),
+    )
+}
+
 /// The parameters of `event` on `element`. Parameter types may be templates
 /// (`&sqlx::{{ ... }}Row`) over `props` and `refs` of the element, so they can
 /// follow its settings; a type that fails to render is kept as written.
@@ -2207,18 +2232,21 @@ fn data_bindings(
                 fail(format!("{target} is not a data source"));
                 continue;
             };
-            let columns =
-                match parse_columns(&texts(element.component().get(COLUMNS).map(|v| &v.value))) {
-                    Ok(columns) if !columns.is_empty() => columns,
-                    Ok(_) => {
-                        fail(format!("{target} has no `columns`"));
-                        continue;
-                    }
-                    Err(message) => {
-                        fail(format!("{target}: {message}"));
-                        continue;
-                    }
-                };
+            let mut column_texts = texts(element.component().get(COLUMNS).map(|v| &v.value));
+            if column_texts.is_empty() {
+                column_texts = implied_columns(source_form, element, registry).unwrap_or_default();
+            }
+            let columns = match parse_columns(&column_texts) {
+                Ok(columns) if !columns.is_empty() => columns,
+                Ok(_) => {
+                    fail(format!("{target} has no `columns`"));
+                    continue;
+                }
+                Err(message) => {
+                    fail(format!("{target}: {message}"));
+                    continue;
+                }
+            };
             let text_prop = |name: &str| match widget.component.get(name).map(|v| &v.value) {
                 Some(Value::Text(t)) => t.trim().to_owned(),
                 _ => String::new(),

@@ -853,6 +853,105 @@ fn main() {
         println!("test database ... übersprungen (freya-tde-db nicht gebaut oder kein sqlite3)");
     }
 
+    // Redis: Schlüssel im Fenster „Datenbank“, Spalten aus der Art.
+    let redis_url = std::env::var("FREYA_TDE_TEST_REDIS").ok();
+    let cli = |url: &str, args: &[&str]| {
+        std::process::Command::new("redis-cli")
+            .arg("-u")
+            .arg(url)
+            .args(args)
+            .output()
+            .is_ok_and(|o| o.status.success())
+    };
+    match redis_url {
+        Some(url) if helper.is_file() && cli(&url, &["HSET", "freya:ui:user", "name", "Freya"]) => {
+            use tdr_designer::Command;
+            let dir = home.join("cache");
+            drop(
+                freya_tde::Session::create(
+                    &dir,
+                    "cache",
+                    "none",
+                    tdr_core::TypeRegistry::with_builtins(),
+                )
+                .unwrap(),
+            );
+            let ptdr = dir.join("cache.ptdr");
+            let mut project =
+                tdr_core::ProjectFile::from_ron(&std::fs::read_to_string(&ptdr).unwrap()).unwrap();
+            project.packs = vec!["tokio".into(), "redis".into()];
+            std::fs::write(&ptdr, project.to_ron().unwrap()).unwrap();
+            let ide = freya_tde::Ide::start(Some(&ptdr));
+            let form = name("main_form");
+            let set = |element: &str, property: &str, value: Value| Command::SetProperty {
+                form: form.clone(),
+                element: name(element),
+                property: property.into(),
+                value: Some(PropertyValue::new(value)),
+            };
+            for (type_name, element) in [("Client", "redis"), ("Read", "user")] {
+                ide.apply(Command::AddComponent {
+                    form: form.clone(),
+                    type_ref: TypeRef::pack("redis", type_name),
+                    name: Some(name(element)),
+                });
+            }
+            ide.apply(set("redis", "url", Value::Text(url.clone())));
+            ide.apply(set("user", "client", Value::reference(name("redis"))));
+            ide.apply(set("user", "kind", Value::Enum("Hash".into())));
+            ide.apply(set("user", "key", Value::Text("freya:ui:user".into())));
+            let client: ComponentPath = "main_form::redis".parse().unwrap();
+            let read: ComponentPath = "main_form::user".parse().unwrap();
+            let server = ide.database_test(&read).unwrap();
+            assert!(
+                server.starts_with("Redis ") || server.starts_with("Valkey "),
+                "{server}"
+            );
+            let keys = ide.database_keys(&client, "freya:ui:*", 10).unwrap();
+            assert_eq!(keys.keys[0].key, "freya:ui:user");
+            assert_eq!(keys.keys[0].preview, ["name = Freya"]);
+            ide.take_query_columns(&read).unwrap();
+            let columns = ide
+                .session()
+                .document()
+                .form(&form)
+                .unwrap()
+                .element(&name("user"))
+                .unwrap()
+                .component()
+                .get(tdr_core::data::COLUMNS)
+                .map(|v| v.value.clone());
+            assert_eq!(
+                columns,
+                Some(Value::List(vec![
+                    Value::Text("field: String".into()),
+                    Value::Text("value: String".into())
+                ]))
+            );
+            ide.show_database();
+            let has = |ide: &freya_tde::Ide, id: &str| {
+                fn find(items: &[TreeItem], id: &str) -> bool {
+                    items.iter().any(|i| i.id == id || find(&i.children, id))
+                }
+                find(&ide.database_tree(), id)
+            };
+            assert!(
+                pump_until(20, || has(&ide, "key:main_form::redis:freya:ui:user")),
+                "{:#?}",
+                ide.database_tree()
+            );
+            if let Some(dir) = std::env::var_os("FREYA_TDE_SHOT") {
+                ide.screenshots(std::path::Path::new(&dir).join("redis").as_path());
+            }
+            cli(&url, &["DEL", "freya:ui:user"]);
+            println!("test redis ... ok");
+            passed += 1;
+        }
+        _ => {
+            println!("test redis ... übersprungen (FREYA_TDE_TEST_REDIS, freya-tde-db, redis-cli)")
+        }
+    }
+
     Application::process_events();
     let _ = std::fs::remove_dir_all(&home);
     println!("\ntest result: ok. {passed} passed");
