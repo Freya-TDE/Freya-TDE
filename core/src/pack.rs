@@ -62,6 +62,10 @@
 //! set-items = "…"                       # statements putting `items: Vec<String>` into the widget
 //! selected = "…"                        # expression: Option<usize>
 //!
+//! [component.table]                     # optional, backend widgets: a data grid filled from a data source
+//! set-rows = "…"                        # statements using `headers: Vec<String>`, `rows: Vec<Vec<String>>`
+//! selected = "…"                        # expression: Option<usize>
+//!
 //! [[extend]]                            # backend packs only: add properties to existing types
 //! type = "core/Button"
 //! [extend.properties.small]
@@ -219,6 +223,14 @@ struct RawComponent {
     codegen: Option<RawCodegen>,
     data: Option<RawData>,
     list: Option<RawList>,
+    table: Option<RawTable>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "kebab-case")]
+struct RawTable {
+    set_rows: String,
+    selected: String,
 }
 
 #[derive(Deserialize)]
@@ -946,6 +958,22 @@ impl Checker<'_> {
             ty.list = Some(crate::component_type::ListSpec {
                 set_items: list.set_items.clone(),
                 selected: list.selected.clone(),
+            });
+        }
+        if let Some(table) = &raw.table {
+            if !kind.is_widget() {
+                self.problem(
+                    &format!("{location}, table"),
+                    "only widgets can be table widgets",
+                );
+            }
+            self.check_templates(
+                &format!("{location}, table"),
+                &[("set-rows", &table.set_rows), ("selected", &table.selected)],
+            );
+            ty.table = Some(crate::component_type::TableSpec {
+                set_rows: table.set_rows.clone(),
+                selected: table.selected.clone(),
             });
         }
         crate::data::complete(&mut ty);

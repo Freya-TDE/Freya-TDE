@@ -305,3 +305,23 @@ height = 120
 min-width = 200
 padding-x = 0
 header = 34
+
+[widgets."backend:gtk4/DataGrid"]
+height = 160
+min-width = 240
+padding-x = 0
+
+[widgets."backend:egui/DataGrid"]
+height = 160
+min-width = 240
+padding-x = 0
+
+[widgets."backend:iced/DataGrid"]
+height = 160
+min-width = 240
+padding-x = 0
+
+[widgets."backend:slint/DataGrid"]
+height = 160
+min-width = 240
+padding-x = 0

@@ -173,6 +173,13 @@ gezeichnet in den Farben der Theme-Tabelle; ohne `look` ein Kasten mit Symbol un
 Platz oben (Rahmentitel, Reiterleiste).
 *Designer drawing: `look` on the type (same looks for every backend); sizes and `header` in the theme tables.*
 
+Tabellen (DataGrid, alle vier Backends): `[component.table]` mit `set-rows` (Anweisungen mit `headers: Vec<String>`
+und `rows: Vec<Vec<String>>`) und `selected`. Das Widget bekommt `data_source`, `fields` (gezeigte Spalten, leer =
+alle), `headers` (Titel), `value_field` und `load`; der Kern erzeugt ein Zeilen-Struct `<Widget>Row` mit allen Spalten
+der Quelle (typisiert nach `columns`), `<name>_selected_row()` und `<name>_selected_value()`. Ereignis `on_select(index)`.
+GTK: `ColumnView`, egui: gestreiftes Grid, iced: `table`, Slint: `StandardTableView`.
+*Data grids declare `set-rows`/`selected`; the core generates a typed row struct and `<name>_selected_row()`.*
+
 Listen-Widgets mit Daten: `[component.list]` mit `set-items` (Anweisungen, die `items: Vec<String>` ins Widget
 setzen) und `selected` (Ausdruck `Option<usize>`); Kontext `name`, `root`, `form`. Solche Widgets bekommen
 `data_source`, `display_field`, `value_field` und `load`; der Kern erzeugt `<name>_reload()`,

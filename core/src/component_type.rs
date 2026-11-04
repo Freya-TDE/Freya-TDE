@@ -147,7 +147,7 @@ pub struct ComponentType {
     pub icon: Option<String>,
     /// How the designer draws a widget of this type (see
     /// `tdr_designer::render`): `switch`, `slider`, `spin`, `progress`,
-    /// `dropdown`, `memo`, `list`, `radio`, `separator`, `image`, `frame`,
+    /// `dropdown`, `memo`, `list`, `table`, `radio`, `separator`, `image`, `frame`,
     /// `link`, `tabs`, or `menubar` for a non-visual main menu. `None` = a
     /// box with icon and name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -174,6 +174,23 @@ pub struct ComponentType {
     /// [`crate::data`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub list: Option<ListSpec>,
+    /// A table widget (data grid) that can be filled from a data source.
+    /// See [`crate::data`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub table: Option<TableSpec>,
+}
+
+/// How a table widget shows rows and reports its selection – MiniJinja
+/// templates of its backend pack.
+///
+/// `set_rows` are statements putting `headers: Vec<String>` and
+/// `rows: Vec<Vec<String>>` (one text per shown column) into the widget;
+/// `selected` is an expression of type `Option<usize>`. Context as for
+/// [`ListSpec`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TableSpec {
+    pub set_rows: String,
+    pub selected: String,
 }
 
 /// How a data source delivers rows – MiniJinja templates of its pack.
@@ -218,6 +235,7 @@ impl ComponentType {
             codegen: None,
             data: None,
             list: None,
+            table: None,
         }
     }
 

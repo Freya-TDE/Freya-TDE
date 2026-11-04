@@ -56,6 +56,7 @@ pub fn services(backend: &str) -> Form {
 }
 
 /// `component` filled from `services::fruits`: shows `name`, value `id`.
+#[allow(dead_code)]
 pub fn bind(component: Component) -> Component {
     component
         .with(
@@ -63,5 +64,21 @@ pub fn bind(component: Component) -> Component {
             Value::reference_on(name("services"), name("fruits")),
         )
         .with(DISPLAY_FIELD, "name")
+        .with(VALUE_FIELD, "id")
+}
+
+/// A data grid filled from `services::fruits`: all columns, titles
+/// `Nr`/`Frucht`, value `id`.
+#[allow(dead_code)]
+pub fn bind_grid(component: Component) -> Component {
+    component
+        .with(
+            DATA_SOURCE,
+            Value::reference_on(name("services"), name("fruits")),
+        )
+        .with(
+            tdr_core::data::HEADERS,
+            Value::List(vec![Value::Text("Nr".into()), Value::Text("Frucht".into())]),
+        )
         .with(VALUE_FIELD, "id")
 }

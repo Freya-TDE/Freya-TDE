@@ -1451,11 +1451,7 @@ fn app_file(
             let _ = write!(code, "{}: {},", g.path.name, g.var);
         }
         for b in bindings.get(&form.name).into_iter().flatten() {
-            let _ = write!(
-                code,
-                "{0}_source: {1}__{0}__source, {0}_values: Vec::new(), {0}_pending: crate::app::Pending::default(),",
-                b.widget, form.name
-            );
+            code.push_str(&b.init(form.name.as_str()));
         }
         code.push_str("},\n");
     }
@@ -1706,13 +1702,7 @@ fn form_gen_file(
         );
     }
     for b in bindings {
-        let _ = writeln!(
-            code,
-            "/// Data source of `{0}`.\npub {0}_source: {1},\n\
-             /// Values (`{2}`) of the entries of `{0}`.\npub {0}_values: Vec<{3}>,\n\
-             /// Rows of `{0}` loaded in the background.\npub {0}_pending: crate::app::Pending<Vec<({3}, String)>>,",
-            b.widget, b.source_type, b.value_field, b.value_type
-        );
+        code.push_str(&b.fields());
     }
     code.push_str("}\n");
     if form.root.is_some() {
@@ -1943,22 +1933,82 @@ fn form_user_file(
 
 // --- Data binding ----------------------------------------------------------------------
 
-/// A list widget filled from a data source (see [`crate::data`]).
+/// A list or table widget filled from a data source (see [`crate::data`]).
 struct Binding {
     widget: String,
     /// `App::init` variable of the data source.
     source_var: String,
     source_type: String,
-    /// Column with the key (empty = the text).
-    value_field: String,
-    value_type: String,
-    /// Rendered templates of the source and the widget.
+    /// Rendered templates: rows of the source, showing them, the selection.
     fetch: String,
-    get_text: String,
-    get_value: Option<String>,
     start: bool,
-    set_items: String,
+    show: String,
     selected: String,
+    kind: BindingKind,
+}
+
+enum BindingKind {
+    List {
+        value_field: String,
+        value_type: String,
+        get_text: String,
+        get_value: Option<String>,
+    },
+    Table {
+        row_struct: String,
+        /// All columns of the source: name, type, rendered `get`.
+        columns: Vec<(String, String, String)>,
+        /// Shown columns: name, optional?, header.
+        shown: Vec<(String, bool, String)>,
+        /// Key column: name, type.
+        value: Option<(String, String)>,
+    },
+}
+
+impl Binding {
+    /// What a loaded entry is: `(value, text)` or `(row, cells)`.
+    fn entry_type(&self) -> String {
+        match &self.kind {
+            BindingKind::List { value_type, .. } => format!("({value_type}, String)"),
+            BindingKind::Table { row_struct, .. } => format!("({row_struct}, Vec<String>)"),
+        }
+    }
+
+    /// Field keeping the loaded values or rows, and its type.
+    fn store(&self) -> (String, String) {
+        match &self.kind {
+            BindingKind::List { value_type, .. } => (
+                format!("{}_values", self.widget),
+                format!("Vec<{value_type}>"),
+            ),
+            BindingKind::Table { row_struct, .. } => (
+                format!("{}_rows", self.widget),
+                format!("Vec<{row_struct}>"),
+            ),
+        }
+    }
+
+    /// Fields in the form struct.
+    fn fields(&self) -> String {
+        let (store, store_type) = self.store();
+        format!(
+            "/// Data source of `{w}`.\npub {w}_source: {source},\n\
+             /// What `{w}` shows (values of its entries / its rows).\npub {store}: {store_type},\n\
+             /// Rows of `{w}` loaded in the background.\npub {w}_pending: crate::app::Pending<Vec<{entry}>>,\n",
+            w = self.widget,
+            source = self.source_type,
+            entry = self.entry_type(),
+        )
+    }
+
+    /// The fields in `App::init`'s struct literal.
+    fn init(&self, form: &str) -> String {
+        format!(
+            "{w}_source: {form}__{w}__source, {store}: Vec::new(), {w}_pending: crate::app::Pending::default(),",
+            w = self.widget,
+            store = self.store().0,
+        )
+    }
 }
 
 /// The data bindings of all forms, checked.
@@ -1971,17 +2021,20 @@ fn data_bindings(
     out: &mut Diagnostics,
 ) -> HashMap<ComponentName, Vec<Binding>> {
     use crate::data::{
-        COLUMNS, DATA_SOURCE, DISPLAY_FIELD, LOAD, VALUE_FIELD, parse_columns, texts,
+        COLUMNS, DATA_SOURCE, DISPLAY_FIELD, FIELDS, HEADERS, LOAD, VALUE_FIELD, parse_columns,
+        texts,
     };
     let mut all: HashMap<ComponentName, Vec<Binding>> = HashMap::new();
     for form in forms {
         let root_name = form.root.as_ref().map(|r| r.component.name.to_string());
         for widget in form.widgets() {
-            let Some(list) = registry
-                .get(&widget.component.type_ref)
-                .and_then(|t| t.list.as_ref())
-            else {
+            let Some(ty) = registry.get(&widget.component.type_ref) else {
                 continue;
+            };
+            let (show_template, selected_template, is_table) = match (&ty.list, &ty.table) {
+                (Some(l), _) => (&l.set_items, &l.selected, false),
+                (None, Some(t)) => (&t.set_rows, &t.selected, true),
+                (None, None) => continue,
             };
             let Some(Value::Reference(Some(target))) =
                 widget.component.get(DATA_SOURCE).map(|v| &v.value)
@@ -2017,7 +2070,11 @@ fn data_bindings(
             };
             let columns =
                 match parse_columns(&texts(element.component().get(COLUMNS).map(|v| &v.value))) {
-                    Ok(columns) => columns,
+                    Ok(columns) if !columns.is_empty() => columns,
+                    Ok(_) => {
+                        fail(format!("{target} has no `columns`"));
+                        continue;
+                    }
                     Err(message) => {
                         fail(format!("{target}: {message}"));
                         continue;
@@ -2034,23 +2091,12 @@ fn data_bindings(
                     .collect::<Vec<_>>()
                     .join(", ")
             };
-            let display = text_prop(DISPLAY_FIELD);
-            let Some(display) = columns.iter().find(|c| c.name == display) else {
-                fail(if display.is_empty() {
-                    format!(
-                        "`display_field` is empty (columns of {target}: {})",
-                        names()
-                    )
-                } else {
-                    format!("{target} has no column `{display}` (columns: {})", names())
-                });
-                continue;
-            };
+            let column = |name: &str| columns.iter().find(|c| c.name == name);
             let value_name = text_prop(VALUE_FIELD);
             let value = if value_name.is_empty() {
                 None
             } else {
-                match columns.iter().find(|c| c.name == value_name) {
+                match column(&value_name) {
                     Some(c) => Some(c),
                     None => {
                         fail(format!(
@@ -2065,7 +2111,10 @@ fn data_bindings(
                 fail("loading needs an async runtime in the project (e.g. tokio Runtime)".into());
                 continue;
             }
-            let load_start = !matches!(widget.component.get(LOAD).map(|v| &v.value), Some(Value::Enum(l)) if l == "Manual");
+            let load_start = !matches!(
+                widget.component.get(LOAD).map(|v| &v.value),
+                Some(Value::Enum(l)) if l == "Manual"
+            );
 
             // Templates of the source and of the widget.
             let (props, rust, _) =
@@ -2078,105 +2127,257 @@ fn data_bindings(
                 &minijinja::context! { source => "source", props => props, rust => rust },
                 &mut issues,
             );
-            let get = |column: &crate::data::Column, issues: &mut Vec<CodegenIssue>| {
+            let get = |column: &crate::data::Column, var: &str, issues: &mut Vec<CodegenIssue>| {
                 render(
                     env,
                     "get",
                     &data.get,
-                    &minijinja::context! { row => "row", column => column.name.as_str(), type => column.rust_type.as_str() },
+                    &minijinja::context! { row => var, column => column.name.as_str(), type => column.rust_type.as_str() },
                     issues,
                 )
             };
-            let text = get(display, &mut issues);
-            let value_get = value.map(|c| get(c, &mut issues));
-            let list_context = minijinja::context! {
+            let widget_context = minijinja::context! {
                 name => widget.component.name.as_str(),
                 root => root_name.clone(),
                 form => form_data(form),
             };
-            let set_items = render(
+            let show_part = if is_table { "set-rows" } else { "set-items" };
+            let show = render(env, show_part, show_template, &widget_context, &mut issues);
+            let selected = render(
                 env,
-                "set-items",
-                &list.set_items,
-                &list_context,
+                "selected",
+                selected_template,
+                &widget_context,
                 &mut issues,
             );
-            let selected = render(env, "selected", &list.selected, &list_context, &mut issues);
+
+            let kind = if is_table {
+                // Gezeigte Spalten (leer = alle) und ihre Titel.
+                let fields = texts(widget.component.get(FIELDS).map(|v| &v.value));
+                let headers = texts(widget.component.get(HEADERS).map(|v| &v.value));
+                let shown_names: Vec<String> = if fields.is_empty() {
+                    columns.iter().map(|c| c.name.clone()).collect()
+                } else {
+                    fields.iter().map(|f| f.trim().to_owned()).collect()
+                };
+                if let Some(missing) = shown_names.iter().find(|n| column(n).is_none()) {
+                    fail(format!(
+                        "{target} has no column `{missing}` (columns: {})",
+                        names()
+                    ));
+                    continue;
+                }
+                let mut table_columns = Vec::new();
+                for c in &columns {
+                    if let Some(g) = get(c, "row", &mut issues) {
+                        table_columns.push((c.name.clone(), c.rust_type.clone(), g));
+                    }
+                }
+                let shown = shown_names
+                    .iter()
+                    .enumerate()
+                    .map(|(i, n)| {
+                        let optional =
+                            column(n).is_some_and(|c| c.rust_type.starts_with("Option<"));
+                        let header = headers
+                            .get(i)
+                            .filter(|h| !h.trim().is_empty())
+                            .cloned()
+                            .unwrap_or_else(|| n.clone());
+                        (n.clone(), optional, header)
+                    })
+                    .collect();
+                BindingKind::Table {
+                    row_struct: format!("{}Row", pascal_case(widget.component.name.as_str())),
+                    columns: table_columns,
+                    shown,
+                    value: value.map(|c| (c.name.clone(), c.rust_type.clone())),
+                }
+            } else {
+                let display = text_prop(DISPLAY_FIELD);
+                let Some(display) = column(&display) else {
+                    fail(if display.is_empty() {
+                        format!(
+                            "`display_field` is empty (columns of {target}: {})",
+                            names()
+                        )
+                    } else {
+                        format!("{target} has no column `{display}` (columns: {})", names())
+                    });
+                    continue;
+                };
+                let Some(text) = get(display, "row", &mut issues) else {
+                    for issue in issues {
+                        out.error(Some(path.clone()), issue);
+                    }
+                    continue;
+                };
+                let text = if display.rust_type.starts_with("Option<") {
+                    format!("({text}).map(|v| v.to_string()).unwrap_or_default()")
+                } else {
+                    format!("({text}).to_string()")
+                };
+                BindingKind::List {
+                    value_field: value.map_or_else(|| display.name.clone(), |c| c.name.clone()),
+                    value_type: value.map_or_else(|| "String".to_owned(), |c| c.rust_type.clone()),
+                    get_text: text,
+                    get_value: value.and_then(|c| get(c, "row", &mut issues)),
+                }
+            };
             if !issues.is_empty() {
                 for issue in issues {
                     out.error(Some(path.clone()), issue);
                 }
                 continue;
             }
-            let (Some(fetch), Some(text), Some(set_items), Some(selected)) =
-                (fetch, text, set_items, selected)
-            else {
+            let (Some(fetch), Some(show), Some(selected)) = (fetch, show, selected) else {
                 continue;
-            };
-            let text = if display.rust_type.starts_with("Option<") {
-                format!("({text}).map(|v| v.to_string()).unwrap_or_default()")
-            } else {
-                format!("({text}).to_string()")
             };
             all.entry(form.name.clone()).or_default().push(Binding {
                 widget: widget.component.name.to_string(),
                 source_var: source.var.clone(),
                 source_type: source.field_type.clone(),
-                value_field: value.map_or_else(|| display.name.clone(), |c| c.name.clone()),
-                value_type: value.map_or_else(|| "String".to_owned(), |c| c.rust_type.clone()),
                 fetch,
-                get_text: text,
-                get_value: value_get.flatten(),
                 start: load_start,
-                set_items,
+                show,
                 selected,
+                kind,
             });
         }
     }
     all
 }
 
-/// Loading and taking over the data of a form's list widgets (empty
-/// methods without bindings – the backends call them anyway).
+/// Loading and taking over the data of a form's list and table widgets
+/// (empty methods without bindings – the backends call them anyway).
 fn data_impl(form: &Form, bindings: &[Binding]) -> String {
-    let mut code = format!(
+    let mut code = String::new();
+    // Zeilen-Structs der Tabellen.
+    for b in bindings {
+        if let BindingKind::Table {
+            row_struct,
+            columns,
+            ..
+        } = &b.kind
+        {
+            let _ = write!(
+                code,
+                "/// A row of `{}` (all columns of its data source).\n\
+                 #[allow(dead_code)]\n#[derive(Debug, Clone)]\npub struct {row_struct} {{\n",
+                b.widget
+            );
+            for (name, ty, _) in columns {
+                let _ = writeln!(code, "pub {name}: {ty},");
+            }
+            code.push_str("}\n");
+        }
+    }
+    let _ = write!(
+        code,
         "#[allow(dead_code, unused_variables)]\nimpl {} {{\n",
         pascal_case(form.name.as_str())
     );
     for b in bindings {
-        let value = match &b.get_value {
-            Some(get) => get.clone(),
-            None => "text.clone()".to_owned(),
-        };
-        let _ = write!(
-            code,
-            "/// Loads the entries of `{w}` from its data source in the background (Tokio);\n\
-             /// the form shows them when they arrive.\n\
-             pub fn {w}_reload(&self) {{\n\
-             let source = self.{w}_source.clone();\n\
-             crate::app::freya_spawn_load(self.{w}_pending.clone(), async move {{\n\
-             let rows = {fetch};\n\
-             let mut entries = Vec::new();\n\
-             for row in &rows {{\n\
-             let text: String = {text};\n\
-             let value: {vt} = {value};\n\
-             entries.push((value, text));\n\
-             }}\n\
-             Ok(entries)\n\
-             }});\n\
-             }}\n\
-             /// The value (`{vf}`) of the selected entry of `{w}`.\n\
-             pub fn {w}_selected_value(&self) -> Option<{vt}> {{\n\
-             let index: Option<usize> = {selected};\n\
-             index.and_then(|i| self.{w}_values.get(i).cloned())\n\
-             }}\n",
-            w = b.widget,
-            fetch = b.fetch,
-            text = b.get_text,
-            vt = b.value_type,
-            vf = b.value_field,
-            selected = b.selected,
-        );
+        let w = &b.widget;
+        let selected = &b.selected;
+        match &b.kind {
+            BindingKind::List {
+                value_field,
+                value_type,
+                get_text,
+                get_value,
+            } => {
+                let value = get_value
+                    .clone()
+                    .unwrap_or_else(|| "text.clone()".to_owned());
+                let _ = write!(
+                    code,
+                    "/// Loads the entries of `{w}` from its data source in the background (Tokio);\n\
+                     /// the form shows them when they arrive.\n\
+                     pub fn {w}_reload(&self) {{\n\
+                     let source = self.{w}_source.clone();\n\
+                     crate::app::freya_spawn_load(self.{w}_pending.clone(), async move {{\n\
+                     let rows = {fetch};\n\
+                     let mut entries = Vec::new();\n\
+                     for row in &rows {{\n\
+                     let text: String = {get_text};\n\
+                     let value: {value_type} = {value};\n\
+                     entries.push((value, text));\n\
+                     }}\n\
+                     Ok(entries)\n\
+                     }});\n\
+                     }}\n\
+                     /// The value (`{value_field}`) of the selected entry of `{w}`.\n\
+                     pub fn {w}_selected_value(&self) -> Option<{value_type}> {{\n\
+                     let index: Option<usize> = {selected};\n\
+                     index.and_then(|i| self.{w}_values.get(i).cloned())\n\
+                     }}\n",
+                    fetch = b.fetch,
+                );
+            }
+            BindingKind::Table {
+                row_struct,
+                columns,
+                shown,
+                value,
+            } => {
+                let mut body = String::new();
+                for (name, ty, get) in columns {
+                    let _ = writeln!(body, "let col_{name}: {ty} = {get};");
+                }
+                let cells: Vec<String> = shown
+                    .iter()
+                    .map(|(name, optional, _)| {
+                        if *optional {
+                            format!(
+                                "col_{name}.as_ref().map(|v| v.to_string()).unwrap_or_default()"
+                            )
+                        } else {
+                            format!("col_{name}.to_string()")
+                        }
+                    })
+                    .collect();
+                let fields: Vec<String> = columns
+                    .iter()
+                    .map(|(name, _, _)| format!("{name}: col_{name}"))
+                    .collect();
+                let _ = write!(
+                    code,
+                    "/// Loads the rows of `{w}` from its data source in the background (Tokio);\n\
+                     /// the form shows them when they arrive.\n\
+                     pub fn {w}_reload(&self) {{\n\
+                     let source = self.{w}_source.clone();\n\
+                     crate::app::freya_spawn_load(self.{w}_pending.clone(), async move {{\n\
+                     let rows = {fetch};\n\
+                     let mut entries = Vec::new();\n\
+                     for row in &rows {{\n\
+                     {body}\
+                     let cells = vec![{cells}];\n\
+                     entries.push(({row_struct} {{ {fields} }}, cells));\n\
+                     }}\n\
+                     Ok(entries)\n\
+                     }});\n\
+                     }}\n\
+                     /// The selected row of `{w}`.\n\
+                     pub fn {w}_selected_row(&self) -> Option<&{row_struct}> {{\n\
+                     let index: Option<usize> = {selected};\n\
+                     index.and_then(|i| self.{w}_rows.get(i))\n\
+                     }}\n",
+                    fetch = b.fetch,
+                    cells = cells.join(", "),
+                    fields = fields.join(", "),
+                );
+                if let Some((name, ty)) = value {
+                    let _ = write!(
+                        code,
+                        "/// The value (`{name}`) of the selected row of `{w}`.\n\
+                         pub fn {w}_selected_value(&self) -> Option<{ty}> {{\n\
+                         self.{w}_selected_row().map(|row| row.{name}.clone())\n\
+                         }}\n"
+                    );
+                }
+            }
+        }
     }
     code.push_str(
         "/// Starts the loads marked `Start` (the backend calls it when the form opens).\n\
@@ -2186,28 +2387,44 @@ fn data_impl(form: &Form, bindings: &[Binding]) -> String {
         let _ = writeln!(code, "self.{}_reload();", b.widget);
     }
     code.push_str(
-        "}\n/// Takes loaded rows into the list widgets; `true` if something arrived.\n\
+        "}\n/// Takes loaded rows into the list and table widgets; `true` if something arrived.\n\
          pub fn freya_take_data(&mut self) -> bool {\n\
          #[allow(unused_mut)]\n\
          let mut changed = false;\n",
     );
     for b in bindings {
+        let w = &b.widget;
+        let take = match &b.kind {
+            BindingKind::List { value_type, .. } => format!(
+                "let (values, items): (Vec<{value_type}>, Vec<String>) = entries.into_iter().unzip();\n\
+                 self.{w}_values = values;\n{}\n",
+                b.show
+            ),
+            BindingKind::Table {
+                row_struct, shown, ..
+            } => {
+                let headers: Vec<String> = shown
+                    .iter()
+                    .map(|(_, _, h)| format!("{h:?}.to_string()"))
+                    .collect();
+                format!(
+                    "let (records, rows): (Vec<{row_struct}>, Vec<Vec<String>>) = entries.into_iter().unzip();\n\
+                     self.{w}_rows = records;\n\
+                     let headers: Vec<String> = vec![{}];\n{}\n",
+                    headers.join(", "),
+                    b.show
+                )
+            }
+        };
         let _ = write!(
             code,
             "if let Some(result) = self.{w}_pending.take() {{\n\
              changed = true;\n\
              match result {{\n\
-             Ok(entries) => {{\n\
-             let (values, items): (Vec<{vt}>, Vec<String>) = entries.into_iter().unzip();\n\
-             self.{w}_values = values;\n\
-             {set}\n\
-             }}\n\
+             Ok(entries) => {{\n{take}}}\n\
              Err(error) => eprintln!(\"{w}: {{error}}\"),\n\
              }}\n\
-             }}\n",
-            w = b.widget,
-            vt = b.value_type,
-            set = b.set_items,
+             }}\n"
         );
     }
     code.push_str("changed\n}\n}\n");

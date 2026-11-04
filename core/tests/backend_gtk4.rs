@@ -274,6 +274,14 @@ fn form() -> Form {
         ))),
     )
     .unwrap();
+    form.add_widget(
+        &name("window"),
+        Widget::from_component(data::bind_grid(Component::new(
+            name("grid"),
+            TypeRef::backend("gtk4", "DataGrid"),
+        ))),
+    )
+    .unwrap();
     form
 }
 
@@ -339,6 +347,12 @@ impl MainForm {
         self.bound.set_selected(1);
         println!("bound_items={}", self.bound.model().map_or(0, |m| m.n_items()));
         println!("bound={:?}", self.bound_selected_value());
+        // Tabelle: 3 Zeilen, 2 Spalten; die zweite Zeile ist „Birne“.
+        if let Some(model) = self.grid.model().and_downcast::<gtk4::SingleSelection>() {
+            model.set_selected(1);
+        }
+        println!("grid_rows={} grid_columns={}", self.grid_rows.len(), self.grid.columns().n_items());
+        println!("grid={:?} grid_value={:?}", self.grid_selected_row().map(|r| r.name.clone()), self.grid_selected_value());
     }
     pub fn agree_toggled(&mut self, _checked: bool) {}
     pub fn blue_toggled(&mut self, checked: bool) {
@@ -439,6 +453,11 @@ fn generated_project_builds_and_runs() {
     assert!(stdout.contains("label=Hallo Freya"), "{stdout}");
     assert!(stdout.contains("bound_items=3"), "{stdout}");
     assert!(stdout.contains("bound=Some(2)"), "{stdout}");
+    assert!(stdout.contains("grid_rows=3 grid_columns=2"), "{stdout}");
+    assert!(
+        stdout.contains("grid=Some(\"Birne\") grid_value=Some(2)"),
+        "{stdout}"
+    );
     assert!(stdout.contains("blue=true"), "{stdout}");
     assert!(stdout.contains("radio_group=true"), "{stdout}");
     assert!(stdout.contains("visible=true"), "{stdout}");

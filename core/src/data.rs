@@ -5,17 +5,20 @@
 //! `Query`): it provides the capability [`ROWS`] and has the property
 //! `columns` – one entry per column, `name: Type` (e.g. `id: i64`,
 //! `name: String`). A **list widget** is a widget type with a [`ListSpec`]
-//! (drop-down, list box …); it gets the properties
+//! (drop-down, list box …) or a [`TableSpec`](crate::TableSpec) (data grid);
+//! it gets the properties
 //!
 //! | Property | Meaning |
 //! |---|---|
 //! | `data_source` | reference to a data source (`data.rows`) |
-//! | `display_field` | column shown as text |
+//! | `display_field` | lists: column shown as text |
+//! | `fields`, `headers` | tables: columns shown (empty = all) and their titles |
 //! | `value_field` | column with the key (empty = the text) |
 //! | `load` | `Start` (load when the form opens) or `Manual` |
 //!
 //! The generator writes, per bound widget, `<widget>_reload()` (loads in
-//! the background on Tokio) and `<widget>_selected_value()`; the backend
+//! the background on Tokio) and `<widget>_selected_value()`; for a table also
+//! a row struct `<Widget>Row` with all columns and `<widget>_selected_row()`; the backend
 //! only says how entries are set and the selection is read.
 //!
 //! ```
@@ -43,6 +46,9 @@ pub const DATA_SOURCE: &str = "data_source";
 pub const DISPLAY_FIELD: &str = "display_field";
 pub const VALUE_FIELD: &str = "value_field";
 pub const LOAD: &str = "load";
+/// Properties of a table widget (besides `data_source`, `value_field`, `load`).
+pub const FIELDS: &str = "fields";
+pub const HEADERS: &str = "headers";
 
 /// One column of a data source.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -121,7 +127,9 @@ pub fn complete(ty: &mut ComponentType) {
             });
         }
     }
-    if ty.list.is_some() {
+    let list = ty.list.is_some();
+    let table = ty.table.is_some();
+    if list || table {
         add(
             ty,
             PropertyDef::new(
@@ -130,20 +138,48 @@ pub fn complete(ty: &mut ComponentType) {
                 Value::Reference(None),
             )
             .with_category("Data")
-            .with_description("Fill the list from this data source (e.g. a query)"),
+            .with_description("Fill it from this data source (e.g. a query)"),
         );
+    }
+    if list {
         add(
             ty,
             PropertyDef::new(DISPLAY_FIELD, PropertyType::Text, "")
                 .with_category("Data")
                 .with_description("Column shown as text"),
         );
+    }
+    if table {
+        add(
+            ty,
+            PropertyDef::new(
+                FIELDS,
+                PropertyType::List(Box::new(PropertyType::Text)),
+                Value::List(Vec::new()),
+            )
+            .with_category("Data")
+            .with_description("Columns shown, in this order (empty = all columns of the source)"),
+        );
+        add(
+            ty,
+            PropertyDef::new(
+                HEADERS,
+                PropertyType::List(Box::new(PropertyType::Text)),
+                Value::List(Vec::new()),
+            )
+            .with_category("Data")
+            .with_description(
+                "Column titles, one per shown column (missing ones: the column name)",
+            ),
+        );
+    }
+    if list || table {
         add(
             ty,
             PropertyDef::new(VALUE_FIELD, PropertyType::Text, "")
                 .with_category("Data")
                 .with_description(
-                    "Column with the key, see `<name>_selected_value()` (empty = the text)",
+                    "Column with the key, see `<name>_selected_value()` (lists: empty = the text)",
                 ),
         );
         add(

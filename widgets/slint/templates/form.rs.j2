@@ -270,6 +270,18 @@ StandardListView {
     current_item_changed(index) => { root.{{ cb(c, "on_select") }}(index); }
     {%- endif %}
 }
+{%- elif t == "backend:slint/DataGrid" %}
+StandardTableView {
+    columns <=> root.{{ c.name }}_columns;
+    rows: root.{{ c.name }}_rows;
+    current_row <=> root.{{ c.name }}_current;
+    min_height: 160px;
+    enabled: root.{{ c.name }}_enabled;
+    visible: root.{{ c.name }}_visible;
+    {%- if e.on_select %}
+    current_row_changed(index) => { root.{{ cb(c, "on_select") }}(index); }
+    {%- endif %}
+}
 {%- elif t == "backend:slint/TextEdit" %}
 TextEdit {
     text <=> root.{{ c.name }}_text;
@@ -365,6 +377,10 @@ in_out property <float> {{ c.name }}_progress: {{ c.props.progress }};
 {%- elif t == "backend:slint/ComboBox" %}
 in_out property <[string]> {{ c.name }}_items: [{% for i in c.props["items"] %}{{ i | rust_str }}{% if not loop.last %}, {% endif %}{% endfor %}];
 in_out property <int> {{ c.name }}_selected: {{ c.props.selected }};
+{%- elif t == "backend:slint/DataGrid" %}
+in_out property <[TableColumn]> {{ c.name }}_columns;
+in_out property <[[StandardListViewItem]]> {{ c.name }}_rows;
+in_out property <int> {{ c.name }}_current: -1;
 {%- elif t == "backend:slint/ListView" %}
 in_out property <[StandardListViewItem]> {{ c.name }}_items: [{% for i in c.props["items"] %}{ text: {{ i | rust_str }} }{% if not loop.last %}, {% endif %}{% endfor %}];
 in_out property <int> {{ c.name }}_selected: {{ c.props.selected }};
@@ -385,7 +401,7 @@ in_out property <int> {{ c.name }}_current: {{ c.props.page }};
 use slint::ComponentHandle as _;
 
 slint::slint! {
-    import { Button, LineEdit, CheckBox, RadioGroup, Switch, SpinBox, Slider, ProgressIndicator, ComboBox, StandardListView, TextEdit, GroupBox, TabWidget, AboutSlint, Palette } from "std-widgets.slint";
+    import { Button, LineEdit, CheckBox, RadioGroup, Switch, SpinBox, Slider, ProgressIndicator, ComboBox, StandardListView, StandardTableView, TextEdit, GroupBox, TabWidget, AboutSlint, Palette } from "std-widgets.slint";
 
     export component FormUi inherits Window {
         title: root.{{ root.name }}_title;
@@ -406,7 +422,7 @@ slint::slint! {
         callback {{ cb(c, event) }}(
             {%- if c.type in ["core/Edit", "backend:slint/TextEdit"] and event == "on_change" %}string
             {%- elif event == "on_toggle" %}bool
-            {%- elif event in ["on_change", "on_select", "on_page"] and c.type in ["backend:slint/SpinBox", "backend:slint/ComboBox", "backend:slint/ListView", "backend:slint/TabWidget"] %}int
+            {%- elif event in ["on_change", "on_select", "on_page"] and c.type in ["backend:slint/SpinBox", "backend:slint/ComboBox", "backend:slint/ListView", "backend:slint/TabWidget", "backend:slint/DataGrid"] %}int
             {%- elif event == "on_change" and c.type == "backend:slint/Slider" %}float
             {%- endif %});
         {%- endfor %}
@@ -462,7 +478,7 @@ impl {{ form.struct }} {
                 Self::freya_call(&weak, |f| f.{{ handler }}(&text));
                 {%- elif event == "on_toggle" %}checked| {
                 Self::freya_call(&weak, |f| f.{{ handler }}(checked));
-                {%- elif event in ["on_change", "on_select", "on_page"] and c.type in ["backend:slint/SpinBox", "backend:slint/ComboBox", "backend:slint/ListView", "backend:slint/TabWidget", "backend:slint/Slider"] %}value| {
+                {%- elif event in ["on_change", "on_select", "on_page"] and c.type in ["backend:slint/SpinBox", "backend:slint/ComboBox", "backend:slint/ListView", "backend:slint/TabWidget", "backend:slint/Slider", "backend:slint/DataGrid"] %}value| {
                 Self::freya_call(&weak, |f| f.{{ handler }}(value));
                 {%- else %}| {
                 Self::freya_call(&weak, |f| f.{{ handler }}());

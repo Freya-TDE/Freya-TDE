@@ -79,6 +79,44 @@ iced::widget::pick_list(self.{{ c.name }}.items.as_slice(), self.{{ c.name }}.it
         .style(iced::widget::container::bordered_box)
         .padding(2)
 }
+{%- elif t == "backend:iced/DataGrid" -%}
+{
+    let selected = self.{{ c.name }}.value.selected;
+    let enabled = self.{{ c.name }}.enabled;
+    let columns: Vec<_> = self
+        .{{ c.name }}
+        .value
+        .headers
+        .iter()
+        .enumerate()
+        .map(|(column, header)| {
+            iced::widget::table::column(
+                iced::widget::text(header.as_str()),
+                move |(index, row): (usize, &Vec<String>)| {
+                    let style: fn(&iced::Theme, iced::widget::button::Status) -> iced::widget::button::Style =
+                        if selected == Some(index) {
+                            iced::widget::button::primary
+                        } else {
+                            iced::widget::button::text
+                        };
+                    iced::widget::button(iced::widget::text(row.get(column).map(String::as_str).unwrap_or("")))
+                        .style(style)
+                        .padding(2)
+                        .on_press_maybe(enabled.then_some(Message::{{ c.name }}_select(index)))
+                },
+            )
+        })
+        .collect();
+    // Ohne Spalten (vor dem ersten Laden) kein `table`: es teilt durch die Spaltenzahl.
+    let content: iced::Element<'_, Message> = if columns.is_empty() {
+        iced::widget::space().into()
+    } else {
+        iced::widget::table(columns, self.{{ c.name }}.value.rows.iter().enumerate()).into()
+    };
+    iced::widget::container(iced::widget::scrollable(content).height(160))
+    .style(iced::widget::container::bordered_box)
+    .width(iced::Fill)
+}
 {%- elif t == "backend:iced/TextEditor" -%}
 iced::widget::text_editor(&self.{{ c.name }}.value)
     {%- if not c.props.read_only %}.on_action(Message::{{ c.name }}_edit){% endif -%}
@@ -122,7 +160,7 @@ pub enum Message {
     {{ c.name }}_change(f64),
 {%- elif t == "backend:iced/PickList" %}
     {{ c.name }}_select(String),
-{%- elif t == "backend:iced/ListBox" %}
+{%- elif t in ["backend:iced/ListBox", "backend:iced/DataGrid"] %}
     {{ c.name }}_select(usize),
 {%- elif t == "backend:iced/TextEditor" %}
     {{ c.name }}_edit(text_editor::Action),
@@ -246,6 +284,13 @@ impl {{ form.struct }} {
         {%- elif t == "backend:iced/ListBox" %}
             Message::{{ c.name }}_select(index) => {
                 self.{{ c.name }}.value = index as i32;
+            {%- if e.on_select %}
+                self.{{ e.on_select }}(index as i32);
+            {%- endif %}
+            }
+        {%- elif t == "backend:iced/DataGrid" %}
+            Message::{{ c.name }}_select(index) => {
+                self.{{ c.name }}.value.selected = Some(index);
             {%- if e.on_select %}
                 self.{{ e.on_select }}(index as i32);
             {%- endif %}

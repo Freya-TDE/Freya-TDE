@@ -35,10 +35,10 @@ impl {{ form.struct }} {
             {%- set radios = w.children | selectattr("type", "eq", "backend:gtk4/RadioButton") | selectattr("field") | list %}
             {%- for c in w.children if c.field %}
             {
-                {%- if c.type == "backend:gtk4/TextView" %}
+                {%- if c.type in ["backend:gtk4/TextView", "backend:gtk4/DataGrid"] %}
                 let scrolled = gtk4::ScrolledWindow::new();
                 scrolled.set_child(Some(&self.{{ c.name }}));
-                scrolled.set_min_content_height(80);
+                scrolled.set_min_content_height({{ 160 if c.type == "backend:gtk4/DataGrid" else 80 }});
                 let child: gtk4::Widget = scrolled.upcast();
                 {%- else %}
                 let child: gtk4::Widget = self.{{ c.name }}.clone().upcast();
@@ -185,6 +185,18 @@ impl {{ form.struct }} {
         {%- elif key == "backend:gtk4/Notebook.on_page" %}
             form.{{ w.name }}.connect_switch_page(move |_, _, page| {
                 Self::freya_call(&weak, |f| f.{{ handler }}(page));
+            });
+        {%- elif key == "backend:gtk4/DataGrid.on_select" %}
+            // Das Modell kommt erst mit den Daten: bei jedem neuen Modell verbinden.
+            form.{{ w.name }}.connect_model_notify(move |grid| {
+                if let Some(model) = grid.model().and_downcast::<gtk4::SingleSelection>() {
+                    let weak = weak.clone();
+                    model.connect_selected_notify(move |model| {
+                        let selected = model.selected();
+                        let index = if selected == gtk4::INVALID_LIST_POSITION { -1 } else { selected as i32 };
+                        Self::freya_call(&weak, |f| f.{{ handler }}(index));
+                    });
+                }
             });
         {%- elif key == "backend:gtk4/TextView.on_change" %}
             form.{{ w.name }}.buffer().connect_changed(move |buffer| {

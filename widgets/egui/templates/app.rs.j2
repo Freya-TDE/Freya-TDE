@@ -182,3 +182,12 @@ fn menu_level(
         }
     }
 }
+
+/// The content of a data grid: column titles, rows of texts, the selection.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Table {
+    pub headers: Vec<String>,
+    pub rows: Vec<Vec<String>>,
+    pub selected: Option<usize>,
+}

@@ -307,3 +307,39 @@ description = "An entry was chosen; `item` is its path, e.g. `Datei/Öffnen`"
 [component.codegen]
 type = "()"
 init = "()"
+
+[[component]]
+name = "DataGrid"
+kind = "widget"
+look = "table"
+category = "Slint"
+icon = "table"
+description = "Table filled from a data source (StandardTableView): one row per record"
+[component.events.on_select]
+params = [{ name = "index", type = "i32" }]
+description = "Selected row changed (-1 = none); the row: `self.<name>_selected_row()`"
+[component.table]
+set-rows = """
+let columns: Vec<slint::TableColumn> = headers
+    .into_iter()
+    .map(|title| {
+        let mut column = slint::TableColumn::default();
+        column.title = title.into();
+        column.horizontal_stretch = 1.0;
+        column
+    })
+    .collect();
+self.{{ root }}.set_{{ name }}_columns(slint::ModelRc::new(slint::VecModel::from(columns)));
+let rows: Vec<slint::ModelRc<slint::StandardListViewItem>> = rows
+    .iter()
+    .map(|row| {
+        slint::ModelRc::new(slint::VecModel::from(
+            row.iter().map(|cell| slint::StandardListViewItem::from(cell.as_str())).collect::<Vec<_>>(),
+        ))
+    })
+    .collect();
+self.{{ root }}.set_{{ name }}_rows(slint::ModelRc::new(slint::VecModel::from(rows)));
+self.{{ root }}.set_{{ name }}_current(-1);
+"""
+selected = "usize::try_from(self.{{ root }}.get_{{ name }}_current()).ok()"
+

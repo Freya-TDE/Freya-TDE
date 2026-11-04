@@ -279,6 +279,14 @@ fn form() -> Form {
         ))),
     )
     .unwrap();
+    form.add_widget(
+        &name("window"),
+        Widget::from_component(data::bind_grid(Component::new(
+            name("grid"),
+            TypeRef::backend("egui", "DataGrid"),
+        ))),
+    )
+    .unwrap();
     form
 }
 
@@ -303,6 +311,9 @@ impl MainForm {
         self.bound.value = 1;
         say(&format!("bound_items={}", self.bound.items.len()));
         say(&format!("bound={:?}", self.bound_selected_value()));
+        self.grid.value.selected = Some(1);
+        say(&format!("grid_rows={} grid_columns={}", self.grid_rows.len(), self.grid.value.headers.len()));
+        say(&format!("grid={:?} grid_value={:?}", self.grid_selected_row().map(|r| r.name.clone()), self.grid_selected_value()));
         self.greeting.value = format!("Hallo {}", *self.name_edit);
         self.ok_button.enabled = false;
         self.window.caption = "geklickt".into();
@@ -437,6 +448,11 @@ fn generated_project_builds_runs_and_reacts_to_clicks() {
     assert!(stdout.contains("label=Hallo Freya"), "{stdout}");
     assert!(stdout.contains("bound_items=3"), "{stdout}");
     assert!(stdout.contains("bound=Some(2)"), "{stdout}");
+    assert!(stdout.contains("grid_rows=3 grid_columns=2"), "{stdout}");
+    assert!(
+        stdout.contains("grid=Some(\"Birne\") grid_value=Some(2)"),
+        "{stdout}"
+    );
     assert!(stdout.contains("menu=Datei/Neu"), "{stdout}");
 
     if std::env::var_os("FREYA_TDE_KEEP_DEMO").is_none() {

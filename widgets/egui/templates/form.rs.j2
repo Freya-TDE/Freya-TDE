@@ -93,6 +93,43 @@ egui::Slider::new(&mut self.{{ c.name }}.value, {{ c.rust.minimum }}..={{ c.rust
     }
     response
 }
+{%- elif t == "backend:egui/DataGrid" -%}
+|ui: &mut egui::Ui| {
+    let control = &mut self.{{ c.name }};
+    let mut clicked = None;
+    let mut response = egui::Frame::group(ui.style())
+        .show(ui, |ui| {
+            egui::ScrollArea::both()
+                .id_salt("{{ form.name }}.{{ c.name }}")
+                .max_height(160.0)
+                .show(ui, |ui| {
+                    ui.set_min_width(ui.available_width());
+                    egui::Grid::new("{{ form.name }}.{{ c.name }}.grid")
+                        .striped(true)
+                        .show(ui, |ui| {
+                            for header in &control.value.headers {
+                                ui.strong(header.as_str());
+                            }
+                            ui.end_row();
+                            for (index, row) in control.value.rows.iter().enumerate() {
+                                let selected = control.value.selected == Some(index);
+                                for cell in row {
+                                    if ui.selectable_label(selected, cell.as_str()).clicked() {
+                                        clicked = Some(index);
+                                    }
+                                }
+                                ui.end_row();
+                            }
+                        });
+                });
+        })
+        .response;
+    if let Some(index) = clicked {
+        control.value.selected = Some(index);
+        response.mark_changed();
+    }
+    response
+}
 {%- elif t == "backend:egui/TextEdit" -%}
 egui::TextEdit::multiline(&mut self.{{ c.name }}.value).desired_rows({{ c.props.rows }})
     {%- if c.props.monospace %}.font(egui::TextStyle::Monospace){% endif -%}
@@ -172,6 +209,11 @@ if response.changed() {
 {%- elif key == "backend:egui/ComboBox.on_select" %}
 if response.changed() {
     let index = self.{{ c.name }}.value as u32;
+    self.{{ handler }}(index);
+}
+{%- elif key == "backend:egui/DataGrid.on_select" %}
+if response.changed() {
+    let index = self.{{ c.name }}.value.selected.map_or(-1, |i| i as i32);
     self.{{ handler }}(index);
 }
 {%- elif key == "backend:egui/ListBox.on_select" %}

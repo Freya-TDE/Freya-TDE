@@ -214,3 +214,46 @@ selected = "None"
         "{primitives:#?}"
     );
 }
+
+#[test]
+fn table_shows_its_column_titles() {
+    let mut registry = TypeRegistry::with_builtins();
+    let pack = r#"
+[pack]
+name = "demo3"
+version = "0.1.0"
+kind = "backend"
+license = "MIT"
+generated-code-license = "MIT"
+
+[[component]]
+name = "Grid"
+kind = "widget"
+look = "table"
+[component.table]
+set-rows = "let _ = (headers, rows);"
+selected = "None"
+"#;
+    Pack::parse(pack).unwrap().register(&mut registry).unwrap();
+    let mut form = Form::new(
+        name("main_form"),
+        "demo3",
+        Widget::new(name("window"), builtin::form()),
+    );
+    form.add_widget(
+        &name("window"),
+        Widget::from_component(
+            Component::new(name("grid"), TypeRef::backend("demo3", "Grid"))
+                .with(tdr_core::data::FIELDS, texts(&["id", "name"]))
+                .with(tdr_core::data::HEADERS, texts(&["Nr"])),
+        ),
+    )
+    .unwrap();
+    let theme = theme();
+    let laid = layout(&form, &registry, &theme);
+    let primitives = render(&form, &laid, &registry, &theme);
+    assert!(
+        has_text(&primitives, "Nr") && has_text(&primitives, "name"),
+        "{primitives:#?}"
+    );
+}

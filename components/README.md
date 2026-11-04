@@ -21,7 +21,9 @@ Die SQLx-`Query` ist eine Datenquelle (`[component.data]`, Fähigkeit `data.rows
 Spalten mit Typ (`id: i64`, `name: String`, `note: Option<String>`). Eine DropDown/ListBox/ComboBox … wählt im
 Objektinspektor `data_source` (die Query), `display_field` (angezeigte Spalte), `value_field` (Schlüssel) und
 `load` (`Start` = beim Öffnen laden, `Manual` = `self.<liste>_reload()`). Geladen wird im Hintergrund auf Tokio;
-`self.<liste>_selected_value()` liefert den Schlüssel der Auswahl, typisiert nach `columns`.
+`self.<liste>_selected_value()` liefert den Schlüssel der Auswahl, typisiert nach `columns`. Ein **DataGrid** zeigt
+alle (oder unter `fields` gewählte) Spalten mit Titeln aus `headers`; `self.<grid>_selected_row()` liefert die ganze
+Zeile als Struct (`CustomerGridRow { id, name, … }`).
 *The SQLx `Query` is a data source: list widgets pick it as `data_source` plus display and value columns.*
 
 ```toml

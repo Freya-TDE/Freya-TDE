@@ -84,7 +84,7 @@ pub use backend::{BackendDescriptor, EventLoop};
 pub use capability::{Capability, Condition, Provide, Require, RequireKind};
 pub use component::Component;
 pub use component_type::{
-    CargoDependency, CodegenSpec, ComponentType, DataSpec, ListSpec, ShareMode, TypeKind,
+    CargoDependency, CodegenSpec, ComponentType, DataSpec, ListSpec, ShareMode, TableSpec, TypeKind,
 };
 pub use element::Element;
 pub use error::ModelError;

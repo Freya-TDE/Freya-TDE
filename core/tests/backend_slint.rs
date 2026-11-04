@@ -238,6 +238,14 @@ fn form() -> Form {
         ))),
     )
     .unwrap();
+    form.add_widget(
+        &name("window"),
+        Widget::from_component(data::bind_grid(Component::new(
+            name("grid"),
+            TypeRef::backend("slint", "DataGrid"),
+        ))),
+    )
+    .unwrap();
     form
 }
 
@@ -263,6 +271,9 @@ impl MainForm {
         self.window.set_bound_selected(1);
         say(&format!("bound_items={}", self.window.get_bound_items().row_count()));
         say(&format!("bound={:?}", self.bound_selected_value()));
+        self.window.set_grid_current(1);
+        say(&format!("grid_rows={} grid_columns={}", self.grid_rows.len(), self.window.get_grid_columns().row_count()));
+        say(&format!("grid={:?} grid_value={:?}", self.grid_selected_row().map(|r| r.name.clone()), self.grid_selected_value()));
         let name = self.window.get_name_edit_text();
         self.window.set_greeting_text(format!("Hallo {name}").into());
         self.window.set_window_title("geklickt".into());
@@ -409,6 +420,11 @@ fn generated_project_builds_runs_and_reacts_to_clicks() {
     assert!(stdout.contains("label=Hallo Freya"), "{stdout}");
     assert!(stdout.contains("bound_items=3"), "{stdout}");
     assert!(stdout.contains("bound=Some(2)"), "{stdout}");
+    assert!(stdout.contains("grid_rows=3 grid_columns=2"), "{stdout}");
+    assert!(
+        stdout.contains("grid=Some(\"Birne\") grid_value=Some(2)"),
+        "{stdout}"
+    );
     assert!(stdout.contains("menu=Datei/Neu"), "{stdout}");
 
     if std::env::var_os("FREYA_TDE_KEEP_DEMO").is_none() {

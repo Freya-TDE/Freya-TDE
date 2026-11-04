@@ -297,3 +297,22 @@ params = [{ name = "page", type = "u32" }]
 [component.codegen]
 type = "crate::app::Control<usize>"
 init = "crate::app::Control::new({{ props.page }}usize).with_items::<&str>({{ rust.pages }}).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+[[component]]
+name = "DataGrid"
+kind = "widget"
+look = "table"
+category = "iced"
+icon = "table"
+description = "Table filled from a data source: one row per record, click selects"
+[component.events.on_select]
+params = [{ name = "index", type = "i32" }]
+description = "Selected row changed (-1 = none); the row: `self.<name>_selected_row()`"
+[component.table]
+set-rows = """
+self.{{ name }}.value = crate::app::Table { headers, rows, selected: None };
+"""
+selected = "self.{{ name }}.value.selected"
+[component.codegen]
+type = "crate::app::Control<crate::app::Table>"
+init = "crate::app::Control::new(crate::app::Table::default()).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"

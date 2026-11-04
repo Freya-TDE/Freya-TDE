@@ -223,6 +223,59 @@ impl Painter<'_> {
                     y += row;
                 }
             }
+            "table" => {
+                // Kopfzeile aus `headers`/`fields`, sonst die Datenquelle.
+                use tdr_core::data::{DATA_SOURCE, FIELDS, HEADERS};
+                self.out
+                    .push(rect(r, Some(c.input), Some(c.control_border), radius));
+                let fields = self.props.texts(widget, FIELDS);
+                let headers = self.props.texts(widget, HEADERS);
+                let titles: Vec<String> = if !fields.is_empty() {
+                    fields
+                        .iter()
+                        .enumerate()
+                        .map(|(i, f)| {
+                            headers
+                                .get(i)
+                                .filter(|h| !h.is_empty())
+                                .cloned()
+                                .unwrap_or_else(|| f.clone())
+                        })
+                        .collect()
+                } else if !headers.is_empty() {
+                    headers
+                } else if let Some(Value::Reference(Some(source))) =
+                    self.props.value(widget, DATA_SOURCE)
+                {
+                    vec![format!("⟨{source}⟩")]
+                } else {
+                    vec![widget.component.type_ref.name.clone()]
+                };
+                let row = font + 10;
+                let head = Rect::new(r.x + 1, r.y + 1, r.width - 2, row);
+                self.out.push(rect(head, Some(c.control), None, 0));
+                let width = (r.width - 2) / titles.len().max(1) as i32;
+                for (i, title) in titles.iter().enumerate() {
+                    let cell = Rect::new(r.x + 1 + i as i32 * width, head.y, width, row);
+                    self.text_in(cell, cell.x + 6, title, text_color, true);
+                    if i > 0 {
+                        self.out.push(Primitive::Line {
+                            from: Point::new(cell.x, r.y + 1),
+                            to: Point::new(cell.x, r.bottom() - 1),
+                            color: c.control_border,
+                        });
+                    }
+                }
+                let mut y = head.bottom();
+                while y + row < r.bottom() {
+                    self.out.push(Primitive::Line {
+                        from: Point::new(r.x + 1, y),
+                        to: Point::new(r.right() - 1, y),
+                        color: c.control_border,
+                    });
+                    y += row;
+                }
+            }
             "radio" => {
                 let size = self.theme.check_size;
                 let dot = Rect::new(r.x, r.y + (r.height - size) / 2, size, size);

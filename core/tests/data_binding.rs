@@ -195,10 +195,24 @@ fn generates_loader_with_typed_values() {
     if std::env::var_os("FREYA_TDE_CHECK_SQLX").is_some() {
         let dir = std::env::temp_dir().join(format!("freya-sqlx-check-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
-        let generation = self::generation(&self::forms(
+        let mut checked = self::forms(
             |c| c.with(DISPLAY_FIELD, "name").with(VALUE_FIELD, "id"),
             true,
-        ));
+        );
+        checked[1]
+            .add_widget(
+                &name("window"),
+                Widget::from_component(
+                    Component::new(name("grid"), TypeRef::backend("gtk4", "DataGrid"))
+                        .with(
+                            DATA_SOURCE,
+                            Value::reference_on(name("services"), name("customers")),
+                        )
+                        .with(VALUE_FIELD, "id"),
+                ),
+            )
+            .unwrap();
+        let generation = self::generation(&checked);
         write(&dir, &generation).unwrap();
         let status = std::process::Command::new("cargo")
             .arg("check")
@@ -244,5 +258,56 @@ fn wrong_bindings_are_reported() {
         },
         true,
         "not a data source",
+    );
+}
+
+#[test]
+fn data_grid_gets_a_typed_row() {
+    let grid = |c: Component| -> Component {
+        Component::new(name("customer_grid"), TypeRef::backend("gtk4", "DataGrid"))
+            .with(DATA_SOURCE, c.get(DATA_SOURCE).unwrap().value.clone())
+            .with(data::FIELDS, texts(&["name", "note"]))
+            .with(data::HEADERS, texts(&["Kunde"]))
+            .with(VALUE_FIELD, "id")
+    };
+    let mut forms = forms(|c| c.with(DISPLAY_FIELD, "name"), true);
+    let list = forms[1].root.as_ref().unwrap().children[0]
+        .component
+        .clone();
+    forms[1]
+        .add_widget(&name("window"), Widget::from_component(grid(list)))
+        .unwrap();
+    let generation = generation(&forms);
+    assert!(!generation.has_errors(), "{:#?}", generation.diagnostics);
+    let form = file(&generation, "src/main_form.gen.rs");
+    assert!(form.contains("pub struct CustomerGridRow"), "{form}");
+    assert!(form.contains("pub note: Option<String>"), "{form}");
+    assert!(
+        form.contains("pub fn customer_grid_selected_row(&self) -> Option<&CustomerGridRow>"),
+        "{form}"
+    );
+    assert!(
+        form.contains("pub fn customer_grid_selected_value(&self) -> Option<i64>"),
+        "{form}"
+    );
+    // Gezeigt: name und note; Titel „Kunde“, dann der Spaltenname.
+    let flat: String = form.split_whitespace().collect();
+    assert!(
+        flat.contains(r#"vec!["Kunde".to_string(),"note".to_string()]"#),
+        "{form}"
+    );
+    assert!(
+        flat.contains("col_note.as_ref().map(|v|v.to_string()).unwrap_or_default()"),
+        "{form}"
+    );
+
+    // Unbekannte Spalte in `fields`.
+    forms[1].root.as_mut().unwrap().children[1]
+        .component
+        .set(data::FIELDS, texts(&["name", "plz"]));
+    let errors = binding_errors(&self::generation(&forms));
+    assert!(
+        errors.iter().any(|e| e.contains("no column `plz`")),
+        "{errors:#?}"
     );
 }
