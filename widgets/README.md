@@ -9,6 +9,7 @@ Visuelle Widgets und Backend-Paletten, aufbauend auf `tdr-core` (der gemeinsame 
 | `egui` | fertig / done | egui 0.37 mit eframe (Immediate Mode); Kern-Widgets plus Palette „egui“: RadioButton, Switch, DragValue, Slider, ProgressBar, ComboBox, ListBox, TextEdit, Hyperlink, Separator, CollapsingHeader, Tabs, MainMenu |
 | `iced` | fertig / done | iced 0.14 (Elm-Architektur); Kern-Widgets plus Palette „iced“: RadioButton, Toggler, Slider, ProgressBar, PickList, ListBox, TextEditor, Rule, GroupBox, Tabs |
 | `slint` | fertig / done | Slint 1.18 (deklarativ, mit Lizenzhinweis); Kern-Widgets plus Palette „Slint“: RadioButton, Switch, SpinBox, Slider, ProgressIndicator, ComboBox, ListView, TextEdit, Separator, Image, AboutSlint, GroupBox, TabWidget, MainMenu |
+| `flutter` | fertig / done | Flutter (Material 3) mit flutter_rust_bridge 2.13, Logik in Rust; Kern-Widgets plus Palette „Flutter“: RadioButton, Switch, Slider, ProgressBar, ComboBox, ListBox, TextEdit, Separator, Card, Tabs, MainMenu, DataGrid |
 
 Der Neu-Assistent (Datei → Neues Projekt …) bietet alle installierten Backends an, `gtk4` vorgewählt.
 *The new-project wizard offers all installed backends, `gtk4` preselected.*
@@ -133,6 +134,54 @@ impl MainForm {
 - Test: `xvfb-run -a cargo test -p tdr-core --test backend_slint` baut ein Projekt mit allen Widgets, startet es
   und klickt Knopf und Menü.
 
+## Flutter
+
+Flutter zeichnet die Oberfläche (Dart, Material 3), die Logik bleibt in Rust. Das Rust-Projekt wird eine
+Bibliothek (`src/lib.rs`, `crate-type = ["cdylib"]`, kein `main.rs`), die die Flutter-App im Ordner
+`flutter/` über flutter_rust_bridge lädt. Widgets sind wie bei egui Felder `crate::app::Control<T>`; ein
+Handler ändert den Zustand (`self.greeting.value = …`), Flutter zeichnet danach neu.
+*Flutter draws the UI, the logic stays in Rust: the Rust project is a library loaded by the Flutter app in
+`flutter/`; widgets are `Control<T>` state fields like in egui.*
+
+| Datei / file | Besitzer / owner | Inhalt / content |
+|---|---|---|
+| `src/lib.rs` | Nutzer | Module und `started` |
+| `src/api.gen.rs`, `src/frb_generated.gen.rs` | Generator | die Brücke (für alle Projekte gleich) |
+| `flutter/pubspec.yaml`, `flutter/lib/main.dart`, `flutter/README.md` | Nutzer | App, Start, Anleitung |
+| `flutter/lib/freya/<form>.g.dart` | Generator | die Widgets des Formulars (`MainFormView`) |
+| `flutter/lib/freya/freya.g.dart`, `flutter/lib/src/rust/*.dart` | Generator | Hilfen, Dart-Seite der Brücke |
+
+Die Brücke ist fest (`bridge/api.rs`): Flutter fragt den Zustand eines Formulars ab (`freyaOpen`,
+`freyaSnapshot`, `freyaPoll`) und meldet Eingaben (`freyaEvent(form, widget, event, input)`); die Rust-Seite
+übernimmt die Eingabe in das Widget und ruft den Handler. Deshalb liegen die Bindungen von flutter_rust_bridge
+fertig im Pack (`bridge/`, neu erzeugen mit `bridge/regenerate.sh`), und ein Projekt braucht nur Flutter,
+nicht `flutter_rust_bridge_codegen`. Rust-Crate und Dart-Paket haben genau dieselbe Version (2.13.0).
+*The bridge API is fixed, so the flutter_rust_bridge bindings ship pre-generated; projects only need Flutter.*
+
+Starten / run: In der IDE „Start“ (F9): `cargo build`, einmal `flutter create --platforms=<system> .` (legt nur
+fehlende Plattform-Ordner an), `flutter build <system> --debug`, dann das Programm in `flutter/` (es lädt die
+Bibliothek aus `../target/debug/`); Ausgabe im Kanal „Programm“ (`freya_tde::flutter`). Von Hand: siehe
+`flutter/README.md` im Projekt.
+
+- Layouts: senkrecht (`Column`), waagerecht (`Row`, `stretch` und Eingabe-Widgets mit `Expanded`), Raster
+  (Zeilen aus je `columns` Kindern), Stapel (erstes Kind), absolut (`Stack`/`Positioned`). Das Formular
+  scrollt, wenn es nicht passt. `ListBox` ist 120, `DataGrid` 160 Pixel hoch (absolut: die gesetzte Höhe).
+- Optionsfelder eines Containers bilden eine Gruppe (die Rust-Seite setzt die anderen zurück).
+- `MainMenu` wird eine `MenuBar` (Pfade, `-`, Untermenüs); Kürzel werden angezeigt, aber nicht gebunden.
+- `on_close` über `AppLifecycleListener` (wenn die App beendet werden soll).
+- Gezeigt wird das erste Formular; weitere gibt es als `<Form>View` für `Navigator.push`.
+- Nicht unterstützt: Fenstertitel, -größe, -position, Mindest-/Höchstgröße und Startzustand (setzt der native
+  Runner in `flutter/<system>/runner/`; der Titel ist der App-Name), Hintergrundbild von Containern.
+- Kein Debugger: F9 startet ohne Debugger. Zum Weitergeben muss die Bibliothek mit ins Paket (z. B. cargokit
+  über `flutter_rust_bridge_codegen integrate`); das erledigt Freya TDE noch nicht.
+- `flutter create` legt `test/widget_test.dart` für eine Beispiel-App an; vor `flutter test` anpassen.
+- Getestet unter Linux; Windows und macOS sind vorgesehen, aber ungetestet.
+- Test: `xvfb-run -a cargo test -p tdr-core --test backend_flutter` (braucht `flutter` und `xdotool`) erzeugt ein
+  Projekt mit allen Widgets, baut Bibliothek und App, prüft `flutter analyze`, startet und klickt.
+
+*Limits: no window title/size/position settings (the native runner owns them), no container background
+pictures, menu shortcuts not bound, no debugger, the library is not bundled for release yet; tested on Linux.*
+
 ## Aussehen und Fenster / appearance and window
 
 Jedes Widget hat `background`, `foreground` (Farbe; Alpha 0 = Standard des Backends), `font_size`
@@ -144,17 +193,20 @@ Vordergrund des Formulars erben die Widgets, im Designer wie im erzeugten Progra
 *Every widget has colours and font settings; the form adds font family, background picture and window
 settings. Alpha 0 means "backend default".*
 
-| | GTK 4 | egui | iced | Slint |
-|---|---|---|---|---|
-| Farben, Schriftgröße | CSS je Widget | ja | ja | Text: ja; Standard-Widgets nur Hintergrundfläche |
-| fett / kursiv | ja | nur kursiv | ja | ja (Text, Fenster-Standard) |
-| Schriftfamilie | ja | nein | ja | ja |
-| Hintergrundbild | ja (CSS) | ja | ja | ja (Formular) |
-| Position, Höchstgröße | nein (GTK 4 kann es nicht) | ja | ja | ja |
-| Mindestgröße, Zustand, Hell/Dunkel | ja | ja | ja | ja |
+| | GTK 4 | egui | iced | Slint | Flutter |
+|---|---|---|---|---|---|
+| Farben, Schriftgröße | CSS je Widget | ja | ja | Text: ja; Standard-Widgets nur Hintergrundfläche | ja (Knöpfe über `ButtonStyle`, sonst Text und Hintergrund) |
+| fett / kursiv | ja | nur kursiv | ja | ja (Text, Fenster-Standard) | ja (Texte) |
+| Schriftfamilie | ja | nein | ja | ja | ja |
+| Hintergrundbild | ja (CSS) | ja | ja | ja (Formular) | nur Formular |
+| Position, Höchstgröße | nein (GTK 4 kann es nicht) | ja | ja | ja | nein (nativer Runner) |
+| Mindestgröße, Zustand | ja | ja | ja | ja | nein (nativer Runner) |
+| Hell/Dunkel | ja | ja | ja | ja | ja |
 
-Grenzen: iced wendet `enabled` nicht auf Container an; Slints Standard-Widgets haben keine Farb-Properties.
-*Limits: see table; iced ignores `enabled` on containers, Slint std widgets have no colour properties.*
+Grenzen: iced wendet `enabled` nicht auf Container an; Slints Standard-Widgets haben keine Farb-Properties;
+bei Flutter bestimmt der native Runner das Fenster.
+*Limits: see table; iced ignores `enabled` on containers, Slint std widgets have no colour properties,
+Flutter's native runner owns the window.*
 
 ## Backend-Pack / backend pack
 
@@ -166,7 +218,7 @@ der Descriptor `[backend]`:
 
 ```toml
 [backend]
-event-loop = "main-thread"      # oder "async"
+event-loop = "main-thread"      # oder "async", "host" (Rust als Bibliothek, z. B. Flutter)
 absolute-positioning = false
 cargo = [{ crate = "eframe", version = "…" }]
 setup = "…"                     # optional: Anweisungen vor App::init (z. B. gtk4::init()?;)
@@ -174,14 +226,30 @@ app = "…"                       # optional: Code für app.gen.rs (gemeinsame H
 form = """impl {{ form.struct }} { pub fn ui(&mut self, …) { … self.{{ w.events.on_click }}(); … } }"""
 run = """eframe::run_native(…)?; Ok(())"""
 # oder form-file / run-file / setup-file / app-file = "templates/…"
+crate-type = ["cdylib"]         # optional: [lib] crate-type des Projekts (bei "host")
+
+[[backend.files]]               # optional: weitere Dateien (Dart, pubspec.yaml …)
+path = "flutter/lib/freya/{{ form.name }}.g.dart"   # Template
+template-file = "templates/form.dart.j2"            # oder template
+each = "form"                   # "project" (Standard) oder "form" (je Formular mit Widgets)
+owner = "generator"             # oder "user" (einmal angelegt, dann Nutzerdatei)
+raw = false                     # true = unverändert kopieren (z. B. erzeugte Bindungen)
 ```
+
+Bei `event-loop = "host"` treibt ein anderes Programm die Oberfläche: kein `main.rs`, `run()` erzeugt die
+Anwendung und gibt sie samt Laufzeit an das `run`-Template, das sie für die Aufrufe des Hosts aufbewahrt;
+`src/lib.rs` bringt das Backend über `files` mit. Generator-Dateien bekommen Kopf und Prüfsumme als
+`//`-Kommentar (Rust, Dart …), YAML und Markdown daher nur als Nutzerdateien.
+*`host`: another program drives the UI; the Rust side is a library. `files` adds further files; generator
+files carry the `//` header with checksum.*
 
 Lizenzhinweis: `license-notice = """…"""` im Abschnitt `[pack]` (z. B. Lizenzbedingungen einer Bibliothek, von
 der das erzeugte Projekt abhängt). Die IDE zeigt ihn vor dem Anlegen eines Projekts mit dem Backend und lässt
 den Entwickler entscheiden; per API: `Ide::backend_notice`, `BackendDescriptor::license_notice`.
 *`license-notice` is shown before a project uses the backend; the developer decides.*
 
-In Templates schreibt der Filter `rust_str` einen Text als Rust-Stringliteral (`{{ item | rust_str }}`).
+In Templates schreibt der Filter `rust_str` einen Text als Rust-Stringliteral (`{{ item | rust_str }}`),
+`dart_str` als Dart-Stringliteral (`'…'`, `$` maskiert).
 
 Symbole: `icon = "switch"` am Typ; gesucht wird zuerst `icons/<name>.png` im Pack-Ordner (48 × 48 px),
 dann der eingebaute Satz der IDE (`ide/assets/palette/`, Quellen und Generator `make.py`).
@@ -195,11 +263,11 @@ gezeichnet in den Farben der Theme-Tabelle; ohne `look` ein Kasten mit Symbol un
 Platz oben (Rahmentitel, Reiterleiste).
 *Designer drawing: `look` on the type (same looks for every backend); sizes and `header` in the theme tables.*
 
-Tabellen (DataGrid, alle vier Backends): `[component.table]` mit `set-rows` (Anweisungen mit `headers: Vec<String>`
+Tabellen (DataGrid, alle Backends): `[component.table]` mit `set-rows` (Anweisungen mit `headers: Vec<String>`
 und `rows: Vec<Vec<String>>`) und `selected`. Das Widget bekommt `data_source`, `fields` (gezeigte Spalten, leer =
 alle), `headers` (Titel), `value_field` und `load`; der Kern erzeugt ein Zeilen-Struct `<Widget>Row` mit allen Spalten
 der Quelle (typisiert nach `columns`), `<name>_selected_row()` und `<name>_selected_value()`. Ereignis `on_select(index)`.
-GTK: `ColumnView`, egui: gestreiftes Grid, iced: `table`, Slint: `StandardTableView`.
+GTK: `ColumnView`, egui: gestreiftes Grid, iced: `table`, Slint: `StandardTableView`, Flutter: `DataTable`.
 *Data grids declare `set-rows`/`selected`; the core generates a typed row struct and `<name>_selected_row()`.*
 
 Listen-Widgets mit Daten: `[component.list]` mit `set-items` (Anweisungen, die `items: Vec<String>` ins Widget
@@ -207,7 +275,7 @@ setzen) und `selected` (Ausdruck `Option<usize>`); Kontext `name`, `root`, `form
 `data_source`, `display_field`, `value_field` und `load`; der Kern erzeugt `<name>_reload()`,
 `<name>_selected_value()`, `freya_start_data()` und `freya_take_data()`. Das Backend ruft beim Öffnen
 `freya_start_data()` und, wenn Daten da sind, `freya_take_data()` (GTK/Slint: Zeitgeber 100 ms, egui: Repaint über
-`crate::app::freya_set_waker`, iced: Subscription). Im Kontext des `form`-Templates zeigt `data_bound`, ob das
+`crate::app::freya_set_waker`, iced: Subscription, Flutter: Zeitgeber 100 ms über `freyaPoll`). Im Kontext des `form`-Templates zeigt `data_bound`, ob das
 Formular gebundene Listen hat. Datenmodell: Modul-Doku von `tdr_core::data`.
 *List widgets declare `set-items`/`selected`; the core generates loading, the backend polls or is woken.*
 

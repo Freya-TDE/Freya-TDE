@@ -81,7 +81,7 @@ mod validate;
 mod value;
 mod widget;
 
-pub use backend::{BackendDescriptor, EventLoop};
+pub use backend::{BackendDescriptor, BackendFile, EventLoop, FileOwner, FileScope};
 pub use capability::{Capability, Condition, Provide, Require, RequireKind};
 pub use component::Component;
 pub use component_type::{

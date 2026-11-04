@@ -314,6 +314,9 @@ impl Ide {
 
     fn debug_launch(&self) {
         let Some(exe) = self.executable.borrow().clone() else {
+            // Kein Rust-Programm (z. B. Flutter: die App lädt die Bibliothek) –
+            // ohne Debugger starten.
+            self.run_executable();
             return;
         };
         let Some(dir) = self.session().project_dir() else {

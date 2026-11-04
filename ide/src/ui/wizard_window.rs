@@ -414,8 +414,8 @@ impl WizardWindow {
         *self.registry.borrow_mut() = registry.clone();
         let mut names: Vec<String> = registry.backends().map(|b| b.name.clone()).collect();
         names.sort_by_key(|n| {
-            // Reihenfolge wie beschlossen: GTK 4, egui, iced, Slint, dann der Rest.
-            ["gtk4", "egui", "iced", "slint"]
+            // Reihenfolge wie beschlossen: GTK 4, egui, iced, Slint, Flutter, dann der Rest.
+            ["gtk4", "egui", "iced", "slint", "flutter"]
                 .iter()
                 .position(|k| k == n)
                 .unwrap_or(99)

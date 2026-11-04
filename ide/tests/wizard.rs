@@ -147,6 +147,29 @@ fn wizard() {
     assert!(preview.license_notice.unwrap().contains("Royalty-free"));
     slint.license_accepted = true;
     assert!(plan(&slint, &registry).is_ok());
+    // Flutter: Rust-Bibliothek plus Flutter-App, kein main.rs.
+    let mut flutter = NewProject::program("flutterapp", &home, "flutter");
+    flutter.starters = vec![Starter::Redis {
+        url: "redis://127.0.0.1/".into(),
+    }];
+    let preview = plan(&flutter, &registry);
+    assert!(preview.is_ok(), "{:#?}", preview.errors);
+    for f in [
+        "src/lib.rs",
+        "src/api.gen.rs",
+        "src/frb_generated.gen.rs",
+        "flutter/pubspec.yaml",
+        "flutter/lib/main.dart",
+        "flutter/lib/freya/main_form.g.dart",
+        "flutter/lib/src/rust/frb_generated.dart",
+    ] {
+        assert!(
+            preview.files.contains(&f.to_owned()),
+            "{f}: {:?}",
+            preview.files
+        );
+    }
+    assert!(!preview.files.contains(&"src/main.rs".to_owned()));
     let mut lib_ui = NewProject::library("libui", &home);
     lib_ui.backend = "gtk4".into();
     assert_eq!(

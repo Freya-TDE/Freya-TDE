@@ -1,0 +1,151 @@
+// Helpers of the generated forms (Freya TDE).
+// ignore_for_file: non_constant_identifier_names
+
+import 'dart:io';
+
+import 'package:flutter/material.dart';
+
+import '../src/rust/api.dart';
+
+/// Input for `freyaEvent`: only the field of the widget's kind is set.
+FreyaInput freyaInput({String? text, bool? checked, double? number, int? index}) =>
+    FreyaInput(text: text, checked: checked, number: number, index: index);
+
+/// A widget the Rust side does not know (yet): empty, visible, enabled.
+FreyaControl freyaEmpty(String name) => FreyaControl(
+      name: name,
+      caption: '',
+      text: '',
+      checked: false,
+      number: 0,
+      index: -1,
+      items: const [],
+      rows: const [],
+      enabled: true,
+      visible: true,
+      tooltip: '',
+    );
+
+/// Tooltip (if set) and the disabled look of containers.
+Widget freyaFrame(FreyaControl c, Widget child, {bool container = false}) {
+  var result = child;
+  if (container && !c.enabled) {
+    result = IgnorePointer(child: Opacity(opacity: 0.5, child: result));
+  }
+  if (c.tooltip.isNotEmpty) {
+    result = Tooltip(message: c.tooltip, child: result);
+  }
+  return result;
+}
+
+/// Colours and font of a widget from the designer.
+Widget freyaStyled(
+  Widget child, {
+  Color? background,
+  Color? foreground,
+  double? fontSize,
+  bool bold = false,
+  bool italic = false,
+  String? fontFamily,
+}) {
+  var result = child;
+  if (foreground != null || fontSize != null || bold || italic || fontFamily != null) {
+    result = DefaultTextStyle.merge(
+      style: TextStyle(
+        color: foreground,
+        fontSize: fontSize,
+        fontWeight: bold ? FontWeight.bold : null,
+        fontStyle: italic ? FontStyle.italic : null,
+        fontFamily: fontFamily,
+      ),
+      child: IconTheme.merge(data: IconThemeData(color: foreground), child: result),
+    );
+  }
+  if (background != null) {
+    result = ColoredBox(color: background, child: result);
+  }
+  return result;
+}
+
+/// A picture behind the content; the path is relative to the project
+/// (Flutter runs in `flutter/`, so `../` is tried first).
+Widget freyaBackground(String path, BoxFit fit, Widget child) {
+  final file = File('../$path').existsSync() ? File('../$path') : File(path);
+  return DecoratedBox(
+    decoration: BoxDecoration(image: DecorationImage(image: FileImage(file), fit: fit)),
+    child: child,
+  );
+}
+
+/// Children in rows of `columns` cells.
+Widget freyaGrid(int columns, double spacing, List<Widget> children) {
+  final rows = <Widget>[];
+  for (var i = 0; i < children.length; i += columns) {
+    final cells = children.sublist(i, i + columns > children.length ? children.length : i + columns);
+    rows.add(Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      spacing: spacing,
+      children: [
+        for (final cell in cells) Expanded(child: cell),
+        for (var k = cells.length; k < columns; k++) const Expanded(child: SizedBox()),
+      ],
+    ));
+  }
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    mainAxisSize: MainAxisSize.min,
+    spacing: spacing,
+    children: rows,
+  );
+}
+
+class _MenuNode {
+  _MenuNode(this.label, this.path, {this.shortcut = '', this.submenu = false});
+  final String label;
+  final String path;
+  final String shortcut;
+  final bool submenu;
+  final List<_MenuNode> children = [];
+}
+
+List<Widget> _menuChildren(List<_MenuNode> nodes, void Function(String path) onSelect, bool enabled) => [
+      for (final n in nodes)
+        if (n.label == '-')
+          const Divider(height: 1)
+        else if (n.submenu)
+          SubmenuButton(menuChildren: _menuChildren(n.children, onSelect, enabled), child: Text(n.label))
+        else
+          MenuItemButton(
+            onPressed: enabled ? () => onSelect(n.path) : null,
+            trailingIcon: n.shortcut.isEmpty ? null : Text(n.shortcut),
+            child: Text(n.label),
+          ),
+    ];
+
+/// A menu bar from entries like `Datei/Öffnen | Ctrl+O` and `Datei/-`;
+/// `onSelect` gets the path (`Datei/Öffnen`). Shortcuts are shown, not bound.
+Widget freyaMenuBar(FreyaControl c, void Function(String path) onSelect) {
+  final root = _MenuNode('', '', submenu: true);
+  for (final item in c.items) {
+    final parts = item.split('|');
+    final shortcut = parts.length > 1 ? parts[1].trim() : '';
+    final segments = parts[0].split('/').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
+    var node = root;
+    for (var i = 0; i < segments.length; i++) {
+      final path = segments.sublist(0, i + 1).join('/');
+      if (i == segments.length - 1) {
+        node.children.add(_MenuNode(segments[i], path, shortcut: shortcut));
+        break;
+      }
+      var next = node.children.where((n) => n.submenu && n.label == segments[i]).firstOrNull;
+      if (next == null) {
+        next = _MenuNode(segments[i], path, submenu: true);
+        node.children.add(next);
+      }
+      node = next;
+    }
+  }
+  return Row(children: [
+    Expanded(child: MenuBar(children: _menuChildren(root.children, onSelect, c.enabled))),
+  ]);
+}

@@ -488,6 +488,89 @@ fn async_backends_use_the_entry_attribute() {
 }
 
 #[test]
+fn host_backends_make_a_library_with_extra_files() {
+    let mut registry = registry();
+    let mut backend = BackendDescriptor::new("hostui");
+    backend.event_loop = EventLoop::Host;
+    backend.crate_types = vec!["cdylib".into()];
+    backend.run = Some("crate::app::keep({{ app }}, {{ runtime }}); Ok(())".into());
+    backend.app = Some("pub fn keep(_app: App, _runtime: tokio::runtime::Runtime) {}".into());
+    backend.files = vec![
+        BackendFile {
+            path: "src/lib.rs".into(),
+            template: "#[path = \"app.gen.rs\"]\nmod app;\nfn started(app: &mut app::App) -> Result<(), app::Error> { let _ = app; Ok(()) }".into(),
+            owner: FileOwner::User,
+            each: FileScope::Project,
+            raw: false,
+        },
+        BackendFile {
+            path: "ui/{{ form.name }}.txt".into(),
+            template: "// {{ project.name }}: {{ widgets | length }} widgets".into(),
+            owner: FileOwner::Generator,
+            each: FileScope::Form,
+            raw: false,
+        },
+        BackendFile {
+            path: "ui/raw.txt".into(),
+            template: "{{ not a template".into(),
+            owner: FileOwner::Generator,
+            each: FileScope::Project,
+            raw: true,
+        },
+    ];
+    registry.register_backend(backend).unwrap();
+    let project = ProjectFile::new("crm", "1.99", "hostui").unwrap();
+    let mut source = empty();
+    source.insert(
+        "Cargo.toml".into(),
+        "[package]\nname = \"crm\"\n\n[lib]\ncrate-type = [\"rlib\"]\n".into(),
+    );
+    source.insert("src/lib.rs".into(), "// mine\n".into());
+    let generation = generate(&project, &forms(), &registry, &source);
+    assert!(!generation.has_errors(), "{:#?}", errors(&generation));
+    assert!(generation.file("src/main.rs").is_none());
+    let cargo = content(&generation, "Cargo.toml");
+    assert!(
+        cargo.contains("crate-type = [\"rlib\", \"cdylib\"]"),
+        "{cargo}"
+    );
+    // Die Datei des Nutzers bleibt.
+    assert_eq!(content(&generation, "src/lib.rs"), "// mine\n");
+    let app = content(&generation, "src/app.gen.rs");
+    assert!(
+        app.contains("let _runtime_guard = runtime.enter();"),
+        "{app}"
+    );
+    assert!(app.contains("crate::app::keep(app, runtime);"), "{app}");
+    // Je Formular mit Widgets eine Datei, mit Kopf und Prüfsumme.
+    let ui = generation.file("ui/main_form.txt").expect("form file");
+    assert_eq!(ui.kind, FileKind::Generated);
+    assert!(ui.content.starts_with(codegen::GENERATED_MARK));
+    assert!(ui.content.contains("// crm: "), "{}", ui.content);
+    assert!(generation.file("ui/services.txt").is_none());
+    assert!(content(&generation, "ui/raw.txt").ends_with("{{ not a template"));
+
+    // Pfade außerhalb des Projekts werden abgelehnt.
+    let mut registry = self::registry();
+    let mut backend = BackendDescriptor::new("hostui");
+    backend.event_loop = EventLoop::Host;
+    backend.files = vec![BackendFile {
+        path: "../outside.txt".into(),
+        template: "x".into(),
+        owner: FileOwner::Generator,
+        each: FileScope::Project,
+        raw: false,
+    }];
+    registry.register_backend(backend).unwrap();
+    let generation = generate(&project, &forms(), &registry, &empty());
+    assert!(
+        errors(&generation)
+            .join(" ")
+            .contains("not a relative path")
+    );
+}
+
+#[test]
 fn missing_backend_is_reported() {
     let project = ProjectFile::new("crm", "1.99", "nope").unwrap();
     let generation = generate(&project, &forms(), &registry(), &empty());

@@ -1,0 +1,438 @@
+{#- Flutter: the widgets of a form (flutter/lib/freya/<form>.g.dart). The state
+    comes from the Rust side (`freyaSnapshot`), input goes back with
+    `freyaEvent`; every container gets a method `_w_<name>` for its children. -#}
+{%- set view = form.struct ~ "View" %}
+{%- set containers = ["core/Form", "core/Container", "backend:flutter/Card", "backend:flutter/Tabs"] %}
+{#- Wie die Theme-Tabelle des Designers: Rand 12, Abstand 8. -#}
+{%- set default_layout = {"kind": "vertical", "spacing": 8, "padding": {"left": 12, "top": 12, "right": 12, "bottom": 12}} %}
+{#- Widgets that need a width from their parent in a row. -#}
+{%- set expanding = ["core/Edit", "backend:flutter/TextEdit", "backend:flutter/ComboBox", "backend:flutter/ListBox", "backend:flutter/Slider", "backend:flutter/ProgressBar", "backend:flutter/DataGrid", "core/Container", "backend:flutter/Card", "backend:flutter/Tabs"] %}
+{%- set edits = widgets | selectattr("field") | selectattr("type", "in", ["core/Edit", "backend:flutter/TextEdit"]) | list %}
+{%- set menus = components | selectattr("type", "eq", "backend:flutter/MainMenu") | selectattr("field") | list %}
+{%- set fits = {"Cover": "BoxFit.cover", "Stretch": "BoxFit.fill", "Contain": "BoxFit.contain", "Center": "BoxFit.none"} %}
+
+{%- macro color(v) -%}
+{%- if v.a > 0 %}Color.fromARGB({{ v.a }}, {{ v.r }}, {{ v.g }}, {{ v.b }}){% else %}null{% endif -%}
+{%- endmacro %}
+
+{#- The widget `c` itself (`c` in Dart: its state). -#}
+{%- macro control(c) -%}
+{%- set t = c.type -%}
+{%- set n = c.name | dart_str -%}
+{%- if t == "core/Label" -%}
+Text(c.text)
+{%- elif t == "core/Button" -%}
+ElevatedButton(
+  {%- if c.props.background.a > 0 or c.props.foreground.a > 0 %}
+  style: ElevatedButton.styleFrom(backgroundColor: {{ color(c.props.background) }}, foregroundColor: {{ color(c.props.foreground) }}),
+  {%- endif %}
+  onPressed: c.enabled ? () => _send({{ n }}, 'on_click') : null,
+  child: Text(c.caption),
+)
+{%- elif t == "core/Edit" -%}
+TextField(
+  controller: _edit({{ n }}),
+  enabled: c.enabled,
+  readOnly: {{ "true" if c.props.read_only else "false" }},
+  obscureText: {{ "true" if c.props.password else "false" }},
+  {%- if c.props.max_length > 0 %}
+  maxLength: {{ c.props.max_length }},
+  {%- endif %}
+  decoration: InputDecoration(
+    isDense: true,
+    border: const OutlineInputBorder(),
+    {%- if c.props.placeholder %}
+    hintText: {{ c.props.placeholder | dart_str }},
+    {%- endif %}
+  ),
+  onChanged: (text) => _send({{ n }}, 'on_change', freyaInput(text: text)),
+  onSubmitted: (_) => _send({{ n }}, 'on_submit'),
+)
+{%- elif t == "backend:flutter/TextEdit" -%}
+TextField(
+  controller: _edit({{ n }}),
+  enabled: c.enabled,
+  readOnly: {{ "true" if c.props.read_only else "false" }},
+  minLines: {{ c.props.rows }},
+  maxLines: {{ c.props.rows }},
+  {%- if c.props.monospace %}
+  style: const TextStyle(fontFamily: 'monospace'),
+  {%- endif %}
+  decoration: const InputDecoration(isDense: true, border: OutlineInputBorder()),
+  onChanged: (text) => _send({{ n }}, 'on_change', freyaInput(text: text)),
+)
+{%- elif t == "core/CheckBox" -%}
+InkWell(
+  onTap: c.enabled ? () => _send({{ n }}, 'on_toggle', freyaInput(checked: !c.checked)) : null,
+  child: Row(mainAxisSize: MainAxisSize.min, children: [
+    Checkbox(
+      value: c.checked,
+      onChanged: c.enabled ? (v) => _send({{ n }}, 'on_toggle', freyaInput(checked: v ?? false)) : null,
+    ),
+    Flexible(child: Text(c.caption)),
+  ]),
+)
+{%- elif t == "backend:flutter/RadioButton" -%}
+RadioGroup<bool>(
+  groupValue: c.checked,
+  onChanged: (_) => _send({{ n }}, 'on_toggle', freyaInput(checked: true)),
+  child: InkWell(
+    onTap: c.enabled ? () => _send({{ n }}, 'on_toggle', freyaInput(checked: true)) : null,
+    child: Row(mainAxisSize: MainAxisSize.min, children: [
+      Radio<bool>(value: true, enabled: c.enabled),
+      Flexible(child: Text(c.caption)),
+    ]),
+  ),
+)
+{%- elif t == "backend:flutter/Switch" -%}
+Switch(
+  value: c.checked,
+  onChanged: c.enabled ? (v) => _send({{ n }}, 'on_toggle', freyaInput(checked: v)) : null,
+)
+{%- elif t == "backend:flutter/Slider" -%}
+Slider(
+  value: c.number.clamp({{ c.props.minimum }}, {{ c.props.maximum }}).toDouble(),
+  min: {{ c.props.minimum }},
+  max: {{ c.props.maximum }},
+  {%- if c.props.divisions > 0 %}
+  divisions: {{ c.props.divisions }},
+  {%- endif %}
+  onChanged: c.enabled ? (v) => _send({{ n }}, 'on_change', freyaInput(number: v)) : null,
+)
+{%- elif t == "backend:flutter/ProgressBar" -%}
+LinearProgressIndicator(value: c.number.clamp(0.0, 1.0).toDouble())
+{%- elif t == "backend:flutter/ComboBox" -%}
+DropdownButton<int>(
+  isExpanded: true,
+  value: c.index >= 0 && c.index < c.items.length ? c.index : null,
+  items: [
+    for (var i = 0; i < c.items.length; i++) DropdownMenuItem(value: i, child: Text(c.items[i])),
+  ],
+  onChanged: c.enabled ? (v) => _send({{ n }}, 'on_select', freyaInput(index: v ?? -1)) : null,
+)
+{%- elif t == "backend:flutter/ListBox" -%}
+SizedBox(
+  height: {{ c.placement.height if c.placement and c.placement.kind == "absolute" else 120 }},
+  child: DecoratedBox(
+    decoration: BoxDecoration(border: Border.all(color: Theme.of(context).dividerColor)),
+    child: ListView.builder(
+      itemCount: c.items.length,
+      itemBuilder: (context, i) => ListTile(
+        dense: true,
+        title: Text(c.items[i]),
+        selected: c.index == i,
+        onTap: c.enabled ? () => _send({{ n }}, 'on_select', freyaInput(index: i)) : null,
+      ),
+    ),
+  ),
+)
+{%- elif t == "backend:flutter/DataGrid" -%}
+SizedBox(
+  height: {{ c.placement.height if c.placement and c.placement.kind == "absolute" else 160 }},
+  child: c.items.isEmpty
+      ? const SizedBox()
+      : SingleChildScrollView(
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: DataTable(
+              showCheckboxColumn: false,
+              columns: [for (final h in c.items) DataColumn(label: Text(h))],
+              rows: [
+                for (var i = 0; i < c.rows.length; i++)
+                  DataRow(
+                    selected: c.index == i,
+                    onSelectChanged: c.enabled ? (_) => _send({{ n }}, 'on_select', freyaInput(index: i)) : null,
+                    cells: [
+                      for (var k = 0; k < c.items.length; k++)
+                        DataCell(Text(k < c.rows[i].length ? c.rows[i][k] : '')),
+                    ],
+                  ),
+              ],
+            ),
+          ),
+        ),
+)
+{%- elif t == "backend:flutter/Separator" -%}
+{%- if c.props.vertical %}const SizedBox(height: 24, child: VerticalDivider(width: 16)){% else %}const Divider(height: 16){% endif -%}
+{%- elif t == "core/Container" -%}
+_w_{{ c.name }}()
+{%- elif t == "backend:flutter/Card" -%}
+Card(
+  margin: EdgeInsets.zero,
+  child: Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      if (c.caption.isNotEmpty)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+          child: Text(c.caption, style: Theme.of(context).textTheme.titleMedium),
+        ),
+      _w_{{ c.name }}(),
+    ],
+  ),
+)
+{%- elif t == "backend:flutter/Tabs" -%}
+_w_{{ c.name }}()
+{%- else -%}
+Text({{ c.type_name | dart_str }})
+{%- endif -%}
+{%- endmacro %}
+
+{#- `c` with its state, style, tooltip; `null`-safe if hidden. -#}
+{%- macro item(c) -%}
+{%- set p = c.props -%}
+Builder(builder: (context) {
+  final c = _get({{ c.name | dart_str }});
+  {%- if p.foreground.a > 0 or p.background.a > 0 or p.font_size > 0 or p.bold or p.italic %}
+  return freyaFrame(c, freyaStyled(
+    {{ control(c) | indent(4) }},
+    {#- Knöpfe färbt ihr ButtonStyle. #}
+    background: {{ "null" if c.type == "core/Button" else color(p.background) }},
+    foreground: {{ "null" if c.type == "core/Button" else color(p.foreground) }},
+    {%- if p.font_size > 0 %}
+    fontSize: {{ p.font_size }},
+    {%- endif %}
+    bold: {{ "true" if p.bold else "false" }},
+    italic: {{ "true" if p.italic else "false" }},
+  ){% if c.type in containers %}, container: true{% endif %});
+  {%- else %}
+  return freyaFrame(c, {{ control(c) | indent(2) }}{% if c.type in containers %}, container: true{% endif %});
+  {%- endif %}
+})
+{%- endmacro %}
+
+{#- `c` placed in the layout `l` of its parent. -#}
+{%- macro placed(c, l) -%}
+{%- set p = c.placement -%}
+{%- set align = p.align if p and p.kind == "layout" else "Fill" -%}
+{%- if l.kind == "absolute" and p and p.kind == "absolute" -%}
+Positioned(left: {{ p.x }}, top: {{ p.y }}, width: {{ p.width }}, height: {{ p.height }}, child: {{ item(c) }})
+{%- elif l.kind == "horizontal" and ((p and p.kind == "layout" and p.stretch) or c.type in expanding) -%}
+Expanded(child: {{ item(c) }})
+{%- elif l.kind in ["vertical", "custom"] and align == "Start" -%}
+Align(alignment: Alignment.centerLeft, child: {{ item(c) }})
+{%- elif l.kind in ["vertical", "custom"] and align == "Center" -%}
+Center(child: {{ item(c) }})
+{%- elif l.kind in ["vertical", "custom"] and align == "End" -%}
+Align(alignment: Alignment.centerRight, child: {{ item(c) }})
+{%- else -%}
+{{ item(c) }}
+{%- endif -%}
+{%- endmacro %}
+// ignore_for_file: non_constant_identifier_names, prefer_const_constructors, unused_element, unused_import
+
+import 'dart:async';
+import 'dart:ui' show AppExitResponse;
+
+import 'package:flutter/material.dart';
+
+import '../src/rust/api.dart';
+import 'freya.g.dart';
+
+/// Form `{{ form.name }}`: its widgets, with the state and the handlers on
+/// the Rust side (`src/{{ form.name }}.rs`).
+class {{ view }} extends StatefulWidget {
+  const {{ view }}({super.key});
+
+  /// Name of the form on the Rust side.
+  static const form = {{ form.name | dart_str }};
+
+  /// Theme of the form (designer: `theme`).
+  static const themeMode = ThemeMode.{% if root.props.theme == "Dark" %}dark{% elif root.props.theme == "Light" %}light{% else %}system{% endif %};
+
+  @override
+  State<{{ view }}> createState() => _{{ view }}State();
+}
+
+class _{{ view }}State extends State<{{ view }}> {
+  Map<String, FreyaControl> _controls = {};
+  final Map<String, TextEditingController> _edits = {};
+  Timer? _poll;
+  AppLifecycleListener? _lifecycle;
+
+  @override
+  void initState() {
+    super.initState();
+    _apply(freyaOpen(form: {{ view }}.form));
+    {%- if data_bound %}
+    // Daten, die im Hintergrund geladen werden, abholen.
+    _poll = Timer.periodic(const Duration(milliseconds: 100), (_) {
+      final state = freyaPoll(form: {{ view }}.form);
+      if (state != null) _take(state);
+    });
+    {%- endif %}
+    _lifecycle = AppLifecycleListener(
+      onExitRequested: () async =>
+          freyaClose(form: {{ view }}.form) ? AppExitResponse.exit : AppExitResponse.cancel,
+    );
+  }
+
+  @override
+  void dispose() {
+    _poll?.cancel();
+    _lifecycle?.dispose();
+    for (final edit in _edits.values) {
+      edit.dispose();
+    }
+    super.dispose();
+  }
+
+  void _apply(List<FreyaControl> state) {
+    _controls = {for (final c in state) c.name: c};
+    // Texte, die ein Handler geändert hat, in die Eingabefelder übernehmen.
+    _edits.forEach((name, edit) {
+      final text = _controls[name]?.text;
+      if (text != null && text != edit.text) edit.text = text;
+    });
+  }
+
+  void _take(List<FreyaControl> state) {
+    if (mounted) setState(() => _apply(state));
+  }
+
+  void _send(String widget, String event, [FreyaInput? input]) {
+    _take(freyaEvent(form: {{ view }}.form, widget: widget, event: event, input: input ?? freyaInput()));
+  }
+
+  FreyaControl _get(String name) => _controls[name] ?? freyaEmpty(name);
+
+  TextEditingController _edit(String name) =>
+      _edits.putIfAbsent(name, () => TextEditingController(text: _get(name).text));
+
+  @override
+  Widget build(BuildContext context) {
+    {%- set rp = root.props %}
+    Widget body = SingleChildScrollView(child: _w_{{ root.name }}());
+    {%- if rp.background_image %}
+    body = freyaBackground({{ rp.background_image | dart_str }}, {{ fits[rp.background_fit] if rp.background_fit in fits else "BoxFit.cover" }}, body);
+    {%- endif %}
+    body = freyaStyled(
+      body,
+      foreground: {{ color(rp.foreground) }},
+      {%- if rp.font_size > 0 %}
+      fontSize: {{ rp.font_size }},
+      {%- endif %}
+      {%- if rp.font_family %}
+      fontFamily: {{ rp.font_family | dart_str }},
+      {%- endif %}
+    );
+    return Scaffold(
+      backgroundColor: {{ color(rp.background) }},
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+        {%- for m in menus %}
+          freyaMenuBar(_get({{ m.name | dart_str }}), (path) => _send({{ m.name | dart_str }}, 'on_select', freyaInput(text: path))),
+        {%- endfor %}
+          Expanded(
+            child: freyaFrame(_get({{ root.name | dart_str }}), body, container: true),
+          ),
+        ],
+      ),
+    );
+  }
+{%- for w in widgets if w.type in containers %}
+
+  /// The children of `{{ w.name }}`.
+  Widget _w_{{ w.name }}() {
+    {%- set kids = w.children %}
+    {%- if w.type == "backend:flutter/Tabs" %}
+    final c = _get({{ w.name | dart_str }});
+    final page = c.index.clamp(0, {{ [kids | length - 1, 0] | max }}).toInt();
+    const fallback = [{% for k in kids %}{{ k.name | dart_str }}, {% endfor %}];
+    return DefaultTabController(
+      key: ValueKey(page),
+      length: {{ [kids | length, 1] | max }},
+      initialIndex: page,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TabBar(
+            isScrollable: true,
+            tabAlignment: TabAlignment.start,
+            tabs: [
+            {%- if kids %}
+              for (var i = 0; i < fallback.length; i++)
+                Tab(text: i < c.items.length ? c.items[i] : fallback[i]),
+            {%- else %}
+              const Tab(text: ''),
+            {%- endif %}
+            ],
+            onTap: (i) => _send({{ w.name | dart_str }}, 'on_page', freyaInput(index: i)),
+          ),
+          const SizedBox(height: 8),
+          {%- if kids %}
+          [
+          {%- for k in kids %}
+            {{ item(k) | indent(12) }},
+          {%- endfor %}
+          ][page],
+          {%- endif %}
+        ],
+      ),
+    );
+    {%- else %}
+    {%- set l = w.layout or default_layout %}
+    {%- set pad = "EdgeInsets.fromLTRB(" ~ l.padding.left ~ ", " ~ l.padding.top ~ ", " ~ l.padding.right ~ ", " ~ l.padding.bottom ~ ")" %}
+    {%- if l.kind == "absolute" %}
+    // Absolut: Fläche so groß wie das äußerste Kind.
+    return Padding(
+      padding: {{ pad }},
+      child: SizedBox(
+        width: <num>[{% for c in kids %}{% set p = c.placement %}{% if p and p.kind == "absolute" %}{{ p.x + p.width }}, {% endif %}{% endfor %}0].reduce((a, b) => a > b ? a : b).toDouble(),
+        height: <num>[{% for c in kids %}{% set p = c.placement %}{% if p and p.kind == "absolute" %}{{ p.y + p.height }}, {% endif %}{% endfor %}0].reduce((a, b) => a > b ? a : b).toDouble(),
+        child: Stack(clipBehavior: Clip.none, children: [
+        {%- for c in kids if c.placement and c.placement.kind == "absolute" %}
+          if (_get({{ c.name | dart_str }}).visible) {{ placed(c, l) | indent(10) }},
+        {%- endfor %}
+        ]),
+      ),
+    );
+    {%- elif l.kind == "grid" %}
+    return Padding(
+      padding: {{ pad }},
+      child: freyaGrid({{ l.columns or 1 }}, {{ l.spacing }}, [
+      {%- for c in kids %}
+        _get({{ c.name | dart_str }}).visible ? {{ item(c) | indent(8) }} : const SizedBox(),
+      {%- endfor %}
+      ]),
+    );
+    {%- elif l.kind == "stack" %}
+    return Padding(
+      padding: {{ pad }},
+      child: {% if kids %}{{ item(kids[0]) | indent(6) }}{% else %}const SizedBox(){% endif %},
+    );
+    {%- elif l.kind == "horizontal" %}
+    return Padding(
+      padding: {{ pad }},
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        spacing: {{ l.spacing }},
+        children: [
+        {%- for c in kids %}
+          if (_get({{ c.name | dart_str }}).visible) {{ placed(c, l) | indent(10) }},
+        {%- endfor %}
+        ],
+      ),
+    );
+    {%- else %}
+    return Padding(
+      padding: {{ pad }},
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        spacing: {{ l.spacing }},
+        children: [
+        {%- for c in kids %}
+          if (_get({{ c.name | dart_str }}).visible) {{ placed(c, l) | indent(10) }},
+        {%- endfor %}
+        ],
+      ),
+    );
+    {%- endif %}
+    {%- endif %}
+  }
+{%- endfor %}
+}

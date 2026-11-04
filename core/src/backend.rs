@@ -28,6 +28,53 @@ pub enum EventLoop {
     /// The backend is async itself: `run()` carries the runtime's entry
     /// attribute (e.g. `#[tokio::main]`) and `started` is async.
     Async,
+    /// Another program owns the UI loop (e.g. Flutter): the Rust side is a
+    /// library (`src/lib.rs`, no `main.rs`) that the host calls. `run()`
+    /// creates the application like `main-thread` (`started` in `lib.rs`)
+    /// and hands it and the runtime to the backend's `run` template, which
+    /// keeps them for the host's calls.
+    Host,
+}
+
+/// Who owns a file of [`BackendDescriptor::files`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum FileOwner {
+    /// Written on every run, read-only, with checksum header (`//`
+    /// comments, e.g. Rust or Dart).
+    #[default]
+    Generator,
+    /// Created once, then the user's.
+    User,
+}
+
+/// How often a file of [`BackendDescriptor::files`] is produced.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum FileScope {
+    /// Once per project; context like the `run` template plus `project`.
+    #[default]
+    Project,
+    /// Once per form with widgets; context like the `form` template plus
+    /// `project`.
+    Form,
+}
+
+/// An additional file of the generated project (e.g. the Dart side of a
+/// Flutter UI). `path` and `template` are templates.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BackendFile {
+    /// Path relative to the project, e.g. `flutter/lib/{{ form.name }}.g.dart`.
+    pub path: String,
+    pub template: String,
+    #[serde(default)]
+    pub owner: FileOwner,
+    #[serde(default)]
+    pub each: FileScope,
+    /// Copy `template` as it is (no template syntax), e.g. for generated
+    /// bindings that contain `{{`.
+    #[serde(default)]
+    pub raw: bool,
 }
 
 /// The description of a UI backend.
@@ -70,6 +117,13 @@ pub struct BackendDescriptor {
     /// (the user decides).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub license_notice: Option<String>,
+    /// Additional files (Dart sources, `pubspec.yaml` …).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub files: Vec<BackendFile>,
+    /// `[lib] crate-type` entries the project needs (e.g. `cdylib` for a
+    /// library loaded by the host); added to `Cargo.toml`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub crate_types: Vec<String>,
 }
 
 impl BackendDescriptor {
@@ -85,6 +139,8 @@ impl BackendDescriptor {
             setup: None,
             app: None,
             license_notice: None,
+            files: Vec::new(),
+            crate_types: Vec::new(),
         }
     }
 }

@@ -327,8 +327,7 @@ impl NewProject {
                 errors.push(WizardIssue::new(codes::NO_URL, format!("{pack}/{ty}")));
             }
         }
-        if self
-            .starters_with_runtime().contains(&Starter::Runtime)
+        if self.starters_with_runtime().contains(&Starter::Runtime)
             && registry.get(&TypeRef::pack("tokio", "Runtime")).is_none()
         {
             errors.push(WizardIssue::new(codes::MISSING_PACK, "tokio"));

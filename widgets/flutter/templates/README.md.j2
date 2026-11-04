@@ -1,0 +1,27 @@
+# {{ project.name }} – Flutter
+
+Die Oberfläche ist eine Flutter-App, die Logik die Rust-Bibliothek im
+Projektordner (flutter_rust_bridge). Freya TDE erzeugt `lib/freya/*.g.dart`
+und die Brücke `lib/src/rust/`; `lib/main.dart` und `pubspec.yaml` gehören
+Ihnen.
+
+The UI is a Flutter app, the logic is the Rust library in the project folder
+(flutter_rust_bridge). Freya TDE generates `lib/freya/*.g.dart` and the bridge
+`lib/src/rust/`; `lib/main.dart` and `pubspec.yaml` are yours.
+
+## Starten / Run
+
+```sh
+cargo build                     # im Projektordner / in the project folder
+cd flutter
+flutter create --platforms={{ project.platforms | join(",") if project.platforms else "linux,windows,macos" }} .   # einmal / once
+flutter run
+```
+
+`flutter create .` legt nur die fehlenden Plattform-Ordner an und lässt
+vorhandene Dateien stehen. / only adds the missing platform folders.
+
+Zum Weitergeben muss die Bibliothek (`lib{{ project.lib }}.so`,
+`{{ project.lib }}.dll`, `lib{{ project.lib }}.dylib`) neben das Programm, oder
+der Build bindet sie ein, z. B. mit `flutter_rust_bridge_codegen integrate`
+(cargokit). / To ship the app, bundle the Rust library with it.

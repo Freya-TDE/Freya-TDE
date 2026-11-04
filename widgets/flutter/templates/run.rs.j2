@@ -1,0 +1,4 @@
+{#- Flutter owns the UI loop: keep the application (and the runtime) for the
+    calls from the Flutter side (`src/api.gen.rs`). -#}
+crate::app::freya_keep({{ app }}{% if runtime %}, {{ runtime }}{% endif %});
+Ok(())

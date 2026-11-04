@@ -1,0 +1,21 @@
+//! Rust side of the Flutter app – your code. Freya TDE creates this file
+//! once and never changes it; the generated parts are `app.gen.rs` and the
+//! bridge (`api.gen.rs`, `frb_generated.gen.rs`, flutter_rust_bridge).
+//!
+//! The Flutter app in `flutter/` loads this library and calls `run()`
+//! through the bridge when it starts.
+
+#[path = "app.gen.rs"]
+mod app;
+
+#[path = "api.gen.rs"]
+pub mod api;
+
+#[path = "frb_generated.gen.rs"]
+mod frb_generated;
+
+/// Called once all components are created, before the first form is shown.
+fn started(app: &mut app::App) -> Result<(), app::Error> {
+    let _ = app;
+    Ok(())
+}

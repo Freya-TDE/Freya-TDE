@@ -1,0 +1,52 @@
+{%- set ui = forms | rejectattr("data_module") | list %}
+// Entry point of the Flutter app – your code. Freya TDE creates this file
+// once and never changes it; the forms are built in `freya/<form>.g.dart`.
+
+import 'package:flutter/material.dart';
+import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
+
+{%- if ui %}
+import 'freya/{{ ui[0].name }}.g.dart';
+{%- endif %}
+import 'src/rust/api.dart';
+import 'src/rust/frb_generated.dart';
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  // Die Rust-Bibliothek: beim Entwickeln aus ../target/debug (cargo build),
+  // im fertigen Programm mitgeliefert.
+  await RustLib.init(
+    externalLibrary: await loadExternalLibrary(
+      const ExternalLibraryLoaderConfig(
+        stem: {{ project.lib | dart_str }},
+        ioDirectory: '../target/debug/',
+        webPrefix: 'pkg/',
+      ),
+    ),
+  );
+  // App::init und `started` in src/lib.rs.
+  freyaStart();
+  runApp(const App());
+}
+
+class App extends StatelessWidget {
+  const App({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: {{ project.name | dart_str }},
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(colorSchemeSeed: Colors.blue),
+      darkTheme: ThemeData(colorSchemeSeed: Colors.blue, brightness: Brightness.dark),
+    {%- if ui %}
+      themeMode: {{ ui[0].struct }}View.themeMode,
+      // Das erste Formular ist das Hauptformular; weitere öffnet z. B.
+      // Navigator.push(context, MaterialPageRoute(builder: (_) => const OtherFormView())).
+      home: const {{ ui[0].struct }}View(),
+    {%- else %}
+      home: const Scaffold(body: Center(child: Text('No form'))),
+    {%- endif %}
+    );
+  }
+}

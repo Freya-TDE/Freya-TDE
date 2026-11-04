@@ -86,6 +86,13 @@
 //! run = "…"                             # template for the event loop in run() (or run-file)
 //! setup = "gtk4::init()?;"              # optional: statements before App::init (or setup-file)
 //! app = "pub struct Control<T> { … }"   # optional: items appended to app.gen.rs (or app-file)
+//! crate-type = ["cdylib"]               # optional: `[lib] crate-type` of the project (event-loop "host")
+//! [[backend.files]]                     # optional: more files (Dart sources, pubspec.yaml …)
+//! path = "flutter/lib/{{ form.name }}.g.dart"   # template
+//! template-file = "templates/form.dart.j2"      # or template
+//! each = "form"                         # "project" (default) or "form" (forms with widgets)
+//! owner = "generator"                   # or "user" (created once)
+//! raw = false                           # true = copy as is, no template syntax
 //! ```
 //!
 //! `[component.codegen]` of a runtime component may also give
@@ -126,7 +133,7 @@ use std::path::{Path, PathBuf};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
-use crate::backend::{BackendDescriptor, EventLoop};
+use crate::backend::{BackendDescriptor, BackendFile, EventLoop, FileOwner, FileScope};
 use crate::capability::{Capability, Condition, Provide, Require, RequireKind};
 use crate::component_type::{CargoDependency, CodegenSpec, ComponentType, ShareMode, TypeKind};
 use crate::error::ModelError;
@@ -174,6 +181,24 @@ struct RawBackend {
     setup_file: Option<String>,
     app: Option<String>,
     app_file: Option<String>,
+    #[serde(default)]
+    files: Vec<RawBackendFile>,
+    #[serde(default)]
+    crate_type: Vec<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "kebab-case")]
+struct RawBackendFile {
+    path: String,
+    template: Option<String>,
+    template_file: Option<String>,
+    #[serde(default)]
+    owner: FileOwner,
+    #[serde(default)]
+    each: FileScope,
+    #[serde(default)]
+    raw: bool,
 }
 
 #[derive(Deserialize)]
@@ -1090,6 +1115,38 @@ impl Checker<'_> {
         backend.run = self.template(location, "run", &raw.run, &raw.run_file);
         backend.setup = self.template(location, "setup", &raw.setup, &raw.setup_file);
         backend.app = self.template(location, "app", &raw.app, &raw.app_file);
+        backend.crate_types = raw.crate_type.clone();
+        for f in &raw.files {
+            let location = format!("{location}, files {:?}", f.path);
+            if let Err(message) = crate::codegen::check_template(&f.path) {
+                self.problem(&location, format!("`path`: {message}"));
+            }
+            let template = if f.raw {
+                match (&f.template, &f.template_file) {
+                    (Some(text), None) => Some(text.clone()),
+                    (None, Some(file)) => self.template_file(&location, file),
+                    _ => {
+                        self.problem(&location, "give either `template` or `template-file`");
+                        None
+                    }
+                }
+            } else {
+                let template = self.template(&location, "template", &f.template, &f.template_file);
+                if template.is_none() {
+                    self.problem(&location, "give either `template` or `template-file`");
+                }
+                template
+            };
+            if let Some(template) = template {
+                backend.files.push(BackendFile {
+                    path: f.path.clone(),
+                    template,
+                    owner: f.owner,
+                    each: f.each,
+                    raw: f.raw,
+                });
+            }
+        }
         backend
     }
 

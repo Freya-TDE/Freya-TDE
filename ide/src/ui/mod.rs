@@ -2179,6 +2179,14 @@ impl Ide {
 
     fn run_executable(&self) {
         let Some(exe) = self.executable.borrow().clone() else {
+            // Flutter-Projekt: die Rust-Seite ist eine Bibliothek, das Programm die App.
+            if let Some(app) = self
+                .session()
+                .project_dir()
+                .and_then(|d| crate::flutter::app_dir(&d))
+            {
+                self.run_flutter(app);
+            }
             return;
         };
         let dir = self.session().project_dir();
@@ -2234,6 +2242,90 @@ impl Ide {
             }
             Err(e) => self.main.set_status(&format!("Start fehlgeschlagen: {e}")),
         }
+    }
+
+    /// Builds the Flutter app (`flutter create` once, `flutter build`) and
+    /// starts it, all in the background; the output goes to „Programm“.
+    fn run_flutter(&self, app: PathBuf) {
+        let Some(name) = crate::flutter::app_name(&app) else {
+            self.main
+                .set_status("flutter/pubspec.yaml nennt keinen Namen (name: …).");
+            return;
+        };
+        self.output.clear(channel::PROGRAM);
+        self.show_output(channel::PROGRAM);
+        self.main.set_status("Flutter-App wird gebaut …");
+        let output = self.output.clone();
+        std::thread::spawn(move || {
+            use std::io::BufRead;
+            let pipe_lines = |pipe: Box<dyn std::io::Read + Send>| {
+                let output = output.clone();
+                std::thread::spawn(move || {
+                    for line in std::io::BufReader::new(pipe).lines().map_while(Result::ok) {
+                        output.line(channel::PROGRAM, &line);
+                    }
+                })
+            };
+            let start = |mut command: std::process::Command| {
+                output.line(
+                    channel::PROGRAM,
+                    &format!(
+                        "> {} {}",
+                        command.get_program().to_string_lossy(),
+                        command
+                            .get_args()
+                            .map(|a| a.to_string_lossy().into_owned())
+                            .collect::<Vec<_>>()
+                            .join(" ")
+                    ),
+                );
+                let mut child = command
+                    .stdin(std::process::Stdio::null())
+                    .stdout(std::process::Stdio::piped())
+                    .stderr(std::process::Stdio::piped())
+                    .spawn()?;
+                let readers: Vec<_> = [
+                    child
+                        .stdout
+                        .take()
+                        .map(|p| Box::new(p) as Box<dyn std::io::Read + Send>),
+                    child
+                        .stderr
+                        .take()
+                        .map(|p| Box::new(p) as Box<dyn std::io::Read + Send>),
+                ]
+                .into_iter()
+                .flatten()
+                .map(pipe_lines)
+                .collect();
+                let status = child.wait()?;
+                for reader in readers {
+                    let _ = reader.join();
+                }
+                Ok::<_, std::io::Error>(status)
+            };
+            for step in crate::flutter::build_commands(&app) {
+                match start(step) {
+                    Ok(status) if status.success() => {}
+                    Ok(status) => {
+                        output.line(
+                            channel::PROGRAM,
+                            &format!("Flutter-Build fehlgeschlagen ({status})."),
+                        );
+                        return;
+                    }
+                    Err(e) => {
+                        output.line(channel::PROGRAM, &format!("flutter: {e}"));
+                        return;
+                    }
+                }
+            }
+            let text = match start(crate::flutter::run_command(&app, &name)) {
+                Ok(status) => format!("Programm beendet ({status})."),
+                Err(e) => format!("Programm: {e}"),
+            };
+            output.line(channel::PROGRAM, &text);
+        });
     }
 
     /// Jumps to the handler of `event` (default: first event) of `element`,

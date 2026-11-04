@@ -325,3 +325,61 @@ padding-x = 0
 height = 160
 min-width = 240
 padding-x = 0
+
+# --- Flutter (widgets/flutter) – Material 3
+[widgets."backend:flutter/RadioButton"]
+height = 40
+min-width = 40
+padding-x = 0
+
+[widgets."backend:flutter/Switch"]
+height = 40
+min-width = 52
+padding-x = 0
+
+[widgets."backend:flutter/Slider"]
+height = 40
+min-width = 140
+padding-x = 0
+
+[widgets."backend:flutter/ProgressBar"]
+height = 4
+min-width = 120
+padding-x = 0
+
+[widgets."backend:flutter/ComboBox"]
+height = 48
+min-width = 120
+padding-x = 12
+
+[widgets."backend:flutter/ListBox"]
+height = 120
+min-width = 140
+padding-x = 16
+
+[widgets."backend:flutter/TextEdit"]
+height = 80
+min-width = 160
+padding-x = 12
+
+[widgets."backend:flutter/Separator"]
+height = 16
+min-width = 20
+padding-x = 0
+
+[widgets."backend:flutter/Card"]
+height = 80
+min-width = 120
+padding-x = 0
+header = 36
+
+[widgets."backend:flutter/Tabs"]
+height = 120
+min-width = 200
+padding-x = 0
+header = 56
+
+[widgets."backend:flutter/DataGrid"]
+height = 160
+min-width = 240
+padding-x = 0

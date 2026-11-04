@@ -10,6 +10,7 @@ pub mod database;
 pub mod debug;
 pub mod desktop;
 pub mod files;
+pub mod flutter;
 pub mod git;
 pub mod lsp;
 pub mod output;

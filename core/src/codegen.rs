@@ -18,6 +18,11 @@
 //! | `src/app.gen.rs` | generator | module list, `App` with all forms, `App::init` in dependency order, `run()` with the event loop |
 //! | `src/<form>.gen.rs` | generator | the form's struct with one field per generated component, plus the backend's `form` template (e.g. `ui()` calling the handlers) |
 //! | `src/<form>.rs` | user | created once with `include!("<form>.gen.rs")` and event handler stubs; later only missing stubs are appended |
+//! | backend `files` | generator or user | further files of the backend ([`crate::BackendDescriptor::files`], e.g. the Dart side of Flutter): per project or per form with widgets; generator files get the header with checksum, user files are created once |
+//!
+//! With the event loop `host` (another program drives the UI, e.g. Flutter)
+//! there is no `src/main.rs`: the backend brings `src/lib.rs` through its
+//! `files`, and its `crate-type`s are added to `[lib]` in `Cargo.toml`.
 //!
 //! Only Freya TDE writes `*.gen.rs`: [`write()`] makes them read-only, and
 //! each carries a checksum of its content. A generated file edited
@@ -55,14 +60,20 @@
 //!
 //! The backend's `run` template gets `forms` (list of `{name, struct,
 //! data_module}`), `app` (the variable holding the `App`) and `runtime`
-//! (the runtime variable or none). It must evaluate to `Result<(), Error>`.
+//! (the runtime variable or none; with `host` it may be moved). It must evaluate to `Result<(), Error>`.
 //! The optional `setup` template gets the same context; its statements run
 //! first in `run()`, before `App::init` (e.g. `gtk4::init()?;`). The
 //! optional `app` template (same context) adds items to `app.gen.rs`, e.g.
 //! helpers the forms use as `crate::app::…`.
 //!
+//! Backend `files`: their `path` and content are templates. Per project
+//! they get the `run` context plus `project` (`{name, lib, platforms}`,
+//! `lib` = the crate's library name); per form the `form` context plus
+//! `project`. `raw = true` copies the content as it is.
+//!
 //! The filter `rust_str` writes a text as a Rust string literal with escapes
-//! (`{{ item | rust_str }}` → `"Don't \"x\""`), e.g. for single list items.
+//! (`{{ item | rust_str }}` → `"Don't \"x\""`), e.g. for single list items;
+//! `dart_str` writes a single-quoted Dart string literal (`'Don\'t \$x'`).
 //!
 //! Every rendered piece is parsed with `syn`; errors are reported for the
 //! component and template part concerned.
@@ -85,7 +96,7 @@ use minijinja::{AutoEscape, Environment, UndefinedBehavior};
 use serde::Serialize;
 use toml_edit::{Array, DocumentMut, InlineTable, Item, Table};
 
-use crate::backend::{BackendDescriptor, EventLoop};
+use crate::backend::{BackendDescriptor, EventLoop, FileOwner, FileScope};
 use crate::component_type::{CargoDependency, CodegenSpec, ComponentType, ShareMode};
 use crate::element::Element;
 use crate::event::EventParam;
@@ -261,9 +272,10 @@ impl fmt::Display for CodegenIssue {
                 match event_loop {
                     EventLoop::MainThread => "main-thread",
                     EventLoop::Async => "async",
+                    EventLoop::Host => "host",
                 },
                 match event_loop {
-                    EventLoop::MainThread => "runtime",
+                    EventLoop::MainThread | EventLoop::Host => "runtime",
                     EventLoop::Async => "entry",
                 }
             ),
@@ -521,6 +533,7 @@ fn environment() -> Environment<'static> {
     env.set_auto_escape_callback(|_| AutoEscape::None);
     // Text als Rust-Stringliteral (auch für Einträge einer Liste).
     env.add_filter("rust_str", |text: String| format!("{text:?}"));
+    env.add_filter("dart_str", |text: String| dart_string(&text));
     env
 }
 
@@ -950,6 +963,28 @@ fn render(
     }
 }
 
+/// A text as a single-quoted Dart string literal (`$` and `\` escaped).
+fn dart_string(text: &str) -> String {
+    let mut out = String::with_capacity(text.len() + 2);
+    out.push('\'');
+    for c in text.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '\'' => out.push_str("\\'"),
+            '$' => out.push_str("\\$"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => {
+                let _ = write!(out, "\\u{{{:x}}}", c as u32);
+            }
+            c => out.push(c),
+        }
+    }
+    out.push('\'');
+    out
+}
+
 /// Records an [`CodegenIssue::InvalidRust`] if `result` failed.
 fn check_rust(issues: &mut Vec<CodegenIssue>, part: &str, text: &str, result: syn::Result<()>) {
     if let Err(e) = result {
@@ -1183,18 +1218,20 @@ pub fn generate(
     if let Some(backend) = backend {
         merge_cargo(&mut cargo, &backend.cargo);
     }
+    // Ein Host-Programm (z. B. Flutter) ruft die Rust-Seite als Bibliothek auf.
+    let host = backend.is_some_and(|b| b.event_loop == EventLoop::Host);
+    let crate_types = backend.map_or(&[][..], |b| b.crate_types.as_slice());
 
-    let mut files = vec![
-        manifest(project, &cargo, source, &mut out),
-        if library {
-            lib_file(source)
-        } else {
-            main_file(start.started_is_async(), source, &mut out)
-        },
-        app_file(
-            forms, &generated, &bindings, &start, backend, &env, source, &mut out,
-        ),
-    ];
+    let mut files = vec![manifest(project, &cargo, crate_types, source, &mut out)];
+    if library {
+        files.push(lib_file(source));
+    } else if !host {
+        // Bei `host` bringt das Backend `src/lib.rs` mit (`files`).
+        files.push(main_file(start.started_is_async(), source, &mut out));
+    }
+    files.push(app_file(
+        forms, &generated, &bindings, &start, backend, host, &env, source, &mut out,
+    ));
     for form in forms {
         let form_bindings = bindings.get(&form.name).map_or(&[][..], Vec::as_slice);
         files.push(form_gen_file(
@@ -1208,6 +1245,12 @@ pub fn generate(
             &mut out,
         ));
         files.push(form_user_file(forms, form, registry, source, &mut out));
+    }
+    if let Some(backend) = backend {
+        backend_files(
+            project, forms, &generated, &bindings, &start, registry, backend, &env, source,
+            &mut files, &mut out,
+        );
     }
 
     let mut source_map = Vec::new();
@@ -1260,7 +1303,7 @@ fn start(
     let event_loop = backend.map_or(EventLoop::Async, |b| b.event_loop);
     let chosen = match event_loop {
         EventLoop::Async => runtime.entry.clone().map(Start::Entry),
-        EventLoop::MainThread => runtime.runtime.clone().map(Start::Runtime),
+        EventLoop::MainThread | EventLoop::Host => runtime.runtime.clone().map(Start::Runtime),
     };
     chosen.unwrap_or_else(|| {
         out.error(
@@ -1400,6 +1443,7 @@ const MANIFEST: &str = "Cargo.toml";
 fn manifest(
     project: &ProjectFile,
     dependencies: &[CargoDependency],
+    crate_types: &[String],
     source: &dyn FileSource,
     out: &mut Diagnostics,
 ) -> GeneratedFile {
@@ -1419,6 +1463,7 @@ fn manifest(
         },
     };
     merge_dependencies(&mut doc, dependencies, out);
+    merge_crate_types(&mut doc, crate_types);
     file(MANIFEST, FileKind::Manifest, doc.to_string(), source)
 }
 
@@ -1432,6 +1477,31 @@ fn new_manifest(project: &ProjectFile) -> DocumentMut {
     doc["package"] = Item::Table(package);
     doc["dependencies"] = Item::Table(Table::new());
     doc
+}
+
+/// Adds missing `[lib] crate-type` entries; existing ones stay.
+fn merge_crate_types(doc: &mut DocumentMut, crate_types: &[String]) {
+    if crate_types.is_empty() {
+        return;
+    }
+    let lib = doc
+        .as_table_mut()
+        .entry("lib")
+        .or_insert_with(|| Item::Table(Table::new()));
+    let Some(lib) = lib.as_table_like_mut() else {
+        return;
+    };
+    let entry = lib
+        .entry("crate-type")
+        .or_insert(toml_edit::value(Array::new()));
+    let Some(array) = entry.as_array_mut() else {
+        return;
+    };
+    for crate_type in crate_types {
+        if !array.iter().any(|v| v.as_str() == Some(crate_type)) {
+            array.push(crate_type.as_str());
+        }
+    }
 }
 
 fn features_array(features: &[String]) -> Array {
@@ -1611,6 +1681,7 @@ fn app_file(
     bindings: &HashMap<ComponentName, Vec<Binding>>,
     start: &Start,
     backend: Option<&BackendDescriptor>,
+    host: bool,
     env: &Environment<'static>,
     source: &dyn FileSource,
     out: &mut Diagnostics,
@@ -1740,13 +1811,31 @@ fn app_file(
         })
         .unwrap_or_default();
 
-    if !matches!(start, Start::Library { .. }) {
+    if host {
+        code.push_str(
+            "/// Creates the application, calls `started` in `lib.rs` and hands it to the host.\n",
+        );
+    } else if !matches!(start, Start::Library { .. }) {
         code.push_str(
             "/// Creates the application, calls `started` in `main.rs` and runs the UI.\n",
         );
     }
     match start {
         Start::Library { .. } => {}
+        Start::Runtime(runtime) if host => {
+            // Die Laufzeit geht an das Backend, das sie für den Host aufbewahrt.
+            let _ = write!(
+                code,
+                "pub fn run() -> Result<(), Error> {{\n{setup}\n\
+                 let runtime = {runtime};\n\
+                 let app = {{\n\
+                 let _runtime_guard = runtime.enter();\n\
+                 let mut app = runtime.block_on(App::init())?;\n\
+                 crate::started(&mut app)?;\n\
+                 app\n\
+                 }};\n{ui}\n}}\n"
+            );
+        }
         Start::Entry(entry) => {
             let _ = write!(
                 code,
@@ -1892,6 +1981,134 @@ fn placement_data(placement: &Placement) -> JValue {
     }
 }
 
+/// Context of the backend's `form` template (and of per-form files).
+fn form_context(
+    form: &Form,
+    generated: &[Generated],
+    bindings: &[Binding],
+    registry: &TypeRegistry,
+) -> JValue {
+    let components = form_components(form, generated);
+    let data = FormData {
+        form,
+        registry,
+        fields: components.iter().map(|g| &g.path.name).collect(),
+    };
+    minijinja::context! {
+        form => form_data(form),
+        data_bound => !bindings.is_empty(),
+        root => form.root.as_ref().map(|r| data.widget(r)),
+        widgets => form.widgets().into_iter().map(|w| data.widget(w)).collect::<Vec<_>>(),
+        components => form.components.iter().map(|c| data.node(c, Vec::new(), None)).collect::<Vec<_>>(),
+    }
+}
+
+/// The backend's additional files ([`BackendDescriptor::files`]).
+#[allow(clippy::too_many_arguments)]
+fn backend_files(
+    project: &ProjectFile,
+    forms: &[Form],
+    generated: &[Generated],
+    bindings: &HashMap<ComponentName, Vec<Binding>>,
+    start: &Start,
+    registry: &TypeRegistry,
+    backend: &BackendDescriptor,
+    env: &Environment<'static>,
+    source: &dyn FileSource,
+    files: &mut Vec<GeneratedFile>,
+    out: &mut Diagnostics,
+) {
+    let project_data = minijinja::context! {
+        name => project.name.as_str(),
+        // Name der Bibliothek, wie Cargo ihn bildet.
+        lib => project.name.replace('-', "_"),
+        platforms => project.platforms.iter().map(ToString::to_string).collect::<Vec<_>>(),
+    };
+    let runtime_var = matches!(start, Start::Runtime(_)).then_some("runtime");
+    let project_context = minijinja::context! {
+        project => project_data.clone(),
+        forms => forms.iter().map(form_data).collect::<Vec<_>>(),
+        app => "app",
+        runtime => runtime_var,
+    };
+    for spec in &backend.files {
+        let contexts: Vec<(Option<ComponentPath>, JValue)> = match spec.each {
+            FileScope::Project => vec![(None, project_context.clone())],
+            FileScope::Form => forms
+                .iter()
+                .filter(|f| !f.is_data_module())
+                .map(|form| {
+                    let form_bindings = bindings.get(&form.name).map_or(&[][..], Vec::as_slice);
+                    let context = form_context(form, generated, form_bindings, registry);
+                    (
+                        Some(ComponentPath::on(form.name.clone(), form_anchor(form))),
+                        minijinja::context! { project => project_data.clone(), ..context },
+                    )
+                })
+                .collect(),
+        };
+        for (anchor, context) in contexts {
+            let mut issues = Vec::new();
+            let path = render(env, "files.path", &spec.path, &context, &mut issues);
+            let path = path.map(|p| p.trim().to_owned()).filter(|p| {
+                let inside = !p.is_empty()
+                    && Path::new(p)
+                        .components()
+                        .all(|c| matches!(c, std::path::Component::Normal(_)));
+                if !inside {
+                    issues.push(CodegenIssue::Template {
+                        part: "files.path".to_owned(),
+                        message: format!("{p:?} is not a relative path inside the project"),
+                        line: None,
+                    });
+                }
+                inside
+            });
+            let body = if spec.raw {
+                Some(spec.template.clone())
+            } else {
+                render(env, "files.template", &spec.template, &context, &mut issues)
+                    .map(|text| format!("{text}\n"))
+            };
+            for issue in issues {
+                out.error(anchor.clone(), issue);
+            }
+            let (Some(path), Some(body)) = (path, body) else {
+                continue;
+            };
+            if files.iter().any(|f| f.path == path) {
+                out.error(
+                    anchor.clone(),
+                    CodegenIssue::Template {
+                        part: "files.path".to_owned(),
+                        message: format!("{path} is generated twice"),
+                        line: None,
+                    },
+                );
+                continue;
+            }
+            files.push(match spec.owner {
+                FileOwner::Generator => {
+                    let what = anchor
+                        .as_ref()
+                        .and_then(|a| a.form.as_ref())
+                        .map_or_else(|| "the project".to_owned(), |f| format!("form `{f}`"));
+                    file(
+                        &path,
+                        FileKind::Generated,
+                        generated_file(&what, &body),
+                        source,
+                    )
+                }
+                FileOwner::User => {
+                    let content = source.read(&path).unwrap_or(body);
+                    file(&path, FileKind::User, content, source)
+                }
+            });
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn form_gen_file(
     form: &Form,
@@ -1934,18 +2151,7 @@ fn form_gen_file(
 
     // The backend's code for the form (drawing, building, event dispatch).
     if let Some(template) = backend.and_then(|b| b.form.as_ref()) {
-        let data = FormData {
-            form,
-            registry,
-            fields: components.iter().map(|g| &g.path.name).collect(),
-        };
-        let context = minijinja::context! {
-            form => form_data(form),
-            data_bound => !bindings.is_empty(),
-            root => form.root.as_ref().map(|r| data.widget(r)),
-            widgets => form.widgets().into_iter().map(|w| data.widget(w)).collect::<Vec<_>>(),
-            components => form.components.iter().map(|c| data.node(c, Vec::new(), None)).collect::<Vec<_>>(),
-        };
+        let context = form_context(form, generated, bindings, registry);
         let mut issues = Vec::new();
         if let Some(text) = render(env, "form", template, &context, &mut issues) {
             let parsed = syn::parse_file(&text).map(drop);

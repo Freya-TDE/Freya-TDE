@@ -63,6 +63,11 @@ Anhalten zeigt der Code-Editor die Zeile mit einem Pfeil, die Debug-Konsole im P
 (Strg+Umschalt+Y) Programmausgabe und Auswertungen.
 *Start menu like Delphi: F9 run/continue in the debugger, F7/F8/Shift+F8 steps, F4 run to
 cursor, F5 breakpoint, Ctrl+F5 watch, Ctrl+F2 stop; click the gutter for breakpoints.*
+Flutter-Projekte (Backend `flutter`): Starten baut die Rust-Bibliothek, legt einmal mit
+`flutter create` den Plattform-Ordner an, baut die App (`flutter build <system> --debug`) und
+startet sie, ohne Debugger; Ausgabe im Kanal „Programm“ (`freya_tde::flutter`; Programm `flutter`
+im `PATH` oder `FREYA_TDE_FLUTTER`).
+*Flutter projects: Run builds the Rust library and the Flutter app, then starts it (no debugger).*
 Die Kürzel des Hauptmenüs gelten in jedem Fenster; hat ein Fenster dasselbe Kürzel im
 eigenen Menü (z. B. Strg+S im Code-Fenster), gilt dort seines. Unter macOS ist Strg die
 Befehlstaste (⌘).

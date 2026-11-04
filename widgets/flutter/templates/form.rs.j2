@@ -1,0 +1,103 @@
+{#- Flutter: the Rust side of a form (appended to <form>.gen.rs). Flutter asks
+    for the state of all widgets (`freya_snapshot`) and reports input
+    (`freya_event`), which goes into the widget's state and to the handler in
+    <form>.rs. The widgets themselves are built in flutter/lib/freya/<form>.g.dart. -#}
+{%- set menus = components | selectattr("type", "eq", "backend:flutter/MainMenu") | selectattr("field") | list %}
+{%- set containers = widgets | selectattr("field") | selectattr("children") | list %}
+{%- if root %}
+#[allow(clippy::needless_borrow, unused_variables)]
+impl {{ form.struct }} {
+    /// The state of all widgets, as the Flutter side draws it.
+    pub fn freya_snapshot(&self) -> Vec<crate::api::FreyaControl> {
+        vec![
+        {%- for w in widgets + menus if w.field %}
+            self.{{ w.name }}.freya_control("{{ w.name }}"),
+        {%- endfor %}
+        ]
+    }
+
+    /// The form is shown: start loading its data, then `on_create`.
+    pub fn freya_created(&mut self) {
+        self.freya_start_data();
+    {%- if root.events.on_create %}
+        self.{{ root.events.on_create }}();
+    {%- endif %}
+    }
+
+    /// The window is about to close; `false` keeps it open.
+    pub fn freya_close(&mut self) -> bool {
+    {%- if root.events.on_close %}
+        self.{{ root.events.on_close }}()
+    {%- else %}
+        true
+    {%- endif %}
+    }
+
+    /// Input from the Flutter side: into the widget's state, then the handler.
+    pub fn freya_event(&mut self, widget: &str, event: &str, input: &crate::api::FreyaInput) {
+        match widget {
+        {%- for c in widgets + menus if c.field %}
+        {%- set t = c.type %}
+            "{{ c.name }}" => {
+                self.{{ c.name }}.freya_take(input);
+            {%- if t == "backend:flutter/RadioButton" %}
+                // Optionsfelder desselben Containers bilden eine Gruppe.
+                if self.{{ c.name }}.value {
+                {%- for p in containers %}{% if c.name in (p.children | map(attribute="name") | list) %}
+                {%- for o in p.children if o.type == "backend:flutter/RadioButton" and o.name != c.name and o.field %}
+                    self.{{ o.name }}.value = false;
+                {%- endfor %}
+                {%- endif %}{% endfor %}
+                }
+            {%- endif %}
+                match event {
+                {%- for event, handler in c.events | items if handler %}
+                {%- set key = t ~ "." ~ event %}
+                {%- if key in ["core/Button.on_click", "core/Edit.on_submit"] %}
+                    "{{ event }}" => self.{{ handler }}(),
+                {%- elif key in ["core/Edit.on_change", "backend:flutter/TextEdit.on_change"] %}
+                    "{{ event }}" => {
+                        let text = self.{{ c.name }}.value.clone();
+                        self.{{ handler }}(&text);
+                    }
+                {%- elif key in ["core/CheckBox.on_toggle", "backend:flutter/Switch.on_toggle", "backend:flutter/RadioButton.on_toggle"] %}
+                    "{{ event }}" => {
+                        let checked = self.{{ c.name }}.value;
+                        self.{{ handler }}(checked);
+                    }
+                {%- elif key == "backend:flutter/Slider.on_change" %}
+                    "{{ event }}" => {
+                        let value = self.{{ c.name }}.value;
+                        self.{{ handler }}(value);
+                    }
+                {%- elif key in ["backend:flutter/ComboBox.on_select", "backend:flutter/ListBox.on_select"] %}
+                    "{{ event }}" => {
+                        let index = self.{{ c.name }}.value;
+                        self.{{ handler }}(index);
+                    }
+                {%- elif key == "backend:flutter/Tabs.on_page" %}
+                    "{{ event }}" => {
+                        let page = self.{{ c.name }}.value.max(0) as u32;
+                        self.{{ handler }}(page);
+                    }
+                {%- elif key == "backend:flutter/DataGrid.on_select" %}
+                    "{{ event }}" => {
+                        let index = self.{{ c.name }}.value.selected.map_or(-1, |i| i as i32);
+                        self.{{ handler }}(index);
+                    }
+                {%- elif key == "backend:flutter/MainMenu.on_select" %}
+                    "{{ event }}" => {
+                        let item = self.{{ c.name }}.value.clone();
+                        self.{{ handler }}(&item);
+                    }
+                {%- endif %}
+                {%- endfor %}
+                    _ => {}
+                }
+            }
+        {%- endfor %}
+            _ => {}
+        }
+    }
+}
+{%- endif %}

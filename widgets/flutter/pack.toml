@@ -1,0 +1,411 @@
+# Flutter – UI-Backend für Zielprojekte / UI backend for target projects
+#
+# Flutter zeichnet die Oberfläche (Dart, Material 3), die Logik bleibt in Rust. Das
+# Rust-Projekt wird eine Bibliothek (`src/lib.rs`, `cdylib`), die das Flutter-Programm im
+# Ordner `flutter/` über flutter_rust_bridge aufruft. Jedes Widget ist wie bei egui ein
+# Zustandsfeld `crate::app::Control<T>`; ein Handler ändert das Widget, indem er den
+# Zustand ändert (`self.ok_button.enabled = false`), Flutter zeichnet danach neu.
+#
+# Die Brücke ist für alle Projekte gleich (`bridge/api.rs`): Flutter fragt den Zustand
+# eines Formulars ab (`freya_snapshot`) und meldet Eingaben (`freya_event`). Die Bindungen
+# von flutter_rust_bridge liegen fertig in `bridge/` (neu erzeugen: `bridge/regenerate.sh`),
+# deshalb braucht ein Projekt nur Flutter, nicht flutter_rust_bridge_codegen.
+#
+# Flutter draws the UI (Dart, Material 3); the logic stays in Rust. The Rust project is
+# a library loaded by the Flutter app in `flutter/` through flutter_rust_bridge. Widgets
+# are `Control<T>` state fields like in egui. The bridge API is fixed, its bindings are
+# shipped pre-generated in `bridge/`.
+
+[pack]
+name = "flutter"
+version = "0.1.0"
+kind = "backend"
+description = "Flutter (Material 3) with the logic in Rust through flutter_rust_bridge; Linux, Windows, macOS"
+authors = ["Dragon Software <info@dragon-software.net>"]
+license = "MIT OR Apache-2.0"
+generated-code-license = "MIT OR Apache-2.0"
+
+[backend]
+event-loop = "host"
+absolute-positioning = true
+platforms = ["linux", "windows", "macos"]
+crate-type = ["cdylib"]
+cargo = [
+    # Genau diese Version: Rust- und Dart-Seite der Brücke müssen zusammenpassen.
+    # Exactly this version: both sides of the bridge must match.
+    { crate = "flutter_rust_bridge", version = "=2.13.0" },
+]
+app-file = "templates/app.rs.j2"
+form-file = "templates/form.rs.j2"
+run-file = "templates/run.rs.j2"
+
+# --- Rust-Seite / Rust side ---------------------------------------------------------------
+
+[[backend.files]]
+path = "src/lib.rs"
+owner = "user"
+template-file = "templates/lib.rs.j2"
+
+[[backend.files]]
+path = "src/api.gen.rs"
+raw = true
+template-file = "bridge/api.rs"
+
+[[backend.files]]
+path = "src/frb_generated.gen.rs"
+raw = true
+template-file = "bridge/frb_generated.rs"
+
+# --- Flutter-Seite / Flutter side ---------------------------------------------------------
+
+[[backend.files]]
+path = "flutter/pubspec.yaml"
+owner = "user"
+template-file = "templates/pubspec.yaml.j2"
+
+[[backend.files]]
+path = "flutter/flutter_rust_bridge.yaml"
+owner = "user"
+template-file = "bridge/flutter_rust_bridge.yaml"
+
+[[backend.files]]
+path = "flutter/lib/main.dart"
+owner = "user"
+template-file = "templates/main.dart.j2"
+
+[[backend.files]]
+path = "flutter/README.md"
+owner = "user"
+template-file = "templates/README.md.j2"
+
+[[backend.files]]
+path = "flutter/lib/freya/freya.g.dart"
+template-file = "templates/freya.dart.j2"
+
+[[backend.files]]
+path = "flutter/lib/freya/{{ form.name }}.g.dart"
+each = "form"
+template-file = "templates/form.dart.j2"
+
+[[backend.files]]
+path = "flutter/lib/src/rust/api.dart"
+raw = true
+template-file = "bridge/dart/api.dart"
+
+[[backend.files]]
+path = "flutter/lib/src/rust/frb_generated.dart"
+raw = true
+template-file = "bridge/dart/frb_generated.dart"
+
+[[backend.files]]
+path = "flutter/lib/src/rust/frb_generated.io.dart"
+raw = true
+template-file = "bridge/dart/frb_generated.io.dart"
+
+[[backend.files]]
+path = "flutter/lib/src/rust/frb_generated.web.dart"
+raw = true
+template-file = "bridge/dart/frb_generated.web.dart"
+
+# --- Kern-Widgets / core widgets ----------------------------------------------------------
+
+[[extend]]
+type = "core/Form"
+[extend.codegen]
+type = "crate::app::Control<()>"
+init = "crate::app::Control::new(()).with_caption({{ rust.title }}).with_state({{ rust.enabled }}, true, {{ rust.tooltip }})"
+
+[[extend]]
+type = "core/Container"
+[extend.codegen]
+type = "crate::app::Control<()>"
+init = "crate::app::Control::new(()).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+[[extend]]
+type = "core/Label"
+[extend.codegen]
+type = "crate::app::Control<String>"
+init = "crate::app::Control::new({{ rust.text }}.to_string()).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+[[extend]]
+type = "core/Button"
+[extend.codegen]
+type = "crate::app::Control<()>"
+init = "crate::app::Control::new(()).with_caption({{ rust.caption }}).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+[[extend]]
+type = "core/Edit"
+[extend.properties.max_length]
+type = "int"
+min = 0
+default = 0
+category = "Behavior"
+description = "Maximum number of characters (0 = no limit)"
+[extend.codegen]
+type = "crate::app::Control<String>"
+init = "crate::app::Control::new({{ rust.text }}.to_string()).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+[[extend]]
+type = "core/CheckBox"
+[extend.codegen]
+type = "crate::app::Control<bool>"
+init = "crate::app::Control::new({{ rust.checked }}).with_caption({{ rust.caption }}).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+# --- Flutter-Palette / Flutter palette ----------------------------------------------------
+
+[[component]]
+name = "RadioButton"
+kind = "widget"
+look = "radio"
+category = "Flutter"
+icon = "radio"
+description = "Option button (Radio); radio buttons in the same container form a group"
+[component.properties.caption]
+type = "text"
+default = "Option"
+category = "Appearance"
+[component.properties.checked]
+type = "bool"
+category = "Behavior"
+[component.events.on_toggle]
+params = [{ name = "checked", type = "bool" }]
+description = "Chosen by the user"
+[component.codegen]
+type = "crate::app::Control<bool>"
+init = "crate::app::Control::new({{ rust.checked }}).with_caption({{ rust.caption }}).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+[[component]]
+name = "Switch"
+kind = "widget"
+look = "switch"
+category = "Flutter"
+icon = "switch"
+description = "On/off switch"
+[component.properties.active]
+type = "bool"
+category = "Behavior"
+[component.events.on_toggle]
+params = [{ name = "active", type = "bool" }]
+[component.codegen]
+type = "crate::app::Control<bool>"
+init = "crate::app::Control::new({{ rust.active }}).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+[[component]]
+name = "Slider"
+kind = "widget"
+look = "slider"
+category = "Flutter"
+icon = "slider"
+description = "Slider to choose a value"
+[component.properties.value]
+type = "float"
+category = "Value"
+[component.properties.minimum]
+type = "float"
+category = "Value"
+[component.properties.maximum]
+type = "float"
+default = 100.0
+category = "Value"
+[component.properties.divisions]
+type = "int"
+min = 0
+category = "Value"
+description = "Number of steps (0 = continuous)"
+[component.events.on_change]
+params = [{ name = "value", type = "f64" }]
+[component.codegen]
+type = "crate::app::Control<f64>"
+init = "crate::app::Control::new({{ rust.value }}).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+[[component]]
+name = "ProgressBar"
+kind = "widget"
+look = "progress"
+category = "Flutter"
+icon = "progress"
+description = "Shows the progress of a task (LinearProgressIndicator)"
+[component.properties.fraction]
+type = "float"
+min = 0.0
+max = 1.0
+category = "Value"
+description = "Progress from 0.0 to 1.0"
+[component.codegen]
+type = "crate::app::Control<f64>"
+init = "crate::app::Control::new({{ rust.fraction }}).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+[[component]]
+name = "ComboBox"
+kind = "widget"
+look = "dropdown"
+category = "Flutter"
+icon = "dropdown"
+description = "Choose one entry from a list (DropdownButton)"
+[component.properties.items]
+type = "list"
+item = "text"
+category = "Value"
+description = "The entries"
+[component.properties.selected]
+type = "int"
+min = -1
+default = -1
+category = "Value"
+description = "Index of the selected entry (-1 = none)"
+[component.events.on_select]
+params = [{ name = "index", type = "i32" }]
+[component.list]
+set-items = """
+self.{{ name }}.items = items;
+"""
+selected = """usize::try_from(self.{{ name }}.value).ok().filter(|i| *i < self.{{ name }}.items.len())"""
+[component.codegen]
+type = "crate::app::Control<i32>"
+init = "crate::app::Control::new({{ props.selected }}i32).with_items::<&str>({{ rust.items }}).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+[[component]]
+name = "ListBox"
+kind = "widget"
+look = "list"
+category = "Flutter"
+icon = "list"
+description = "List of text entries to choose from (ListView)"
+[component.properties.items]
+type = "list"
+item = "text"
+category = "Value"
+[component.properties.selected]
+type = "int"
+min = -1
+default = -1
+category = "Value"
+description = "Index of the selected entry (-1 = none)"
+[component.events.on_select]
+params = [{ name = "index", type = "i32" }]
+description = "Selection changed"
+[component.list]
+set-items = """
+self.{{ name }}.items = items;
+"""
+selected = """usize::try_from(self.{{ name }}.value).ok()"""
+[component.codegen]
+type = "crate::app::Control<i32>"
+init = "crate::app::Control::new({{ props.selected }}i32).with_items::<&str>({{ rust.items }}).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+[[component]]
+name = "TextEdit"
+kind = "widget"
+look = "memo"
+category = "Flutter"
+icon = "memo"
+description = "Multi-line text (TextField)"
+[component.properties.text]
+type = "text"
+category = "Appearance"
+[component.properties.rows]
+type = "int"
+min = 1
+default = 4
+category = "Appearance"
+description = "Visible lines"
+[component.properties.read_only]
+type = "bool"
+category = "Behavior"
+[component.properties.monospace]
+type = "bool"
+category = "Appearance"
+[component.events.on_change]
+params = [{ name = "text", type = "&str" }]
+[component.codegen]
+type = "crate::app::Control<String>"
+init = "crate::app::Control::new({{ rust.text }}.to_string()).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+[[component]]
+name = "Separator"
+kind = "widget"
+look = "separator"
+category = "Flutter"
+icon = "separator"
+description = "A line between widgets (Divider)"
+[component.properties.vertical]
+type = "bool"
+category = "Appearance"
+[component.codegen]
+type = "crate::app::Control<()>"
+init = "crate::app::Control::new(()).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+[[component]]
+name = "Card"
+kind = "container"
+look = "frame"
+category = "Flutter"
+icon = "frame"
+description = "Container on a raised surface with an optional title"
+[component.properties.title]
+type = "text"
+category = "Appearance"
+description = "Title above the content (empty = none)"
+[component.codegen]
+type = "crate::app::Control<()>"
+init = "crate::app::Control::new(()).with_caption({{ rust.title }}).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+[[component]]
+name = "Tabs"
+kind = "container"
+look = "tabs"
+category = "Flutter"
+icon = "tabs"
+description = "Pages with tabs (TabBar); every child is one page (usually a Container)"
+[component.properties.pages]
+type = "list"
+item = "text"
+category = "Appearance"
+description = "Tab titles, one per child (missing ones: the child's name)"
+[component.properties.page]
+type = "int"
+min = 0
+category = "Behavior"
+description = "The page shown at the start (and in the designer)"
+[component.events.on_page]
+params = [{ name = "page", type = "u32" }]
+[component.codegen]
+type = "crate::app::Control<i32>"
+init = "crate::app::Control::new({{ props.page }}i32).with_items::<&str>({{ rust.pages }}).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+[[component]]
+name = "MainMenu"
+look = "menubar"
+category = "Flutter"
+icon = "menu"
+description = "Menu bar of the window (MenuBar): entries like `Datei/Öffnen | Ctrl+O`, `Datei/-` (separator)"
+[component.properties.items]
+type = "list"
+item = "text"
+category = "Menu"
+description = "One entry per line: path with `/`, optional `| shortcut`, `-` = separator"
+[component.events.on_select]
+params = [{ name = "item", type = "&str" }]
+description = "An entry was chosen; `item` is its path, e.g. `Datei/Öffnen`"
+[component.codegen]
+type = "crate::app::Control<String>"
+init = "crate::app::Control::new(String::new()).with_items::<&str>({{ rust.items }})"
+
+[[component]]
+name = "DataGrid"
+kind = "widget"
+look = "table"
+category = "Flutter"
+icon = "table"
+description = "Table filled from a data source (DataTable): one row per record, click selects"
+[component.events.on_select]
+params = [{ name = "index", type = "i32" }]
+description = "Selected row changed (-1 = none); the row: `self.<name>_selected_row()`"
+[component.table]
+set-rows = """
+self.{{ name }}.value = crate::app::Table { headers, rows, selected: None };
+"""
+selected = "self.{{ name }}.value.selected"
+[component.codegen]
+type = "crate::app::Control<crate::app::Table>"
+init = "crate::app::Control::new(crate::app::Table::default()).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"

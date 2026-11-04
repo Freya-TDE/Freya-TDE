@@ -1,0 +1,17 @@
+# Flutter side of {{ project.name }} (Freya TDE). Your file: created once.
+name: {{ project.lib }}
+description: Flutter UI of {{ project.name }}; the logic is the Rust library in ../
+publish_to: none
+version: 0.1.0
+
+environment:
+  sdk: ^3.9.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # Dieselbe Version wie flutter_rust_bridge in ../Cargo.toml.
+  flutter_rust_bridge: 2.13.0
+
+flutter:
+  uses-material-design: true

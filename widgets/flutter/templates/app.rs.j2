@@ -1,0 +1,285 @@
+{#- Flutter: shared helpers of the generated code, appended to app.gen.rs.
+    The application lives here between the calls from the Flutter side. -#}
+{%- set ui = forms | rejectattr("data_module") | list %}
+/// The state of a widget: Flutter draws it from these values, so a handler
+/// changes the widget by changing them (`self.ok_button.enabled = false`,
+/// `self.greeting.value = …`). `value` is reachable directly through `Deref`
+/// (`self.name_edit.trim()`).
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq)]
+pub struct Control<T> {
+    /// What the widget shows or edits (text, checked, number, selection …).
+    pub value: T,
+    /// Caption of buttons, check boxes, frames; title of the window.
+    pub caption: String,
+    /// Entries of lists, combo boxes, menus; titles of tabs.
+    pub items: Vec<String>,
+    pub enabled: bool,
+    pub visible: bool,
+    /// Hint shown on hover (empty = none).
+    pub tooltip: String,
+}
+
+#[allow(dead_code)]
+impl<T> Control<T> {
+    pub fn new(value: T) -> Self {
+        Self {
+            value,
+            caption: String::new(),
+            items: Vec::new(),
+            enabled: true,
+            visible: true,
+            tooltip: String::new(),
+        }
+    }
+
+    pub fn with_caption(mut self, caption: impl Into<String>) -> Self {
+        self.caption = caption.into();
+        self
+    }
+
+    pub fn with_items<S: ToString>(mut self, items: Vec<S>) -> Self {
+        self.items = items.iter().map(ToString::to_string).collect();
+        self
+    }
+
+    pub fn with_state(mut self, enabled: bool, visible: bool, tooltip: &str) -> Self {
+        self.enabled = enabled;
+        self.visible = visible;
+        self.tooltip = tooltip.to_owned();
+        self
+    }
+}
+
+impl<T: FreyaValue> Control<T> {
+    /// The state as the Flutter side draws it.
+    pub fn freya_control(&self, name: &str) -> crate::api::FreyaControl {
+        let mut control = crate::api::FreyaControl {
+            name: name.to_owned(),
+            caption: self.caption.clone(),
+            text: String::new(),
+            checked: false,
+            number: 0.0,
+            index: -1,
+            items: self.items.clone(),
+            rows: Vec::new(),
+            enabled: self.enabled,
+            visible: self.visible,
+            tooltip: self.tooltip.clone(),
+        };
+        self.value.put(&mut control);
+        control
+    }
+
+    /// Takes what the user entered.
+    pub fn freya_take(&mut self, input: &crate::api::FreyaInput) {
+        self.value.take(input);
+    }
+}
+
+impl<T> std::ops::Deref for Control<T> {
+    type Target = T;
+    fn deref(&self) -> &T {
+        &self.value
+    }
+}
+
+impl<T> std::ops::DerefMut for Control<T> {
+    fn deref_mut(&mut self) -> &mut T {
+        &mut self.value
+    }
+}
+
+/// Headers and rows of a `DataGrid` (cells as text).
+#[allow(dead_code)]
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Table {
+    pub headers: Vec<String>,
+    pub rows: Vec<Vec<String>>,
+    pub selected: Option<usize>,
+}
+
+/// How the value of a widget travels to the Flutter side and back.
+pub trait FreyaValue {
+    fn put(&self, control: &mut crate::api::FreyaControl);
+    fn take(&mut self, input: &crate::api::FreyaInput) {
+        let _ = input;
+    }
+}
+
+impl FreyaValue for () {
+    fn put(&self, _control: &mut crate::api::FreyaControl) {}
+}
+
+impl FreyaValue for String {
+    fn put(&self, control: &mut crate::api::FreyaControl) {
+        control.text.clone_from(self);
+    }
+    fn take(&mut self, input: &crate::api::FreyaInput) {
+        if let Some(text) = &input.text {
+            self.clone_from(text);
+        }
+    }
+}
+
+impl FreyaValue for bool {
+    fn put(&self, control: &mut crate::api::FreyaControl) {
+        control.checked = *self;
+    }
+    fn take(&mut self, input: &crate::api::FreyaInput) {
+        if let Some(checked) = input.checked {
+            *self = checked;
+        }
+    }
+}
+
+impl FreyaValue for f64 {
+    fn put(&self, control: &mut crate::api::FreyaControl) {
+        control.number = *self;
+    }
+    fn take(&mut self, input: &crate::api::FreyaInput) {
+        if let Some(number) = input.number {
+            *self = number;
+        }
+    }
+}
+
+impl FreyaValue for i32 {
+    fn put(&self, control: &mut crate::api::FreyaControl) {
+        control.index = *self;
+    }
+    fn take(&mut self, input: &crate::api::FreyaInput) {
+        if let Some(index) = input.index {
+            *self = index;
+        }
+    }
+}
+
+impl FreyaValue for Table {
+    fn put(&self, control: &mut crate::api::FreyaControl) {
+        control.items.clone_from(&self.headers);
+        control.rows.clone_from(&self.rows);
+        control.index = self.selected.map_or(-1, |i| i as i32);
+    }
+    fn take(&mut self, input: &crate::api::FreyaInput) {
+        if let Some(index) = input.index {
+            self.selected = usize::try_from(index).ok().filter(|i| *i < self.rows.len());
+        }
+    }
+}
+
+/// The application between the calls from the Flutter side.
+struct FreyaHost {
+    app: App,
+    {%- if runtime %}
+    runtime: tokio::runtime::Runtime,
+    {%- endif %}
+}
+
+static FREYA_HOST: std::sync::Mutex<Option<FreyaHost>> = std::sync::Mutex::new(None);
+
+/// Keeps the application for the Flutter side (called by `run()`).
+pub fn freya_keep(app: App{% if runtime %}, runtime: tokio::runtime::Runtime{% endif %}) {
+    let mut host = FREYA_HOST
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    *host = Some(FreyaHost { app{% if runtime %}, runtime{% endif %} });
+}
+
+/// Runs `f` with the application (inside the Tokio runtime, if there is one).
+#[allow(dead_code)]
+fn freya_with<R>(f: impl FnOnce(&mut App) -> R) -> Option<R> {
+    let mut host = FREYA_HOST
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let host = host.as_mut()?;
+    {%- if runtime %}
+    let _runtime_guard = host.runtime.enter();
+    {%- endif %}
+    Some(f(&mut host.app))
+}
+
+/// `freya_start` of the bridge: creates the application once (a hot restart
+/// of Flutter keeps it).
+pub fn freya_host_start() -> Result<(), String> {
+    let running = FREYA_HOST
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .is_some();
+    if running {
+        return Ok(());
+    }
+    run().map_err(|e| e.to_string())
+}
+
+/// `freya_open` of the bridge.
+pub fn freya_host_open(form: &str) -> Vec<crate::api::FreyaControl> {
+    freya_with(|app| match form {
+    {%- for f in ui %}
+        "{{ f.name }}" => {
+            app.{{ f.name }}.freya_created();
+            app.{{ f.name }}.freya_snapshot()
+        }
+    {%- endfor %}
+        _ => Vec::new(),
+    })
+    .unwrap_or_default()
+}
+
+/// `freya_snapshot` of the bridge.
+pub fn freya_host_snapshot(form: &str) -> Vec<crate::api::FreyaControl> {
+    freya_with(|app| match form {
+    {%- for f in ui %}
+        "{{ f.name }}" => app.{{ f.name }}.freya_snapshot(),
+    {%- endfor %}
+        _ => Vec::new(),
+    })
+    .unwrap_or_default()
+}
+
+/// `freya_event` of the bridge.
+pub fn freya_host_event(
+    form: &str,
+    widget: &str,
+    event: &str,
+    input: crate::api::FreyaInput,
+) -> Vec<crate::api::FreyaControl> {
+    freya_with(|app| match form {
+    {%- for f in ui %}
+        "{{ f.name }}" => {
+            app.{{ f.name }}.freya_event(widget, event, &input);
+            app.{{ f.name }}.freya_snapshot()
+        }
+    {%- endfor %}
+        _ => {
+            let _ = (widget, event, &input);
+            Vec::new()
+        }
+    })
+    .unwrap_or_default()
+}
+
+/// `freya_poll` of the bridge: the new state once loaded data arrived.
+pub fn freya_host_poll(form: &str) -> Option<Vec<crate::api::FreyaControl>> {
+    freya_with(|app| match form {
+    {%- for f in ui %}
+        "{{ f.name }}" => app
+            .{{ f.name }}
+            .freya_take_data()
+            .then(|| app.{{ f.name }}.freya_snapshot()),
+    {%- endfor %}
+        _ => None,
+    })
+    .flatten()
+}
+
+/// `freya_close` of the bridge: `false` keeps the window open.
+pub fn freya_host_close(form: &str) -> bool {
+    freya_with(|app| match form {
+    {%- for f in ui %}
+        "{{ f.name }}" => app.{{ f.name }}.freya_close(),
+    {%- endfor %}
+        _ => true,
+    })
+    .unwrap_or(true)
+}
