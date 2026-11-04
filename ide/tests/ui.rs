@@ -5,7 +5,7 @@
 
 use rncl::prelude::*;
 use ruf::{Key, Modifiers};
-use tdr_core::{ComponentName, TypeRef, builtin};
+use tdr_core::{ComponentName, ComponentPath, PropertyValue, TypeRef, Value, builtin};
 
 fn name(n: &str) -> ComponentName {
     ComponentName::new(n).unwrap()
@@ -726,6 +726,132 @@ fn main() {
     );
     println!("test egui_iced_slint_projects ... ok");
     passed += 1;
+
+    // Datenbank: Spalten aus der Datenbank, Verbindung testen, Fenster
+    // „Datenbank“ – mit dem echten Helfer und einer SQLite-Datei.
+    let helper = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../target/debug")
+        .join(format!("freya-tde-db{}", std::env::consts::EXE_SUFFIX));
+    let lager = home.join("lager");
+    let created = helper.is_file() && {
+        drop(
+            freya_tde::Session::create(
+                &lager,
+                "lager",
+                "none",
+                tdr_core::TypeRegistry::with_builtins(),
+            )
+            .unwrap(),
+        );
+        // Ein SQLx-Projekt: das Pack steht in der Projektdatei.
+        let ptdr = lager.join("lager.ptdr");
+        let mut project =
+            tdr_core::ProjectFile::from_ron(&std::fs::read_to_string(&ptdr).unwrap()).unwrap();
+        project.packs = vec!["tokio".into(), "sqlx".into()];
+        std::fs::write(&ptdr, project.to_ron().unwrap()).unwrap();
+        std::process::Command::new("sqlite3")
+            .arg(lager.join("lager.db"))
+            .arg(
+                "CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT NOT NULL, price REAL);\
+                     CREATE VIEW cheap AS SELECT id, name FROM items WHERE price < 10;",
+            )
+            .status()
+            .is_ok_and(|s| s.success())
+    };
+    if created {
+        use tdr_core::schema::codes;
+        use tdr_designer::Command;
+        let ide = freya_tde::Ide::start(Some(&lager.join("lager.ptdr")));
+        let form = name("main_form");
+        let set = |element: &str, property: &str, value: Value| Command::SetProperty {
+            form: form.clone(),
+            element: name(element),
+            property: property.into(),
+            value: Some(PropertyValue::new(value)),
+        };
+        for (type_name, element) in [("Pool", "db"), ("Query", "items")] {
+            ide.apply(Command::AddComponent {
+                form: form.clone(),
+                type_ref: TypeRef::pack("sqlx", type_name),
+                name: Some(name(element)),
+            });
+        }
+        ide.apply(set("db", "driver", Value::Enum("Sqlite".into())));
+        ide.apply(set("db", "url", Value::Text("sqlite://lager.db".into())));
+        ide.apply(set("items", "pool", Value::reference(name("db"))));
+        ide.apply(set(
+            "items",
+            "sql",
+            Value::Code("\"SELECT id, name, price FROM items\"".into()),
+        ));
+        let pool: ComponentPath = "main_form::db".parse().unwrap();
+        let items: ComponentPath = "main_form::items".parse().unwrap();
+        let columns = |ide: &freya_tde::Ide| {
+            ide.session()
+                .document()
+                .form(&form)
+                .unwrap()
+                .element(&name("items"))
+                .unwrap()
+                .component()
+                .get(tdr_core::data::COLUMNS)
+                .map(|v| v.value.clone())
+        };
+
+        assert!(ide.database_test(&pool).unwrap().starts_with("SQLite "));
+        let (_, described) = ide.query_columns_preview(&items).unwrap();
+        assert_eq!(columns(&ide), None, "Vorschau ändert nichts");
+        assert_eq!(described.columns.len(), 3);
+        ide.take_query_columns(&items).unwrap();
+        let expected = Value::List(
+            ["id: i64", "name: String", "price: Option<f64>"]
+                .map(|t| Value::Text(t.into()))
+                .to_vec(),
+        );
+        assert_eq!(columns(&ide), Some(expected.clone()));
+        ide.undo();
+        assert_eq!(columns(&ide), None, "rückgängig machbar");
+
+        // Wie der Knopf im Objektinspektor: im Hintergrund.
+        ide.database_job(freya_tde::ui::database_window::DbJob::Columns, &items);
+        assert!(
+            pump_until(20, || columns(&ide) == Some(expected.clone())),
+            "Spalten im Hintergrund übernommen"
+        );
+
+        ide.show_database();
+        let has = |ide: &freya_tde::Ide, id: &str| {
+            fn find(items: &[TreeItem], id: &str) -> bool {
+                items.iter().any(|i| i.id == id || find(&i.children, id))
+            }
+            find(&ide.database_tree(), id)
+        };
+        assert!(
+            pump_until(20, || has(&ide, "table:main_form::db:main.items")),
+            "{:#?}",
+            ide.database_tree()
+        );
+        assert!(has(&ide, "table:main_form::db:main.cheap"));
+        assert!(has(&ide, "table:main_form::db:main.items:price"));
+        if let Some(dir) = std::env::var_os("FREYA_TDE_SHOT") {
+            ide.select(vec![name("items")]);
+            ide.show_window(freya_tde::desktop::window::INSPECTOR);
+            pump_until(1, || false);
+            ide.screenshots(std::path::Path::new(&dir));
+        }
+
+        // Fehler mit stabilem Code: Datei fehlt.
+        ide.apply(set("db", "url", Value::Text("sqlite://fehlt.db".into())));
+        assert_eq!(
+            ide.database_test(&pool).unwrap_err().code,
+            codes::CONNECT_FAILED
+        );
+        assert!(!lager.join("fehlt.db").exists());
+        println!("test database ... ok");
+        passed += 1;
+    } else {
+        println!("test database ... übersprungen (freya-tde-db nicht gebaut oder kein sqlite3)");
+    }
 
     Application::process_events();
     let _ = std::fs::remove_dir_all(&home);

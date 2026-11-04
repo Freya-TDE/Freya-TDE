@@ -5,6 +5,7 @@
 pub mod about;
 mod code;
 mod convert;
+pub mod database_window;
 mod debugger;
 mod debugging;
 mod designer;
@@ -43,6 +44,7 @@ use crate::session::{Changes, Session};
 
 use about::AboutWindow;
 use code::CodeWindow;
+use database_window::{DatabaseWindow, DbAccess, DbDone};
 use debugger::DebuggerWindow;
 use debugging::Debugging;
 use designer::DesignerWindow;
@@ -168,6 +170,20 @@ pub struct Ide {
     debugger: DebuggerWindow,
     shortcuts: ShortcutsWindow,
     about: AboutWindow,
+    database_window: DatabaseWindow,
+    /// The database helper (shared with background requests).
+    db_access: DbAccess,
+    /// Delivers results of background database requests.
+    db_results: RefCell<Option<GuiSender<DbDone>>>,
+    /// Loaded schemas per pool (window "Datenbank").
+    db_schemas: RefCell<
+        std::collections::BTreeMap<
+            tdr_core::ComponentPath,
+            Result<tdr_core::schema::Schema, tdr_core::schema::DbError>,
+        >,
+    >,
+    /// Running background database requests.
+    db_busy: Cell<usize>,
     /// Breakpoints, watches and the debug session.
     debugging: RefCell<Debugging>,
     /// Where breakpoints and watches are kept (`debug.toml`).
@@ -262,6 +278,11 @@ impl Ide {
             debugger: DebuggerWindow::build(),
             shortcuts: ShortcutsWindow::build(),
             about: AboutWindow::build(),
+            database_window: DatabaseWindow::build(),
+            db_access: DbAccess::default(),
+            db_results: RefCell::new(None),
+            db_schemas: RefCell::new(Default::default()),
+            db_busy: Cell::new(0),
             debugging: RefCell::new(Debugging::default()),
             debug_store_file: crate::debug::DebugStore::default_path(),
             repo: RefCell::new(None),
@@ -307,6 +328,12 @@ impl Ide {
             },
         ));
         let weak = Rc::downgrade(&ide);
+        *ide.db_results.borrow_mut() = Some(GuiSender::new(move |done: DbDone| {
+            if let Some(ide) = weak.upgrade() {
+                ide.database_finished(done);
+            }
+        }));
+        let weak = Rc::downgrade(&ide);
         *ide.askpass_questions.borrow_mut() =
             Some(GuiSender::new(move |(question, reply): Question| {
                 let answer = weak
@@ -326,6 +353,7 @@ impl Ide {
         debugger::connect(&ide);
         shortcuts::connect(&ide);
         about::connect(&ide);
+        database_window::connect(&ide);
         // Wie bei Delphi: Strg+G, F9, Strg+Umschalt+G … aus jedem Fenster.
         for (name, window) in ide.windows() {
             if name != window::MAIN {
@@ -347,7 +375,7 @@ impl Ide {
         self.session.borrow()
     }
 
-    fn windows(&self) -> [(&'static str, &RnclWindow); 10] {
+    fn windows(&self) -> [(&'static str, &RnclWindow); 11] {
         [
             (window::MAIN, &self.main.window),
             (window::STRUCTURE, &self.structure.window),
@@ -359,6 +387,7 @@ impl Ide {
             (window::GIT, &self.git_window.window),
             (window::DEBUGGER, &self.debugger.window),
             (window::SHORTCUTS, &self.shortcuts.window),
+            (window::DATABASE, &self.database_window.window),
         ]
     }
 

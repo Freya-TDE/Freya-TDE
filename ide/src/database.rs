@@ -320,3 +320,77 @@ pub fn query_sql(forms: &[Form], path: &ComponentPath) -> Result<String, DbError
     tdr_core::schema::string_literal(&code)
         .ok_or_else(|| DbError::new(lookup::SQL_NOT_LITERAL, code))
 }
+
+/// The command that writes the result columns of a query into its
+/// `columns` property (undoable like every designer command). Columns
+/// without a known Rust type keep an entry the developer wrote by hand.
+pub fn columns_command(
+    forms: &[Form],
+    path: &ComponentPath,
+    described: &Described,
+) -> Result<tdr_designer::Command, DbError> {
+    let form =
+        find(forms, path).ok_or_else(|| DbError::new(lookup::NOT_FOUND, path.to_string()))?;
+    if !is_type(form, path, QUERY_TYPE) {
+        return Err(DbError::new(lookup::NOT_A_DATABASE, path.to_string()));
+    }
+    let component = form.element(&path.name).expect("found").component();
+    let existing: Vec<String> = match component.get(tdr_core::data::COLUMNS).map(|v| &v.value) {
+        Some(Value::List(items)) => items
+            .iter()
+            .filter_map(|v| match v {
+                Value::Text(t) => Some(t.clone()),
+                _ => None,
+            })
+            .collect(),
+        _ => Vec::new(),
+    };
+    let entries = described
+        .columns
+        .iter()
+        .filter_map(|c| {
+            c.columns_entry().or_else(|| {
+                existing
+                    .iter()
+                    .find(|e| e.split(':').next().map(str::trim) == Some(c.name.as_str()))
+                    .cloned()
+            })
+        })
+        .map(Value::Text)
+        .collect();
+    Ok(tdr_designer::Command::SetProperty {
+        form: form.name.clone(),
+        element: path.name.clone(),
+        property: tdr_core::data::COLUMNS.to_owned(),
+        value: Some(tdr_core::PropertyValue::new(Value::List(entries))),
+    })
+}
+
+/// A readable summary of described columns: what was taken over, what is
+/// left open, which SQLx features the types need.
+pub fn columns_summary(described: &Described) -> String {
+    let taken = described.columns_property();
+    let mut text = format!("{} Spalten: {}", taken.len(), taken.join(", "));
+    let open: Vec<String> = described
+        .unmapped()
+        .iter()
+        .map(|c| format!("{} ({})", c.name, c.sql_type))
+        .collect();
+    if !open.is_empty() {
+        text.push_str(&format!(
+            " – ohne Rust-Typ, bitte von Hand: {}",
+            open.join(", ")
+        ));
+    }
+    let mut features: Vec<&str> = described
+        .columns
+        .iter()
+        .filter_map(|c| c.feature.as_deref())
+        .collect();
+    features.sort_unstable();
+    features.dedup();
+    if !features.is_empty() {
+        text.push_str(&format!(" – braucht SQLx-Feature: {}", features.join(", ")));
+    }
+    text
+}

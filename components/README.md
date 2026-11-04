@@ -40,7 +40,8 @@ Handler-Stubs zeigen den aufgelösten Typ.
 Die SQLx-`Query` ist eine Datenquelle (`[component.data]`, Fähigkeit `data.rows`): Unter `columns` stehen ihre
 Spalten mit Typ (`id: i64`, `name: String`, `note: Option<String>`). Eine DropDown/ListBox/ComboBox … wählt im
 Objektinspektor `data_source` (die Query), `display_field` (angezeigte Spalte), `value_field` (Schlüssel) und
-`load` (`Start` = beim Öffnen laden, `Manual` = `self.<liste>_reload()`). Geladen wird im Hintergrund auf Tokio;
+`load` (`Start` = beim Öffnen laden, `Manual` = `self.<liste>_reload()`). Die `columns` liest der Objektinspektor auf
+Wunsch aus der Datenbank (Abschnitt „Datenbank“ → „Aus Datenbank übernehmen“, über den Helfer `freya-tde-db`). Geladen wird im Hintergrund auf Tokio;
 `self.<liste>_selected_value()` liefert den Schlüssel der Auswahl, typisiert nach `columns`. Ein **DataGrid** zeigt
 alle (oder unter `fields` gewählte) Spalten mit Titeln aus `headers`; `self.<grid>_selected_row()` liefert die ganze
 Zeile als Struct (`CustomerGridRow { id, name, … }`).

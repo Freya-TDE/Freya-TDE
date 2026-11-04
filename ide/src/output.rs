@@ -21,8 +21,9 @@ pub mod channel {
     pub const PROGRAM: &str = "Programm";
     pub const GIT: &str = "Git";
     pub const RUST_ANALYZER: &str = "rust-analyzer";
+    pub const DATABASE: &str = "Datenbank";
 
-    pub const ALL: [&str; 4] = [BUILD, PROGRAM, GIT, RUST_ANALYZER];
+    pub const ALL: [&str; 5] = [BUILD, PROGRAM, GIT, RUST_ANALYZER, DATABASE];
 }
 
 /// Text logs by channel name.

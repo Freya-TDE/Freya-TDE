@@ -47,6 +47,7 @@ pub mod window {
     pub const GIT: &str = "git";
     pub const DEBUGGER: &str = "debugger";
     pub const SHORTCUTS: &str = "shortcuts";
+    pub const DATABASE: &str = "database";
 }
 
 /// All window places.
@@ -120,6 +121,14 @@ impl Desktop {
                 Place {
                     visible: false,
                     ..Place::at(300, 120, 720, 640)
+                },
+            ),
+            // Fenster → Datenbank.
+            (
+                window::DATABASE,
+                Place {
+                    visible: false,
+                    ..Place::at(1160, 200, 380, 600)
                 },
             ),
         ];

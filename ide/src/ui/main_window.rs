@@ -110,6 +110,7 @@ pub(super) fn menu_bar() -> MenuBar {
                 .item("window.project", "Projekt", None)
                 .item("window.git", "Quellcodeverwaltung", Some("Ctrl+Shift+G"))
                 .item("window.debugger", "Debugger", Some("Ctrl+Shift+D"))
+                .item("window.database", "Datenbank", Some("Ctrl+Shift+B"))
                 .item(
                     "window.debug_console",
                     "Debug-Konsole",
@@ -358,6 +359,7 @@ pub fn connect(ide: &Rc<Ide>) {
                 ide.git_refresh(true);
                 ide.show_window(window::GIT);
             }
+            "window.database" => ide.show_database(),
             "window.reset" => ide.reset_desktop(),
             _ => {}
         }));

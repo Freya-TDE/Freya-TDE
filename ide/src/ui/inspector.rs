@@ -16,6 +16,7 @@ use tdr_core::{
 };
 use tdr_designer::{Command, EventRow, PropertyRow, events, properties};
 
+use super::database_window::DbJob;
 use super::{Ide, with, with0};
 
 const MARGIN: i32 = 6;
@@ -379,7 +380,53 @@ impl InspectorWindow {
             };
             lines.push(self.property_line(ide, page, target, row, refs));
         }
+        // SQLx-Pool und -Query: Datenbank zur Entwurfszeit (Helfer freya-tde-db).
+        let element_type = form.element(&target.name).map(|e| e.type_ref().clone());
         drop(session);
+        let pool =
+            tdr_core::TypeRef::pack(crate::database::POOL_TYPE.0, crate::database::POOL_TYPE.1);
+        let query =
+            tdr_core::TypeRef::pack(crate::database::QUERY_TYPE.0, crate::database::QUERY_TYPE.1);
+        let actions: &[(&str, &str, Option<DbJob>)] = if element_type.as_ref() == Some(&pool) {
+            &[
+                ("Verbindung", "Testen", Some(DbJob::Test)),
+                ("Schema", "Datenbank-Fenster", None),
+            ]
+        } else if element_type.as_ref() == Some(&query) {
+            &[
+                ("columns", "Aus Datenbank übernehmen", Some(DbJob::Columns)),
+                ("Verbindung", "Testen", Some(DbJob::Test)),
+            ]
+        } else {
+            &[]
+        };
+        if !actions.is_empty() {
+            let header = RnclLabel::new(page, "<b>Datenbank</b>");
+            lines.push(Line {
+                label: header.widget().clone(),
+                editor: None,
+                reset: None,
+            });
+        }
+        for (label, caption, job) in actions {
+            let label = RnclLabel::new(page, label);
+            let button = RnclButton::new(page, caption);
+            let path = target.clone();
+            let job = *job;
+            button.on_clicked(with0(ide, move |ide| {
+                // Eine laufende Texteingabe (z. B. SQL) zuerst übernehmen.
+                ide.inspector.flush();
+                match job {
+                    Some(job) => ide.database_job(job, &path),
+                    None => ide.show_database(),
+                }
+            }));
+            lines.push(Line {
+                label: label.widget().clone(),
+                editor: Some(button.widget().clone()),
+                reset: None,
+            });
+        }
         *self.prop_lines.borrow_mut() = lines;
 
         let page = self.events.content();
