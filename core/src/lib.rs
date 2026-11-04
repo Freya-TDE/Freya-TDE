@@ -75,6 +75,7 @@ pub mod project;
 mod project_file;
 mod property;
 mod registry;
+pub mod schema;
 mod type_ref;
 mod validate;
 mod value;

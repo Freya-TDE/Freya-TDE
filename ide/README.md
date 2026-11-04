@@ -106,6 +106,11 @@ kommt aus den Skripten der Toolchain (`rustc --print sysroot`). In der Debug-Kon
 Eingabe als Ausdruck ausgewertet; mit `` ` `` am Anfang geht sie als Befehl an den Debugger.
 *The debugger speaks DAP with `lldb-dap`, else `gdb -i dap` (gdb ≥ 14), or `FREYA_TDE_DAP`.
 Debug console input is an expression; a leading `` ` `` sends a debugger command.*
+Datenbanken liest Freya TDE zur Entwurfszeit über den Helfer `freya-tde-db` (eigener Prozess,
+JSON über stdio, siehe `db/README.md`); `FREYA_TDE_DB` nennt ihn, sonst wird er neben dem
+Programm bzw. im `PATH` gesucht. Modul `database`: `Database` (`test`, `schema`, `describe`
+mit Zeitlimit), `pools`, `connection` und `query_sql` (Verbindung und SQL der SQLx-Komponenten).
+*Databases are read through the helper `freya-tde-db` (module `database`).*
 Den CT-Editor sucht Freya TDE in
 `FREYA_TDE_CT_EDITOR`, neben dem Programm, im Repository (`CT-Editor/target/…`) und im `PATH`. Packs werden in `components/`
 und `widgets/` neben dem Programm bzw. im Repository gesucht, zusätzlich in

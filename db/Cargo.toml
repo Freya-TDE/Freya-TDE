@@ -1,0 +1,21 @@
+[package]
+name = "freya-tde-db"
+description = "Freya TDE database helper: schemas and query columns at design time (JSON lines over stdio)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "freya-tde-db"
+path = "src/main.rs"
+
+[dependencies]
+tdr-core.workspace = true
+serde_json.workspace = true
+# Datenbankzugriff nur in diesem Hilfsprogramm, nicht in der IDE.
+# Database access only in this helper, not in the IDE.
+sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "tls-rustls-ring-native-roots", "postgres", "mysql", "sqlite"] }
+tokio = { version = "1.54.1", features = ["rt", "macros", "io-std", "io-util", "time"] }

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["core", "designer", "ide"]
+members = ["core", "db", "designer", "ide"]
 # Eigenständige Projekte mit eigenem Workspace bzw. Testordner.
 exclude = ["RUF", "CT-Editor", "test_fold"]
 
