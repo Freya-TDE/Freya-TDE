@@ -34,17 +34,7 @@ pub(super) fn menu_bar() -> MenuBar {
         (
             "Datei".into(),
             Menu::new()
-                .item("file.new", "Neues Projekt", Some("Ctrl+N"))
-                .submenu(
-                    "Neues Projekt mit Oberfläche",
-                    Menu::new()
-                        .item("file.new.gtk4", "GTK 4", None)
-                        .item("file.new.egui", "egui", None)
-                        .item("file.new.iced", "iced", None)
-                        .item("file.new.slint", "Slint (Lizenzhinweis) …", None)
-                        .separator()
-                        .item("file.new.none", "Ohne Oberfläche (nur Komponenten)", None),
-                )
+                .item("file.new", "Neues Projekt …", Some("Ctrl+N"))
                 .item("file.open", "Projekt öffnen …", Some("Ctrl+O"))
                 .item("file.save", "Speichern", Some("Ctrl+S"))
                 .separator()
@@ -184,7 +174,7 @@ impl MainWindow {
     }
 
     /// Fills the palette: one tab per category, a button per type.
-    fn build_palette(&self, ide: &Rc<Ide>) {
+    pub(super) fn build_palette(&self, ide: &Rc<Ide>) {
         let (backend, items) = {
             let session = ide.session();
             let backend = session.document().project().backend.clone();
@@ -305,14 +295,7 @@ pub fn connect(ide: &Rc<Ide>) {
     });
     main.window
         .on_menu(with(ide, |ide, id: String| match id.as_str() {
-            "file.new" => {
-                ide.new_project();
-                ide.main.build_palette(ide);
-            }
-            id if id.starts_with("file.new.") => {
-                ide.new_project_with(&id["file.new.".len()..]);
-                ide.main.build_palette(ide);
-            }
+            "file.new" => ide.show_wizard(),
             "file.open" => {
                 ide.open_dialog();
                 ide.main.build_palette(ide);

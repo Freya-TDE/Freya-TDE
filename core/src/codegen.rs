@@ -13,7 +13,8 @@
 //! | File | Owner | Content |
 //! |---|---|---|
 //! | `Cargo.toml` | user | dependencies of all used types and the backend are merged in; nothing is removed, formatting and comments stay |
-//! | `src/main.rs` | user | created once: `main()` and `started(&mut app)` |
+//! | `src/main.rs` | user | created once: `main()` and `started(&mut app)` (programs) |
+//! | `src/lib.rs` | user | created once: `pub use app::*;` (libraries, [`ProjectKind::Library`](crate::ProjectKind): data modules only, no `run()`, `App::init` on the caller's runtime) |
 //! | `src/app.gen.rs` | generator | module list, `App` with all forms, `App::init` in dependency order, `run()` with the event loop |
 //! | `src/<form>.gen.rs` | generator | the form's struct with one field per generated component, plus the backend's `form` template (e.g. `ui()` calling the handlers) |
 //! | `src/<form>.rs` | user | created once with `include!("<form>.gen.rs")` and event handler stubs; later only missing stubs are appended |
@@ -92,6 +93,7 @@ use crate::form::Form;
 use crate::graph::{self, ProjectIssue};
 use crate::name::{ComponentName, ComponentPath, HandlerName};
 use crate::project_file::ProjectFile;
+use crate::project_file::ProjectKind;
 use crate::property::PropertyValue;
 use crate::registry::TypeRegistry;
 use crate::type_ref::TypeRef;
@@ -232,6 +234,9 @@ pub enum CodegenIssue {
     StartedSignature { file: String, expected: String },
     /// `Cargo.toml` cannot be read or changed.
     CargoManifest { message: String },
+    /// A library project has a form with widgets; libraries have data
+    /// modules only (the form's UI code is left out).
+    LibraryWithUi(ComponentName),
     /// The project pins another version than a used type asks for; the
     /// project's version is kept.
     CargoVersionDiffers {
@@ -292,6 +297,10 @@ impl fmt::Display for CodegenIssue {
             CodegenIssue::InvalidRust { part, message } => {
                 write!(f, "{part} is not valid Rust: {message}")
             }
+            CodegenIssue::LibraryWithUi(form) => write!(
+                f,
+                "form {form} has widgets, but a library has data modules only"
+            ),
             CodegenIssue::AsyncWithoutRuntime => {
                 f.write_str("initialisation is async, but no component provides an async runtime")
             }
@@ -1054,6 +1063,9 @@ fn render_component(
 
 /// How `run()` starts the program.
 enum Start {
+    /// A library: no `run()`; `init` is async if a component is (the
+    /// caller's runtime).
+    Library { is_async: bool },
     /// Synchronous `run()`, no runtime.
     Plain,
     /// Async `run()` with this entry attribute.
@@ -1064,7 +1076,11 @@ enum Start {
 
 impl Start {
     fn init_is_async(&self) -> bool {
-        !matches!(self, Start::Plain)
+        match self {
+            Start::Library { is_async } => *is_async,
+            Start::Plain => false,
+            _ => true,
+        }
     }
 
     fn started_is_async(&self) -> bool {
@@ -1080,8 +1096,17 @@ pub fn generate(
     source: &dyn FileSource,
 ) -> Generation {
     let mut out = Diagnostics::default();
-    let backend = registry.backend(&project.backend);
-    if backend.is_none() {
+    let library = project.kind == ProjectKind::Library;
+    // Eine Bibliothek hat keine Oberfläche: das UI-Backend zählt nicht.
+    let backend = registry.backend(&project.backend).filter(|_| !library);
+    if library {
+        for form in forms.iter().filter(|f| !f.is_data_module()) {
+            out.error(
+                Some(ComponentPath::on(form.name.clone(), form_anchor(form))),
+                CodegenIssue::LibraryWithUi(form.name.clone()),
+            );
+        }
+    } else if backend.is_none() {
         out.warning(
             None,
             CodegenIssue::NoBackendDescriptor(project.backend.clone()),
@@ -1139,7 +1164,20 @@ pub fn generate(
         }
     }
 
-    let start = start(backend, &generated, &mut out);
+    let start = if library {
+        let runtimes: Vec<&Generated> = generated.iter().filter(|g| g.is_runtime).collect();
+        if runtimes.len() > 1 {
+            out.error(
+                None,
+                CodegenIssue::MultipleRuntimes(runtimes.iter().map(|g| g.path.clone()).collect()),
+            );
+        }
+        Start::Library {
+            is_async: generated.iter().any(|g| g.is_async) || !runtimes.is_empty(),
+        }
+    } else {
+        start(backend, &generated, &mut out)
+    };
     let bindings = data_bindings(forms, &generated, registry, &env, &start, &mut out);
     let mut cargo = analysis.cargo.clone();
     if let Some(backend) = backend {
@@ -1148,7 +1186,11 @@ pub fn generate(
 
     let mut files = vec![
         manifest(project, &cargo, source, &mut out),
-        main_file(start.started_is_async(), source, &mut out),
+        if library {
+            lib_file(source)
+        } else {
+            main_file(start.started_is_async(), source, &mut out)
+        },
         app_file(
             forms, &generated, &bindings, &start, backend, &env, source, &mut out,
         ),
@@ -1482,6 +1524,7 @@ fn merge_dependencies(
 // --- main.rs and app.gen.rs ------------------------------------------------------------
 
 const MAIN: &str = "src/main.rs";
+const LIB: &str = "src/lib.rs";
 const APP: &str = "src/app.gen.rs";
 
 fn started_signature(is_async: bool) -> String {
@@ -1532,6 +1575,24 @@ fn main() {{
         );
     }
     file(MAIN, FileKind::User, existing, source)
+}
+
+/// `src/lib.rs` of a library: created once, then the user's.
+fn lib_file(source: &dyn FileSource) -> GeneratedFile {
+    let content = source.read(LIB).unwrap_or_else(|| {
+        "//! Library – your code. Freya TDE creates this file once and never\n\
+         //! changes it; the generated part is `app.gen.rs`.\n\
+         //!\n\
+         //! `App::init()` creates all components of the data modules (async\n\
+         //! components on the caller's Tokio runtime).\n\
+         \n\
+         #[path = \"app.gen.rs\"]\n\
+         mod app;\n\
+         \n\
+         pub use app::*;\n"
+            .to_owned()
+    });
+    file(LIB, FileKind::User, content, source)
 }
 
 /// `{name, struct, data_module}` of a form, for templates.
@@ -1679,8 +1740,13 @@ fn app_file(
         })
         .unwrap_or_default();
 
-    code.push_str("/// Creates the application, calls `started` in `main.rs` and runs the UI.\n");
+    if !matches!(start, Start::Library { .. }) {
+        code.push_str(
+            "/// Creates the application, calls `started` in `main.rs` and runs the UI.\n",
+        );
+    }
     match start {
+        Start::Library { .. } => {}
         Start::Entry(entry) => {
             let _ = write!(
                 code,

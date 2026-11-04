@@ -10,9 +10,8 @@ Visuelle Widgets und Backend-Paletten, aufbauend auf `tdr-core` (der gemeinsame 
 | `iced` | fertig / done | iced 0.14 (Elm-Architektur); Kern-Widgets plus Palette „iced“: RadioButton, Toggler, Slider, ProgressBar, PickList, ListBox, TextEditor, Rule, GroupBox, Tabs |
 | `slint` | fertig / done | Slint 1.18 (deklarativ, mit Lizenzhinweis); Kern-Widgets plus Palette „Slint“: RadioButton, Switch, SpinBox, Slider, ProgressIndicator, ComboBox, ListView, TextEdit, Separator, Image, AboutSlint, GroupBox, TabWidget, MainMenu |
 
-Neue Projekte nutzen `gtk4`, wenn das Pack gefunden wird; „Datei → Neues Projekt mit Oberfläche“ wählt ein
-anderes (GTK 4, egui, iced, Slint, ohne Oberfläche).
-*New projects use `gtk4`; File → New project with UI picks another backend.*
+Der Neu-Assistent (Datei → Neues Projekt …) bietet alle installierten Backends an, `gtk4` vorgewählt.
+*The new-project wizard offers all installed backends, `gtk4` preselected.*
 
 ## GTK 4
 

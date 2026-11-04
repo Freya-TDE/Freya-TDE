@@ -26,7 +26,9 @@ pub struct Shortcut {
 /// What a menu command does (by menu id).
 fn description(id: &str) -> &'static str {
     match id {
-        "file.new" => "Legt ein neues Projekt an.",
+        "file.new" => {
+            "Öffnet den Assistenten für ein neues Projekt (Programm oder Bibliothek, Oberfläche, Komponenten, Git)."
+        }
         "file.open" => "Öffnet eine Projektdatei (.ptdr).",
         "file.save" => "Speichert Projekt und Formulare.",
         "file.quit" => "Beendet Freya TDE (fragt bei ungespeicherten Änderungen).",

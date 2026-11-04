@@ -18,6 +18,7 @@ pub mod projects;
 pub mod session;
 pub mod terminal;
 pub mod ui;
+pub mod wizard;
 
 pub use ui::Ide;
 

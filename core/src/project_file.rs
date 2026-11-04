@@ -17,6 +17,9 @@ pub struct ProjectFile {
     pub format: u32,
     /// Cargo package name of the generated crate.
     pub name: String,
+    /// Program (`main.rs`, UI) or library (`lib.rs`, data modules only).
+    #[serde(default, skip_serializing_if = "ProjectKind::is_binary")]
+    pub kind: ProjectKind,
     /// Rust version the project is built with (`rust-version` in
     /// `Cargo.toml`), e.g. `"1.99"`.
     pub rust_version: String,
@@ -42,6 +45,24 @@ pub struct ProjectFile {
     /// ones such as the signing key live in the repository's `.git/config`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub git: Option<GitSettings>,
+}
+
+/// What the project builds.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ProjectKind {
+    /// A program: `src/main.rs`, forms with a UI backend.
+    #[default]
+    Binary,
+    /// A library: `src/lib.rs` exports the service container `App` with
+    /// the components of its data modules; no UI, no `main`. Async
+    /// components use the caller's Tokio runtime.
+    Library,
+}
+
+impl ProjectKind {
+    pub fn is_binary(&self) -> bool {
+        *self == ProjectKind::Binary
+    }
 }
 
 /// Shared Git settings of a project.
@@ -93,6 +114,7 @@ impl ProjectFile {
         Ok(Self {
             format: Self::FORMAT,
             name,
+            kind: ProjectKind::Binary,
             rust_version: rust_version.into(),
             backend: backend.into(),
             platforms: Vec::new(),

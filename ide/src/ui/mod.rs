@@ -19,6 +19,7 @@ mod project_manager;
 pub mod shortcuts;
 mod structure;
 mod terminal_view;
+pub mod wizard_window;
 
 use std::cell::{Cell, RefCell};
 use std::path::{Path, PathBuf};
@@ -171,6 +172,7 @@ pub struct Ide {
     shortcuts: ShortcutsWindow,
     about: AboutWindow,
     database_window: DatabaseWindow,
+    wizard: wizard_window::WizardWindow,
     /// The database helper (shared with background requests).
     db_access: DbAccess,
     /// Delivers results of background database requests.
@@ -279,6 +281,7 @@ impl Ide {
             shortcuts: ShortcutsWindow::build(),
             about: AboutWindow::build(),
             database_window: DatabaseWindow::build(),
+            wizard: wizard_window::WizardWindow::build(),
             db_access: DbAccess::default(),
             db_results: RefCell::new(None),
             db_schemas: RefCell::new(Default::default()),
@@ -354,6 +357,7 @@ impl Ide {
         shortcuts::connect(&ide);
         about::connect(&ide);
         database_window::connect(&ide);
+        wizard_window::connect(&ide);
         // Wie bei Delphi: Strg+G, F9, Strg+Umschalt+G … aus jedem Fenster.
         for (name, window) in ide.windows() {
             if name != window::MAIN {

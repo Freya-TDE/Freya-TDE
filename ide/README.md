@@ -29,9 +29,24 @@ Taskleiste und Alt+Tab; Bilder und Symbole liegen in `ide/assets/`. Der Konfigor
 *On start a splash screen with the logo appears; the program icon shows in title bar, task
 bar and Alt+Tab (assets in `ide/assets/`). An old `freya-td` config folder is taken over.*
 
-Neue Projekte nutzen das UI-Backend GTK 4 (`widgets/gtk4`), F9 startet also ein echtes GTK-Fenster; Datei →
-Neues Projekt mit Oberfläche wählt egui, iced, Slint (zeigt vorher den Lizenzhinweis; ohne Dialog:
-`Ide::new_project_with_notice_accepted`, Text per `Ide::backend_notice`) oder ein Projekt ohne Oberfläche (`Ide::new_project_with`).
+Datei → Neues Projekt … (Strg+N) öffnet den **Neu-Assistenten** mit Weiter/Zurück:
+1. Art: Programm (Formulare mit UI-Toolkit, `main.rs`) oder Bibliothek (Datenmodule, `lib.rs`, exportiert `App`).
+2. Name, übergeordneter Ordner, Rust-Version (vorbelegt mit der installierten).
+3. Zielsysteme (vorbelegt mit dem eigenen).
+4. Oberfläche (nur Programme): installierte Backends in der Reihenfolge GTK 4, egui, iced, Slint, „ohne
+   Oberfläche“; ein Lizenzhinweis (Slint) muss bestätigt werden.
+5. Komponenten im Datenmodul `services`: Datenbank (SQLx mit Treiber und URL), Redis, Webserver (Axum),
+   Tokio-Laufzeit (kommt bei Bedarf von selbst).
+6. Git (Repository, erster Commit) und Zusammenfassung mit allen Dateien und offenen Punkten.
+
+„Anlegen“ speichert das Projekt sofort, erzeugt den Code (es baut gleich), trägt es in die Projektliste ein und
+öffnet es. Logik ohne Oberfläche: `wizard` (`NewProject` als JSON, `plan` = Vorschau mit Codes wie
+`invalid_name`, `folder_not_empty`, `license_not_accepted`, `create`); `Ide::create_project`,
+`Ide::show_wizard`, `Ide::set_wizard_request`, `Ide::wizard_request`, `Ide::wizard_step`. Ein ungespeichertes
+Projekt ohne Assistent: `Ide::new_project_with` / `Ide::new_project_with_notice_accepted` (Text per
+`Ide::backend_notice`).
+*File → New project … opens the wizard (program or library, name and folder, targets, UI toolkit with license
+notice, components, Git); library API `wizard` (`NewProject`, `plan`, `create`).*
 Symbole der Palette und der Komponentenleiste: `ide/assets/palette/` (Quellen `*.svg`, erzeugt mit
 `make.py`), ein Pack kann eigene in `icons/<name>.png` mitbringen.
 *New projects use the GTK 4 backend; palette icons live in `ide/assets/palette/` (packs may bring

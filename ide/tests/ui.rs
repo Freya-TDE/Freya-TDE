@@ -952,6 +952,65 @@ fn main() {
         }
     }
 
+    // Neu-Assistent: Seiten, Vorschau, Anlegen (Programm mit SQLite und Git).
+    {
+        use freya_tde::wizard::{NewProject, Starter};
+        let ide = freya_tde::Ide::start(None);
+        ide.show_wizard();
+        assert!(ide.wizard_window().widget().is_visible());
+        let mut request = NewProject::program("werkstatt", &home, "gtk4");
+        request.starters = vec![Starter::Database {
+            driver: tdr_core::schema::Driver::Sqlite,
+            url: "sqlite://werkstatt.db".into(),
+        }];
+        request.git = true;
+        request.initial_commit = true;
+        request.platforms = vec![tdr_core::Platform::Linux];
+        ide.set_wizard_request(&request);
+        assert_eq!(
+            ide.wizard_request(),
+            request,
+            "Seiten geben die Beschreibung wieder"
+        );
+        let shots = std::env::var_os("FREYA_TDE_SHOT").map(std::path::PathBuf::from);
+        for page in 0..6 {
+            if let Some(dir) = &shots {
+                pump_until(1, || false);
+                let _ = std::fs::create_dir_all(dir);
+                ide.wizard_window()
+                    .widget()
+                    .save_screenshot(dir.join(format!("wizard-{page}.png")));
+            }
+            ide.wizard_step(true);
+        }
+        // Bibliothek: die Seite „Oberfläche“ entfällt.
+        let mut library = NewProject::library("werkzeug", &home);
+        library.rust_version = request.rust_version.clone();
+        ide.set_wizard_request(&library);
+        assert_eq!(ide.wizard_request().kind, tdr_core::ProjectKind::Library);
+        ide.set_wizard_request(&request);
+
+        let created = ide.create_project(&ide.wizard_request()).unwrap();
+        assert_eq!(created.ptdr, home.join("werkstatt/werkstatt.ptdr"));
+        assert_eq!(
+            ide.session().project_dir().unwrap().canonicalize().unwrap(),
+            home.join("werkstatt").canonicalize().unwrap()
+        );
+        let forms: Vec<String> = ide
+            .session()
+            .document()
+            .forms()
+            .iter()
+            .map(|f| f.name.to_string())
+            .collect();
+        assert_eq!(forms, ["main_form", "services"]);
+        assert!(home.join("werkstatt/.git").is_dir());
+        assert!(home.join("werkstatt/src/main.rs").is_file());
+        ide.wizard_window().hide();
+        println!("test wizard ... ok");
+        passed += 1;
+    }
+
     Application::process_events();
     let _ = std::fs::remove_dir_all(&home);
     println!("\ntest result: ok. {passed} passed");
