@@ -612,3 +612,38 @@ fn sqlx_driver_follows_the_pool() {
         );
     }
 }
+
+/// Column types from other crates bring the SQLx feature and the crate;
+/// without them nothing extra is added.
+#[test]
+fn column_types_bring_their_crates() {
+    let plain = generate(&project(), &forms(), &registry(), &empty());
+    let cargo = content(&plain, "Cargo.toml");
+    assert!(
+        !cargo.contains("chrono") && !cargo.contains("uuid"),
+        "{cargo}"
+    );
+
+    let mut forms = forms();
+    forms[1].component_mut(&name("load")).unwrap().set(
+        tdr_core::data::COLUMNS,
+        Value::List(
+            [
+                "id: uuid::Uuid",
+                "at: Option<chrono::DateTime<chrono::Utc>>",
+            ]
+            .map(|t| Value::Text(t.into()))
+            .to_vec(),
+        ),
+    );
+    let generation = generate(&project(), &forms, &registry(), &empty());
+    let cargo = content(&generation, "Cargo.toml");
+    assert!(cargo.contains("chrono = \"0.4.45\""), "{cargo}");
+    assert!(cargo.contains("uuid = \"1.29\""), "{cargo}");
+    let sqlx = cargo.lines().find(|l| l.starts_with("sqlx")).unwrap();
+    assert!(
+        sqlx.contains("\"chrono\"") && sqlx.contains("\"uuid\""),
+        "{sqlx}"
+    );
+    assert!(!sqlx.contains("\"json\""), "{sqlx}");
+}

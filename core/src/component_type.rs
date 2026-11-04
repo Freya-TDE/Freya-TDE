@@ -51,6 +51,10 @@ pub struct CargoDependency {
     /// `"true"`/`"false"`, numbers as written). Empty = always.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub when: BTreeMap<String, String>,
+    /// Only needed when every listed property contains the text (in a list:
+    /// any entry), e.g. `columns = "chrono::"` – a type that needs the crate.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub uses: BTreeMap<String, String>,
 }
 
 fn yes() -> bool {
@@ -69,6 +73,7 @@ impl CargoDependency {
             features: Vec::new(),
             default_features: true,
             when: BTreeMap::new(),
+            uses: BTreeMap::new(),
         }
     }
 
@@ -78,12 +83,24 @@ impl CargoDependency {
         self
     }
 
+    /// Only needed when property `name` contains `text`.
+    pub fn uses(mut self, name: impl Into<String>, text: impl Into<String>) -> Self {
+        self.uses.insert(name.into(), text.into());
+        self
+    }
+
     /// Is the dependency needed for a component with these property values?
-    /// `value_of` returns the value as text (set or default).
-    pub fn applies(&self, value_of: impl Fn(&str) -> Option<String>) -> bool {
-        self.when
+    /// `value_of` returns a property's value (set or default).
+    pub fn applies(&self, value_of: impl Fn(&str) -> Option<crate::Value>) -> bool {
+        self.when.iter().all(|(name, wanted)| {
+            value_of(name)
+                .and_then(|v| v.as_condition_text())
+                .as_deref()
+                == Some(wanted.as_str())
+        }) && self
+            .uses
             .iter()
-            .all(|(name, wanted)| value_of(name).as_deref() == Some(wanted.as_str()))
+            .all(|(name, text)| value_of(name).is_some_and(|v| v.contains_text(text)))
     }
 
     pub fn with_features<S: Into<String>>(mut self, features: impl IntoIterator<Item = S>) -> Self {

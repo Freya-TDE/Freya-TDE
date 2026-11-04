@@ -865,6 +865,31 @@ fn element_data(
     )
 }
 
+/// Text of a column value `expr` of type `rust_type` for lists and grids:
+/// `to_string()`, `{:?}` for vectors (bytes, arrays), empty for `None`.
+fn cell_text(expr: &str, rust_type: &str) -> String {
+    let rust_type = rust_type.trim();
+    let (optional, inner) = match rust_type
+        .strip_prefix("Option<")
+        .and_then(|t| t.strip_suffix('>'))
+    {
+        Some(inner) => (true, inner.trim()),
+        None => (false, rust_type),
+    };
+    let text = |v: &str| {
+        if inner.starts_with("Vec<") || inner.starts_with("std::vec::Vec<") {
+            format!("format!(\"{{:?}}\", {v})")
+        } else {
+            format!("{v}.to_string()")
+        }
+    };
+    if optional {
+        format!("{expr}.as_ref().map(|v| {}).unwrap_or_default()", text("v"))
+    } else {
+        text(expr)
+    }
+}
+
 /// Renders a template; on failure the issue is recorded and `None`
 /// returned.
 fn render(
@@ -2072,8 +2097,8 @@ enum BindingKind {
         row_struct: String,
         /// All columns of the source: name, type, rendered `get`.
         columns: Vec<(String, String, String)>,
-        /// Shown columns: name, optional?, header.
-        shown: Vec<(String, bool, String)>,
+        /// Shown columns: name, Rust type, header.
+        shown: Vec<(String, String, String)>,
         /// Key column: name, type.
         value: Option<(String, String)>,
     },
@@ -2291,14 +2316,13 @@ fn data_bindings(
                     .iter()
                     .enumerate()
                     .map(|(i, n)| {
-                        let optional =
-                            column(n).is_some_and(|c| c.rust_type.starts_with("Option<"));
+                        let rust_type = column(n).map(|c| c.rust_type.clone()).unwrap_or_default();
                         let header = headers
                             .get(i)
                             .filter(|h| !h.trim().is_empty())
                             .cloned()
                             .unwrap_or_else(|| n.clone());
-                        (n.clone(), optional, header)
+                        (n.clone(), rust_type, header)
                     })
                     .collect();
                 BindingKind::Table {
@@ -2326,11 +2350,7 @@ fn data_bindings(
                     }
                     continue;
                 };
-                let text = if display.rust_type.starts_with("Option<") {
-                    format!("({text}).map(|v| v.to_string()).unwrap_or_default()")
-                } else {
-                    format!("({text}).to_string()")
-                };
+                let text = cell_text(&format!("({text})"), &display.rust_type);
                 BindingKind::List {
                     value_field: value.map_or_else(|| display.name.clone(), |c| c.name.clone()),
                     value_type: value.map_or_else(|| "String".to_owned(), |c| c.rust_type.clone()),
@@ -2441,15 +2461,7 @@ fn data_impl(form: &Form, bindings: &[Binding]) -> String {
                 }
                 let cells: Vec<String> = shown
                     .iter()
-                    .map(|(name, optional, _)| {
-                        if *optional {
-                            format!(
-                                "col_{name}.as_ref().map(|v| v.to_string()).unwrap_or_default()"
-                            )
-                        } else {
-                            format!("col_{name}.to_string()")
-                        }
-                    })
+                    .map(|(name, rust_type, _)| cell_text(&format!("col_{name}"), rust_type))
                     .collect();
                 let fields: Vec<String> = columns
                     .iter()

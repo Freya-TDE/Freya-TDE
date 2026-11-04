@@ -67,7 +67,19 @@ icon = "table"
 description = "An SQL query executed on a pool"
 provides = ["sqlx.query"]
 requires = [{ capability = "sqlx.pool", via = "pool" }]
-cargo = [{ crate = "sqlx", version = "0.9", features = ["macros"] }]
+# Spaltentypen mit Zusatz-Crate: SQLx-Feature und das Crate selbst (das
+# erzeugte Zeilen-Struct nennt den Typ). / Column types from other crates.
+cargo = [
+    { crate = "sqlx", version = "0.9", features = ["macros"] },
+    { crate = "sqlx", version = "0.9", features = ["chrono"], uses = { columns = "chrono::" } },
+    { crate = "chrono", version = "0.4.45", uses = { columns = "chrono::" } },
+    { crate = "sqlx", version = "0.9", features = ["json"], uses = { columns = "serde_json::" } },
+    { crate = "serde_json", version = "1.0.154", uses = { columns = "serde_json::" } },
+    { crate = "sqlx", version = "0.9", features = ["uuid"], uses = { columns = "uuid::" } },
+    { crate = "uuid", version = "1.29", uses = { columns = "uuid::" } },
+    { crate = "sqlx", version = "0.9", features = ["rust_decimal"], uses = { columns = "rust_decimal::" } },
+    { crate = "rust_decimal", version = "1.43", uses = { columns = "rust_decimal::" } },
+]
 
 [component.properties.pool]
 type = "reference"

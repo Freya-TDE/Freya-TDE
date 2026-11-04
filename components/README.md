@@ -32,6 +32,12 @@ cargo = [{ crate = "sqlx", version = "0.9", features = ["mysql"], when = { drive
 type = "(sqlx::{{ {'Postgres': 'PgPool', 'MySql': 'MySqlPool', 'Sqlite': 'SqlitePool'}[refs.pool.props.driver] }}, &'static str)"
 ```
 
+Spaltentypen aus anderen Crates (`chrono::…`, `serde_json::…`, `uuid::…`, `rust_decimal::…`) bringen das
+SQLx-Feature und das Crate selbst in die `Cargo.toml` (Bedingung `uses = { columns = "chrono::" }`: die
+Eigenschaft enthält den Text, bei Listen ein Eintrag). `rust_decimal` gibt es in SQLx nicht für SQLite. Listen und
+DataGrid zeigen Werte mit `to_string()`, Vektoren (`Vec<u8>`, Arrays) mit `{:?}`.
+*Column types from other crates add the SQLx feature and the crate (`uses` condition).*
+
 Auch Parametertypen von Ereignissen dürfen solche Templates sein (`props`, `refs`); Objektinspektor und
 Handler-Stubs zeigen den aufgelösten Typ.
 

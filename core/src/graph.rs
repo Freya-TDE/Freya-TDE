@@ -591,7 +591,7 @@ pub fn analyze(forms: &[Form], registry: &TypeRegistry) -> Analysis {
                     .find(|d| d.name == name)
                     .and_then(|d| d.default.clone())
             })?;
-            value.as_condition_text()
+            Some(value)
         };
         for dep in ty.cargo.iter().filter(|d| d.applies(value_of)) {
             versions
@@ -603,6 +603,7 @@ pub fn analyze(forms: &[Form], registry: &TypeRegistry) -> Analysis {
                 .or_insert_with(|| CargoDependency {
                     features: Vec::new(),
                     when: BTreeMap::new(),
+                    uses: BTreeMap::new(),
                     ..dep.clone()
                 });
             merged.default_features |= dep.default_features;

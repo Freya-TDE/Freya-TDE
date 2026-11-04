@@ -190,6 +190,17 @@ impl Value {
         }
     }
 
+    /// Does the value contain `needle` (text, code, custom data; in a list:
+    /// any entry)?
+    pub fn contains_text(&self, needle: &str) -> bool {
+        match self {
+            Value::Text(v) | Value::Code(v) | Value::Enum(v) => v.contains(needle),
+            Value::Custom { data, .. } => data.contains(needle),
+            Value::List(items) => items.iter().any(|i| i.contains_text(needle)),
+            _ => false,
+        }
+    }
+
     /// The value as text for conditions (`when` of Cargo dependencies):
     /// enum variant, text, `true`/`false`, number. `None` for other kinds.
     pub fn as_condition_text(&self) -> Option<String> {

@@ -367,7 +367,8 @@ pub fn columns_command(
 }
 
 /// A readable summary of described columns: what was taken over, what is
-/// left open, which SQLx features the types need.
+/// left open, which SQLx features the types bring (code generation adds
+/// them to `Cargo.toml`).
 pub fn columns_summary(described: &Described) -> String {
     let taken = described.columns_property();
     let mut text = format!("{} Spalten: {}", taken.len(), taken.join(", "));
@@ -390,7 +391,10 @@ pub fn columns_summary(described: &Described) -> String {
     features.sort_unstable();
     features.dedup();
     if !features.is_empty() {
-        text.push_str(&format!(" – braucht SQLx-Feature: {}", features.join(", ")));
+        text.push_str(&format!(
+            " – SQLx-Feature {} kommt beim Code-Erzeugen in die Cargo.toml",
+            features.join(", ")
+        ));
     }
     text
 }

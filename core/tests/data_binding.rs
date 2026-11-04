@@ -219,7 +219,35 @@ fn generates_loader_with_typed_values() {
                 .component_mut(&name("db"))
                 .unwrap()
                 .set("driver", Value::Enum(driver.into()));
+            // Typen aus anderen Crates: SQLx-Features und Crates kommen von selbst
+            // dazu; Listen und Tabelle müssen sie als Text zeigen können.
+            let mut columns = vec![
+                "id: i64",
+                "name: String",
+                "note: Option<String>",
+                "born: Option<chrono::NaiveDate>",
+                "meta: serde_json::Value",
+                "key: uuid::Uuid",
+                "photo: Option<Vec<u8>>",
+            ];
+            if driver != "Sqlite" {
+                columns.push("price: rust_decimal::Decimal");
+            }
+            checked[0]
+                .component_mut(&name("customers"))
+                .unwrap()
+                .set(COLUMNS, texts(&columns));
             let generation = self::generation(&checked);
+            let cargo = generation
+                .files
+                .iter()
+                .find(|f| f.path == "Cargo.toml")
+                .unwrap()
+                .content
+                .clone();
+            for needed in ["chrono", "serde_json", "uuid", "\"json\""] {
+                assert!(cargo.contains(needed), "{needed}: {cargo}");
+            }
             write(&dir, &generation).unwrap();
             let status = std::process::Command::new("cargo")
                 .arg("check")

@@ -36,6 +36,7 @@
 //! requires = [{ capability = "tokio.runtime" }]
 //! cargo = [{ crate = "sqlx", version = "0.9", features = ["postgres"], default-features = true }]
 //! # only if a property has a value: { crate = "sqlx", …, features = ["mysql"], when = { driver = "MySql" } }
+//! # only if a property contains a text (lists: any entry): { crate = "chrono", version = "0.4", uses = { columns = "chrono::" } }
 //!
 //! [component.properties.max_connections]   # snake_case, order is kept
 //! type = "int"
@@ -382,6 +383,8 @@ struct RawCargo {
     default_features: bool,
     #[serde(default)]
     when: BTreeMap<String, toml::Value>,
+    #[serde(default)]
+    uses: BTreeMap<String, String>,
 }
 
 fn yes() -> bool {
@@ -1118,6 +1121,7 @@ impl Checker<'_> {
                     (name.clone(), text)
                 })
                 .collect(),
+            uses: cargo.uses.clone(),
         }
     }
 
