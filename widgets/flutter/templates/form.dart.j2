@@ -203,21 +203,31 @@ Builder(builder: (context) {
 {%- endmacro %}
 
 {#- `c` placed in the layout `l` of its parent. -#}
+{%- macro sized(c) -%}
+{%- set p = c.placement -%}
+{%- if p and p.kind == "layout" and (p.width > 0 or p.height > 0) -%}
+{#- Wunschgröße aus dem Designer. -#}
+SizedBox(width: {{ p.width if p.width > 0 else "null" }}, height: {{ p.height if p.height > 0 else "null" }}, child: {{ item(c) }})
+{%- else -%}
+{{ item(c) }}
+{%- endif -%}
+{%- endmacro %}
+
 {%- macro placed(c, l) -%}
 {%- set p = c.placement -%}
 {%- set align = p.align if p and p.kind == "layout" else "Fill" -%}
 {%- if l.kind == "absolute" and p and p.kind == "absolute" -%}
 Positioned(left: {{ p.x }}, top: {{ p.y }}, width: {{ p.width }}, height: {{ p.height }}, child: {{ item(c) }})
-{%- elif l.kind == "horizontal" and ((p and p.kind == "layout" and p.stretch) or c.type in expanding) -%}
-Expanded(child: {{ item(c) }})
+{%- elif l.kind == "horizontal" and ((p and p.kind == "layout" and p.stretch) or (c.type in expanding and not (p and p.kind == "layout" and p.width > 0))) -%}
+Expanded(child: {{ sized(c) }})
 {%- elif l.kind in ["vertical", "custom"] and align == "Start" -%}
-Align(alignment: Alignment.centerLeft, child: {{ item(c) }})
+Align(alignment: Alignment.centerLeft, child: {{ sized(c) }})
 {%- elif l.kind in ["vertical", "custom"] and align == "Center" -%}
-Center(child: {{ item(c) }})
+Center(child: {{ sized(c) }})
 {%- elif l.kind in ["vertical", "custom"] and align == "End" -%}
-Align(alignment: Alignment.centerRight, child: {{ item(c) }})
+Align(alignment: Alignment.centerRight, child: {{ sized(c) }})
 {%- else -%}
-{{ item(c) }}
+{{ sized(c) }}
 {%- endif -%}
 {%- endmacro %}
 // ignore_for_file: non_constant_identifier_names, prefer_const_constructors, unused_element, unused_import
@@ -395,7 +405,12 @@ class _{{ view }}State extends State<{{ view }}> {
       padding: {{ pad }},
       child: freyaGrid({{ l.columns or 1 }}, {{ l.spacing }}, [
       {%- for c in kids %}
+        {%- set p = c.placement %}
+        {%- if p and p.kind == "layout" and (p.width > 0 or p.height > 0) %}
+        _get({{ c.name | dart_str }}).visible ? Align(alignment: Alignment.centerLeft, child: {{ sized(c) | indent(8) }}) : const SizedBox(),
+        {%- else %}
         _get({{ c.name | dart_str }}).visible ? {{ item(c) | indent(8) }} : const SizedBox(),
+        {%- endif %}
       {%- endfor %}
       ]),
     );

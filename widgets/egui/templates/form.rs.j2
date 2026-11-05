@@ -443,6 +443,13 @@ impl {{ form.struct }} {
                     {%- if l.kind == "absolute" and p and p.kind == "absolute" %}
                         let rect = egui::Rect::from_min_size(area.min + egui::vec2({{ p.x }} as f32, {{ p.y }} as f32), egui::vec2({{ p.width }} as f32, {{ p.height }} as f32));
                         let response = ui.add_enabled_ui(self.{{ c.name }}.enabled, |ui| ui.put(rect, {{ item | indent(24) }})).inner;
+                    {%- elif p and p.kind == "layout" and (p.width > 0 or p.height > 0) %}
+                        // Wunschgröße aus dem Designer (fehlende Achse: Fill = verfügbare Breite, sonst Standardhöhe).
+                        let size = egui::vec2(
+                            {% if p.width > 0 %}{{ p.width }} as f32{% if l.kind in ["vertical", "custom"] and align == "Fill" %}.max(ui.available_width()){% endif %}{% else %}ui.available_width(){% endif %},
+                            {% if p.height > 0 %}{{ p.height }} as f32{% else %}ui.spacing().interact_size.y{% endif %},
+                        );
+                        let response = ui.add_enabled_ui(self.{{ c.name }}.enabled, |ui| ui.add_sized(size, {{ item | indent(24) }})).inner;
                     {%- elif l.kind in ["vertical", "custom"] and align == "Fill" and c.type not in natural %}
                         let response = ui.with_layout(egui::Layout::top_down_justified(egui::Align::{{ "Center" if c.type == "core/Button" else "Min" }}), |ui| {
                             ui.add_enabled_ui(self.{{ c.name }}.enabled, |ui| ui.add({{ item | indent(28) }})).inner

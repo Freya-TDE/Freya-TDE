@@ -495,7 +495,19 @@ impl {{ form.struct }} {
         children.push(
             iced::widget::row(vec![
             {%- for c in row %}
+            {%- set p = c.placement %}
+            {%- if p and p.kind == "layout" and (p.width > 0 or p.height > 0) %}
+                // Wunschgröße aus dem Designer.
+                iced::widget::container(
+                    iced::widget::container({{ child(c, true) }})
+                        .width({% if p.width > 0 %}iced::Length::Fixed({{ p.width }} as f32){% else %}iced::Fill{% endif %})
+                        .height({% if p.height > 0 %}iced::Length::Fixed({{ p.height }} as f32){% else %}iced::Shrink{% endif %}),
+                )
+                .width(iced::Fill)
+                .into(),
+            {%- else %}
                 iced::widget::container({{ child(c, true) }}).width(iced::Fill).into(),
+            {%- endif %}
             {%- endfor %}
             ])
             .spacing({{ l.spacing }})
@@ -508,6 +520,15 @@ impl {{ form.struct }} {
         {%- set align = p.align if p and p.kind == "layout" else "Fill" %}
         {%- set stretch = p and p.kind == "layout" and p.stretch > 0 %}
         {%- set fill = l.kind in ["vertical", "custom"] and align == "Fill" and c.type not in natural %}
+        {%- set sized = p and p.kind == "layout" and (p.width > 0 or p.height > 0) %}
+        {#- Wunschgröße aus dem Designer: fester Rahmen, das Widget füllt ihn. #}
+        {%- macro own(f) -%}
+        {%- if sized -%}
+        iced::widget::container({{ child(c, true) }}).width({% if p.width > 0 %}iced::Length::Fixed({{ p.width }} as f32){% elif f %}iced::Fill{% else %}iced::Shrink{% endif %}).height({% if p.height > 0 %}iced::Length::Fixed({{ p.height }} as f32){% else %}iced::Shrink{% endif %})
+        {%- else -%}
+        {{ child(c, f) }}
+        {%- endif -%}
+        {%- endmacro %}
         {%- if l.kind == "absolute" and p and p.kind == "absolute" %}
         children.push(
             iced::widget::container(iced::widget::container({{ child(c, true) }}).width({{ p.width }}).height({{ p.height }}))
@@ -516,14 +537,14 @@ impl {{ form.struct }} {
         );
         {%- elif l.kind in ["vertical", "custom"] and align in ["Center", "End"] %}
         children.push(
-            iced::widget::container({{ child(c, false) }})
+            iced::widget::container({{ own(false) }})
                 .width(iced::Fill)
                 .align_x(iced::alignment::Horizontal::{{ "Center" if align == "Center" else "Right" }})
                 .into(),
         );
         {%- elif stretch %}
         children.push(
-            iced::widget::container({{ child(c, fill) }})
+            iced::widget::container({{ own(fill) }})
                 {%- if l.kind == "horizontal" %}
                 .width(iced::Fill)
                 {%- else %}
@@ -531,6 +552,8 @@ impl {{ form.struct }} {
                 {%- endif %}
                 .into(),
         );
+        {%- elif sized %}
+        children.push({{ own(fill) }}.into());
         {%- else %}
         children.push({{ child(c, fill) }});
         {%- endif %}

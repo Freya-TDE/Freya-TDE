@@ -76,6 +76,69 @@ fn place_select_and_delete() {
 }
 
 #[test]
+fn palette_types_are_dropped_and_widgets_resized_in_layouts() {
+    let mut s = session();
+    // Aus der Palette gezogen: wie ein Klick mit gewähltem Typ.
+    let at = empty_spot(&s);
+    assert_eq!(
+        s.palette_drop_preview(&builtin::button(), at),
+        Some((name("window"), 0))
+    );
+    assert!(s.drop_type(builtin::button(), at).unwrap().model);
+    assert_eq!(s.selection(), [name("button1")]);
+    s.drop_type(builtin::label(), empty_spot(&s)).unwrap();
+    assert_eq!(
+        s.form()
+            .unwrap()
+            .widget(&name("window"))
+            .unwrap()
+            .children
+            .len(),
+        2
+    );
+
+    // Anfasser rechts unten am Knopf (im senkrechten Layout): Wunschgröße,
+    // Fill wird zu Start, damit die Breite sichtbar ist.
+    s.select(vec![name("button1")]);
+    let before = s.layout().unwrap().rect(&name("button1")).unwrap();
+    let corner = Point::new(before.right() - 1, before.bottom() - 1);
+    s.press(corner, false).unwrap();
+    let to = Point::new(corner.x - 100, corner.y + 20);
+    assert!(s.drag(to));
+    assert!(s.resize_preview(to).is_some());
+    assert!(s.release(to).unwrap().model);
+    let placement = s
+        .form()
+        .unwrap()
+        .widget(&name("button1"))
+        .unwrap()
+        .visual
+        .placement
+        .clone();
+    let tdr_core::Placement::Layout { align, size, .. } = placement else {
+        panic!("still in the layout: {placement:?}");
+    };
+    assert_eq!(align, tdr_core::Align::Start);
+    assert_eq!(
+        (size.width, size.height),
+        (before.width - 100, before.height + 20)
+    );
+    let after = s.layout().unwrap().rect(&name("button1")).unwrap();
+    assert_eq!(
+        (after.width, after.height),
+        (before.width - 100, before.height + 20)
+    );
+    // Zurück zur natürlichen Größe (Ausrichtung bleibt Start).
+    assert!(s.natural_size().unwrap().model);
+    let natural = s.layout().unwrap().rect(&name("button1")).unwrap();
+    assert_eq!(natural.height, before.height);
+    assert!(!s.natural_size().unwrap().model, "nothing left to clear");
+    assert!(s.undo());
+    assert!(s.undo());
+    assert_eq!(s.layout().unwrap().rect(&name("button1")).unwrap(), before);
+}
+
+#[test]
 fn drag_reorders_widgets() {
     let mut s = session();
     for type_ref in [builtin::label(), builtin::button()] {

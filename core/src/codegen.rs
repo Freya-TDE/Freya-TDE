@@ -54,7 +54,8 @@
 //! node has `name`, `type` (`"core/Button"`), `type_name` (`"Button"`),
 //! `field` (has a generated field), `props`, `rust` (references as
 //! `self.<name>`), `events`, `children`, `placement`
-//! (`{kind: "layout", stretch, align, cell}` or
+//! (`{kind: "layout", stretch, align, cell, width, height}` – `width`/
+//! `height` the requested size, 0 = natural – or
 //! `{kind: "absolute", x, y, width, height}`) and `layout`
 //! (`{kind, columns, name, spacing, padding}` or none).
 //!
@@ -1960,10 +1961,14 @@ fn placement_data(placement: &Placement) -> JValue {
             stretch,
             align,
             cell,
+            size,
         } => minijinja::context! {
             kind => "layout",
             stretch => stretch,
             align => format!("{align:?}"),
+            // Wunschgröße, 0 = natürliche Größe.
+            width => size.width,
+            height => size.height,
             cell => cell.as_ref().map(|c| minijinja::context! {
                 row => c.row,
                 column => c.column,

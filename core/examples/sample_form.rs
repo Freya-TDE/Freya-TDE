@@ -36,6 +36,7 @@ fn main() -> Result<(), ModelError> {
             stretch: 1,
             align: Align::Fill,
             cell: None,
+            size: Size::default(),
         }),
     )?;
 

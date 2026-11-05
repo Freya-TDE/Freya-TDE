@@ -278,6 +278,43 @@ impl Session {
         done
     }
 
+    /// Back to the natural size: clears the requested size of the selected
+    /// widgets in layouts (stretch and alignment stay).
+    pub fn natural_size(&mut self) -> Result<Changes, CommandError> {
+        let Some(form) = self.form.clone() else {
+            return Ok(Changes::default());
+        };
+        let commands: Vec<Command> = self
+            .selection
+            .iter()
+            .filter_map(|n| {
+                let widget = self.form()?.widget(n)?;
+                match widget.visual.placement.clone() {
+                    Placement::Layout {
+                        stretch,
+                        align,
+                        cell,
+                        size,
+                    } if size != Size::default() => Some(Command::SetPlacement {
+                        form: form.clone(),
+                        element: n.clone(),
+                        placement: Placement::Layout {
+                            stretch,
+                            align,
+                            cell,
+                            size: Size::default(),
+                        },
+                    }),
+                    _ => None,
+                }
+            })
+            .collect();
+        if commands.is_empty() {
+            return Ok(Changes::default());
+        }
+        self.apply(Command::Batch { commands })
+    }
+
     /// Removes the selected elements (the form's window stays).
     pub fn delete_selection(&mut self) -> Result<Changes, CommandError> {
         let Some(form) = self.form.clone() else {
@@ -395,13 +432,10 @@ impl Session {
     }
 
     /// Can `element` be resized with the mouse? The form (its size) and
-    /// widgets at absolute positions; in a layout the layout decides.
+    /// every widget: absolute ones get position and size, ones in a layout
+    /// a requested size (like Delphi's Width/Height).
     fn resizable(&self, element: &ComponentName) -> bool {
-        self.is_root(element)
-            || self
-                .form()
-                .and_then(|f| f.widget(element))
-                .is_some_and(|w| w.visual.placement.is_absolute())
+        self.form().and_then(|f| f.widget(element)).is_some()
     }
 
     /// The rectangle a resize drag to `at` would give (`None` if no resize
@@ -491,13 +525,13 @@ impl Session {
         })
     }
 
-    /// Applies a resize: the form's `size`, or position and size of an
-    /// absolutely placed widget.
+    /// Applies a resize: the form's `size`, position and size of an
+    /// absolutely placed widget, or the requested size of one in a layout.
     fn finish_resize(&mut self, rect: tdr_designer::Rect) -> Result<Changes, CommandError> {
         let Some(press) = self.press.take() else {
             return Ok(Changes::default());
         };
-        let (Some(form), Some((_, old))) = (self.form.clone(), press.resize) else {
+        let (Some(form), Some((handle, old))) = (self.form.clone(), press.resize) else {
             return Ok(Changes::default());
         };
         if rect == old {
@@ -527,12 +561,59 @@ impl Session {
                 }))),
             });
         }
-        let Some(Placement::Absolute { position, .. }) = self
+        let Some(placement) = self
             .form()
             .and_then(|f| f.widget(&press.element))
             .map(|w| w.visual.placement.clone())
         else {
             return Ok(Changes::default());
+        };
+        let position = match placement {
+            Placement::Absolute { position, .. } => position,
+            Placement::Layout {
+                mut stretch,
+                mut align,
+                cell,
+                mut size,
+            } => {
+                use tdr_designer::Handle as H;
+                let horizontal = !matches!(handle, H::Top | H::Bottom);
+                let vertical = !matches!(handle, H::Left | H::Right);
+                if horizontal {
+                    size.width = rect.width;
+                }
+                if vertical {
+                    size.height = rect.height;
+                }
+                // Damit die neue Größe sichtbar wird: Fill und Dehnen der
+                // geänderten Achse aufheben (rückgängig machbar).
+                let parent = self
+                    .form()
+                    .and_then(|f| f.parent_of(&press.element))
+                    .and_then(|p| p.visual.layout.as_ref().map(|l| l.kind.clone()))
+                    .unwrap_or(LayoutKind::Vertical);
+                let (cross, main) = match parent {
+                    LayoutKind::Horizontal => (vertical, horizontal),
+                    LayoutKind::Grid { .. } => (horizontal || vertical, false),
+                    _ => (horizontal, vertical),
+                };
+                if cross && align == tdr_core::Align::Fill {
+                    align = tdr_core::Align::Start;
+                }
+                if main {
+                    stretch = 0;
+                }
+                return self.apply(Command::SetPlacement {
+                    form,
+                    element: press.element,
+                    placement: Placement::Layout {
+                        stretch,
+                        align,
+                        cell,
+                        size,
+                    },
+                });
+            }
         };
         self.apply(Command::SetPlacement {
             form,
@@ -548,6 +629,33 @@ impl Session {
                 },
             },
         })
+    }
+
+    /// A palette type dragged over the design surface: the container and
+    /// index it would land in (visual types only).
+    pub fn palette_drop_preview(
+        &self,
+        type_ref: &TypeRef,
+        at: Point,
+    ) -> Option<(ComponentName, usize)> {
+        let visual = self
+            .doc
+            .registry()
+            .get(type_ref)
+            .is_some_and(|t| t.kind.is_widget());
+        let form = self.form().filter(|_| visual)?;
+        drop_target(form, self.doc.registry(), &self.layout()?, at)
+    }
+
+    /// A palette type dropped onto the design surface (drag and drop):
+    /// placed there like a click with the armed type.
+    pub fn drop_type(&mut self, type_ref: TypeRef, at: Point) -> Result<Changes, CommandError> {
+        self.press = None;
+        self.armed = None;
+        let Some(layout) = self.layout() else {
+            return Ok(Changes::default());
+        };
+        self.place(type_ref, at, &layout)
     }
 
     fn place(

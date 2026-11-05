@@ -7,7 +7,7 @@ fn name(n: &str) -> ComponentName {
     ComponentName::new(n).unwrap()
 }
 
-/// Sets the appearance properties (the generated code must build and run
+/// Sets the appearance properties and a requested size in the layout (the generated code must build and run
 /// with them; the look is checked on screenshots).
 pub fn apply(form: &mut Form, greeting: &str, button: &str) {
     let window = form.widget_mut(&name("window")).unwrap();
@@ -26,6 +26,16 @@ pub fn apply(form: &mut Form, greeting: &str, button: &str) {
     );
     c.set("theme", Value::Enum("Dark".into()));
     let label = form.widget_mut(&name(greeting)).unwrap();
+    // Wunschgröße im Layout (wie die Anfasser im Designer sie setzen).
+    label.visual.placement = Placement::Layout {
+        stretch: 0,
+        align: Align::Start,
+        cell: None,
+        size: Size {
+            width: 260,
+            height: 40,
+        },
+    };
     label.component.set("font_size", 20i64);
     label.component.set("bold", true);
     label.component.set("italic", true);

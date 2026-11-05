@@ -280,7 +280,20 @@ impl Layouter<'_> {
         }
     }
 
+    /// Natural size, replaced per axis by a requested size (`Placement::Layout::size`).
     fn natural(&self, widget: &Widget) -> (i32, i32) {
+        let (w, h) = self.content_size(widget);
+        match widget.visual.placement {
+            Placement::Layout { size, .. } => (
+                if size.width > 0 { size.width } else { w },
+                if size.height > 0 { size.height } else { h },
+            ),
+            Placement::Absolute { .. } => (w, h),
+        }
+    }
+
+    /// Size from content and theme metrics.
+    fn content_size(&self, widget: &Widget) -> (i32, i32) {
         if widget.component.type_ref == builtin::form() {
             let bars = self.theme.title_bar_height + self.menu_bar_height();
             return match self.props.value(widget, "size") {

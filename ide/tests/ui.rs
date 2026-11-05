@@ -262,6 +262,63 @@ fn main() {
         .unwrap();
     println!("test resize ... ok");
 
+    // Aus der Palette ziehen und im Designer ablegen; danach im Layout die
+    // Größe über den Anfasser rechts unten ändern.
+    let drop_at = {
+        let session = ide.session();
+        let window = session
+            .layout()
+            .unwrap()
+            .item(&name("window"))
+            .unwrap()
+            .content
+            .unwrap();
+        tdr_designer::Point::new(window.center().x, window.bottom() - 4)
+    };
+    let before: Vec<_> = ide
+        .session()
+        .form()
+        .unwrap()
+        .widget(&name("window"))
+        .unwrap()
+        .children
+        .iter()
+        .map(|c| c.component.name.clone())
+        .collect();
+    for action in [ruf::DropAction::Motion, ruf::DropAction::Drop] {
+        surface.simulate_drop(ruf::DropEvent {
+            action,
+            x: drop_at.x,
+            y: drop_at.y,
+            text: Some("core/CheckBox".into()),
+        });
+    }
+    let dropped = ide.session().selection().to_vec();
+    assert_eq!(dropped.len(), 1, "{dropped:?}");
+    assert!(!before.contains(&dropped[0]));
+    assert_eq!(
+        ide.session()
+            .form()
+            .unwrap()
+            .widget(&dropped[0])
+            .unwrap()
+            .component
+            .type_ref,
+        builtin::check_box()
+    );
+    let r = ide.session().layout().unwrap().rect(&dropped[0]).unwrap();
+    let corner = tdr_designer::Point::new(r.right() - 1, r.bottom() - 1);
+    let to = tdr_designer::Point::new(corner.x - 60, corner.y + 10);
+    mouse(&surface, MouseAction::Pressed, corner);
+    mouse(&surface, MouseAction::Moved, to);
+    mouse(&surface, MouseAction::Released, to);
+    let after = ide.session().layout().unwrap().rect(&dropped[0]).unwrap();
+    assert_eq!((after.width, after.height), (r.width - 60, r.height + 10));
+    ide.undo();
+    ide.undo();
+    assert!(ide.session().form().unwrap().widget(&dropped[0]).is_none());
+    println!("test palette_drop_and_layout_resize ... ok");
+
     // Befehle als JSON (Skripte, KI).
     let count = ide
         .run_commands(

@@ -91,6 +91,10 @@ fn is_fill(a: &Align) -> bool {
     *a == Align::Fill
 }
 
+fn is_natural(s: &Size) -> bool {
+    *s == Size::default()
+}
+
 fn is_default_visual(v: &Visual) -> bool {
     *v == Visual::default()
 }
@@ -108,6 +112,11 @@ pub enum Placement {
         /// Only for grid layouts.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         cell: Option<GridCell>,
+        /// Requested size like Delphi's Width/Height; replaces the natural
+        /// size per axis (0 = natural). `stretch` and `Align::Fill` may
+        /// still make the widget larger.
+        #[serde(default, skip_serializing_if = "is_natural")]
+        size: Size,
     },
     /// At a fixed position and size (parent with absolute layout).
     Absolute { position: Point, size: Size },
@@ -119,6 +128,7 @@ impl Default for Placement {
             stretch: 0,
             align: Align::Fill,
             cell: None,
+            size: Size::default(),
         }
     }
 }

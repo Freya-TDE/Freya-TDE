@@ -249,6 +249,8 @@ impl MainWindow {
             button.widget().set_tool_tip(&tip);
             let type_ref = item.type_ref.clone();
             button.on_clicked(with0(ide, move |ide| ide.arm(Some(type_ref.clone()))));
+            // Auch ziehen und im Designer ablegen.
+            button.widget().set_drag_text(&item.type_ref.to_string());
             buttons.push((button, item.type_ref.clone()));
         }
         *self.buttons.borrow_mut() = buttons;

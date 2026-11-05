@@ -1,6 +1,7 @@
 //! Designer window: the form on a canvas. Click selects (Ctrl/Shift adds),
-//! a click with an armed palette type places it, dragging reorders or moves
-//! into another container, a double click opens the element's event
+//! a click with an armed palette type places it, so does dropping a palette
+//! button here; dragging reorders or moves into another container, the
+//! handles of the selection resize, a double click opens the element's event
 //! handler, Delete removes, Esc cancels.
 //!
 //! No form or platform selector: a form is opened together with its `.rs`
@@ -170,7 +171,12 @@ pub(super) fn menu_bar() -> MenuBar {
 fn context_menu(kind: Option<ItemKind>) -> Menu {
     let menu = Menu::new();
     match kind {
-        Some(ItemKind::Widget | ItemKind::Component) => menu
+        Some(ItemKind::Widget) => menu
+            .item("designer.delete", "Löschen", Some("Delete"))
+            .item("designer.natural_size", "Natürliche Größe", None)
+            .separator()
+            .item("designer.inspector", "Objektinspektor", None),
+        Some(ItemKind::Component) => menu
             .item("designer.delete", "Löschen", Some("Delete"))
             .separator()
             .item("designer.inspector", "Objektinspektor", None),
@@ -228,6 +234,26 @@ pub fn connect(ide: &Rc<Ide>) {
             }
             (MouseAction::Moved, _) => {
                 let dragging = ide.session.borrow_mut().drag(at);
+                if !dragging {
+                    // Über einem Anfasser zeigt der Mauszeiger die Richtung.
+                    let cursor = {
+                        let session = ide.session();
+                        session
+                            .layout()
+                            .and_then(|l| tdr_designer::hit_test(&l, at, session.selection()))
+                            .and_then(|h| h.handle)
+                            .map_or("", |h| {
+                                use tdr_designer::Handle as H;
+                                match h {
+                                    H::TopLeft | H::BottomRight => "nwse-resize",
+                                    H::TopRight | H::BottomLeft => "nesw-resize",
+                                    H::Left | H::Right => "ew-resize",
+                                    H::Top | H::Bottom => "ns-resize",
+                                }
+                            })
+                    };
+                    ide.designer.canvas.widget().set_mouse_cursor(cursor);
+                }
                 if dragging {
                     let resize = ide.session().resize_preview(at);
                     if resize.is_some() {
@@ -251,6 +277,35 @@ pub fn connect(ide: &Rc<Ide>) {
         }
     }));
 
+    // Aus der Palette gezogen: Einfügemarke zeigen, beim Ablegen platzieren.
+    designer
+        .canvas
+        .widget()
+        .on_drop(with(ide, |ide, e: ruf::DropEvent| {
+            let at = Point::new(e.x, e.y);
+            let type_ref = e
+                .text
+                .as_deref()
+                .and_then(|t| t.parse::<tdr_core::TypeRef>().ok());
+            match e.action {
+                ruf::DropAction::Motion => {
+                    let target = type_ref.and_then(|t| ide.session().palette_drop_preview(&t, at));
+                    ide.designer.draw(ide, target);
+                }
+                ruf::DropAction::Leave => ide.designer.draw(ide, None),
+                ruf::DropAction::Drop => {
+                    let Some(type_ref) = type_ref else {
+                        ide.designer.draw(ide, None);
+                        return;
+                    };
+                    ide.arm(None);
+                    let result = ide.session.borrow_mut().drop_type(type_ref, at);
+                    ide.report(result);
+                    ide.designer.canvas.widget().focus();
+                }
+            }
+        }));
+
     designer
         .canvas
         .on_key(with(ide, |ide, e: KeyEvent| match e.key {
@@ -268,6 +323,7 @@ pub fn connect(ide: &Rc<Ide>) {
         .window
         .on_menu(with(ide, |ide, id: String| match id.as_str() {
             "designer.delete" => ide.delete_selection(),
+            "designer.natural_size" => ide.natural_size(),
             "designer.inspector" => ide.show_window(crate::desktop::window::INSPECTOR),
             "designer.code" => ide.show_code(),
             _ => {}

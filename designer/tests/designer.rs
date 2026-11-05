@@ -208,6 +208,7 @@ fn layout_stacks_children_and_stretches() {
             stretch: 1,
             align: Align::Center,
             cell: None,
+            size: tdr_core::Size::default(),
         },
     })
     .unwrap();

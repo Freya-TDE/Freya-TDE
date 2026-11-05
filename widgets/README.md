@@ -208,6 +208,17 @@ bei Flutter bestimmt der native Runner das Fenster.
 *Limits: see table; iced ignores `enabled` on containers, Slint std widgets have no colour properties,
 Flutter's native runner owns the window.*
 
+## Wunschgröße im Layout / requested size in layouts
+
+Zieht man im Designer am Anfasser eines Widgets in einem Layout, bekommt es eine Wunschgröße (wie Width/Height
+bei Delphi): `Placement::Layout::size`, je Achse, 0 = natürliche Größe; im Template `placement.width` und
+`placement.height`. Fill und Dehnen können das Widget weiter vergrößern.
+*Resizing a widget in a layout sets a requested size per axis (0 = natural); fill and stretch may still enlarge it.*
+
+| GTK 4 | egui | iced | Slint | Flutter |
+|---|---|---|---|---|
+| `set_size_request` (Mindestgröße: kleiner als das Minimum des Widgets geht nicht) | `add_sized` (fehlende Achse: Breite verfügbar, Höhe Standard) | fester `container` (fehlende Achse: natürlich) | `width`/`height` | `SizedBox` (im Raster linksbündig) |
+
 ## Backend-Pack / backend pack
 
 Ein UI-Backend ist ein Ordner `widgets/<backend>/` mit einer `pack.toml` (`kind = "backend"`):

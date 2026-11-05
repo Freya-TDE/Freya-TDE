@@ -150,6 +150,17 @@ GridLayout {
 {%- macro item(c, radios) -%}
 {%- if c.type == "backend:slint/RadioButton" -%}
 {%- if c.name == radios[0].name %}{{ radio_group(radios) }}{% endif -%}
+{%- elif c.placement and c.placement.kind == "layout" and (c.placement.width > 0 or c.placement.height > 0) -%}
+{#- Wunschgröße aus dem Designer. #}
+VerticalLayout {
+    {%- if c.placement.width > 0 %}
+    width: {{ c.placement.width }}px;
+    {%- endif %}
+    {%- if c.placement.height > 0 %}
+    height: {{ c.placement.height }}px;
+    {%- endif %}
+    {{ element(c) }}
+}
 {%- else -%}
 {{ element(c) }}
 {%- endif -%}

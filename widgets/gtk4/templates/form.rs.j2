@@ -54,6 +54,10 @@ impl {{ form.struct }} {
                 {%- elif l.kind == "stack" %}
                 layout.add_child(&child);
                 {%- else %}
+                {%- if p and p.kind == "layout" and (p.width > 0 or p.height > 0) %}
+                // Wunschgröße aus dem Designer (-1 = natürlich).
+                child.set_size_request({{ p.width if p.width > 0 else -1 }}, {{ p.height if p.height > 0 else -1 }});
+                {%- endif %}
                 {%- set align = p.align if p and p.kind == "layout" else "Fill" %}
                 {%- set stretch = "true" if (p.stretch if p and p.kind == "layout" else 0) > 0 else "false" %}
                 {%- if l.kind == "horizontal" %}

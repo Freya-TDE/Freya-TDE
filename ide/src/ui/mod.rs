@@ -1623,6 +1623,12 @@ impl Ide {
         self.report(result);
     }
 
+    /// Selected widgets in layouts back to their natural size.
+    pub fn natural_size(&self) {
+        let result = self.session.borrow_mut().natural_size();
+        self.report(result);
+    }
+
     pub fn add_form(&self, data_module: bool) {
         let prefix = if data_module { "data" } else { "form" };
         let name = {

@@ -185,6 +185,7 @@ fn form() -> Form {
             stretch: 1,
             align: Align::Fill,
             cell: None,
+            size: Size::default(),
         }),
     );
     add(
