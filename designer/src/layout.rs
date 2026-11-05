@@ -6,7 +6,8 @@
 //! good enough for designing – the real look comes from the debug run.
 //!
 //! Non-visual components (pools, timers …) have no position in the model;
-//! they appear as icons in a tray below the form.
+//! they appear as icons in a separate component bar ([`tray`]); a data
+//! module shows them on its surface.
 
 use serde::Serialize;
 use tdr_core::{ComponentName, Form, LayoutKind, Placement, TypeRegistry, Value, Widget, builtin};
@@ -702,18 +703,42 @@ pub fn layout(form: &Form, registry: &TypeRegistry, theme: &Theme) -> FormLayout
         bottom = margin + h + margin;
     }
 
-    // Tray of non-visual components, wrapping at the surface width.
+    // Ein Datenmodul (ohne Fenster) zeigt seine Komponenten auf der Fläche;
+    // bei Formularen stehen sie in einer eigenen Leiste (`tray`).
+    if form.root.is_some() {
+        return FormLayout {
+            width,
+            height: bottom,
+            items: layouter.items,
+        };
+    }
+    let items = tray_items(form, theme, margin, bottom, Some(width - margin));
+    let height = items
+        .iter()
+        .map(|i| i.rect.bottom() + margin)
+        .max()
+        .unwrap_or(bottom);
+    layouter.items.extend(items);
+    FormLayout {
+        width,
+        height,
+        items: layouter.items,
+    }
+}
+
+/// The non-visual components of `form` as icons in one row from `(x, y)`,
+/// wrapping before `wrap` if given.
+fn tray_items(form: &Form, theme: &Theme, x0: i32, y0: i32, wrap: Option<i32>) -> Vec<LayoutItem> {
     let tray_item = |name: &str| (theme.text_width(name) + 16).max(theme.icon_size + 32);
-    let mut x = margin;
-    let mut y = bottom;
-    let mut rows_used = false;
+    let (mut x, mut y) = (x0, y0);
+    let mut items = Vec::new();
     for component in &form.components {
         let w = tray_item(component.name.as_str());
-        if x + w > width - margin && x > margin {
-            x = margin;
+        if wrap.is_some_and(|wrap| x + w > wrap) && x > x0 {
+            x = x0;
             y += theme.tray_height;
         }
-        layouter.items.push(LayoutItem {
+        items.push(LayoutItem {
             name: component.name.clone(),
             kind: ItemKind::Component,
             rect: Rect::new(x, y, w, theme.tray_height),
@@ -722,17 +747,26 @@ pub fn layout(form: &Form, registry: &TypeRegistry, theme: &Theme) -> FormLayout
             content: None,
         });
         x += w + theme.spacing;
-        rows_used = true;
     }
-    let height = if rows_used {
-        y + theme.tray_height + margin
-    } else {
-        bottom
-    };
+    items
+}
+
+/// The component bar of a form (Delphi's non-visual components): its
+/// non-visual components as icons in one row, in their own coordinates. A
+/// data module has none (its components are on the surface, see [`layout`]).
+pub fn tray(form: &Form, theme: &Theme) -> FormLayout {
+    if form.root.is_none() {
+        return FormLayout {
+            width: 0,
+            height: 0,
+            items: Vec::new(),
+        };
+    }
+    let items = tray_items(form, theme, theme.spacing, 0, None);
     FormLayout {
-        width,
-        height,
-        items: layouter.items,
+        width: items.last().map_or(0, |i| i.rect.right() + theme.spacing),
+        height: theme.tray_height,
+        items,
     }
 }
 

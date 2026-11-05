@@ -340,6 +340,44 @@ fn main() {
     assert!(ide.session().form().unwrap().widget(&dropped[0]).is_none());
     println!("test palette_drop_and_layout_resize ... ok");
 
+    // Nicht-visuelle Komponente: auf die Komponentenleiste gezogen, dort
+    // per Klick gewählt (Objektinspektor), nicht auf der Formularfläche.
+    let bar = ide.component_bar();
+    bar.simulate_drop(ruf::DropEvent {
+        action: ruf::DropAction::Drop,
+        x: 10,
+        y: 10,
+        text: Some("pack:ws/Client".into()),
+    });
+    let socket = ide.session().selection().to_vec();
+    assert_eq!(socket.len(), 1, "{socket:?}");
+    assert!(
+        ide.session()
+            .form()
+            .unwrap()
+            .component(&socket[0])
+            .is_some()
+    );
+    assert!(ide.session().layout().unwrap().item(&socket[0]).is_none());
+    let icon = ide.session().tray().unwrap().rect(&socket[0]).unwrap();
+    ide.select(Vec::new());
+    mouse(&bar, MouseAction::Pressed, icon.center());
+    mouse(&bar, MouseAction::Released, icon.center());
+    assert_eq!(ide.session().selection(), socket.as_slice());
+    pump_until(1, || false);
+    if let Some(dir) = std::env::var_os("FREYA_TDE_SHOT") {
+        ide.screenshots(&std::path::Path::new(&dir).join("component-bar"));
+    }
+    ide.undo();
+    assert!(
+        ide.session()
+            .form()
+            .unwrap()
+            .component(&socket[0])
+            .is_none()
+    );
+    println!("test component_bar ... ok");
+
     // Befehle als JSON (Skripte, KI).
     let count = ide
         .run_commands(

@@ -4,9 +4,16 @@
 //! handles of the selection resize, a double click opens the element's event
 //! handler, Delete removes, Esc cancels.
 //!
+//! Non-visual components (database, WebSocket, timer …) are not drawn on
+//! the form: they sit as icons in the component bar at the bottom of the
+//! window (like Delphi's non-visual components); a click selects one for
+//! the object inspector, a double click opens its event handler. A data
+//! module has no bar – its components are its surface.
+//!
 //! No form or platform selector: a form is opened together with its `.rs`
 //! file, and the look is the project's target system.
 
+use std::cell::Cell;
 use std::rc::Rc;
 
 use rncl::prelude::*;
@@ -16,10 +23,18 @@ use tdr_designer::{ItemKind, Point};
 
 use super::{Ide, convert, with};
 
+/// Height of the component bar.
+const BAR: i32 = 72;
+
 pub struct DesignerWindow {
     pub window: RnclWindow,
     scroll: RnclScrollView,
     canvas: RnclCanvas,
+    /// The component bar (non-visual components of a form).
+    tray_scroll: RnclScrollView,
+    tray: RnclCanvas,
+    /// Is the bar shown (forms yes, data modules no)?
+    tray_shown: Cell<bool>,
 }
 
 impl DesignerWindow {
@@ -28,15 +43,87 @@ impl DesignerWindow {
         window.set_menu_bar(menu_bar());
         let scroll = RnclScrollView::new(&window);
         let canvas = RnclCanvas::new(scroll.content());
+        let tray_scroll = RnclScrollView::new(&window);
+        let tray = RnclCanvas::new(tray_scroll.content());
+        tray.widget().set_tool_tip(
+            "Nicht-visuelle Komponenten: klicken zum Bearbeiten im Objektinspektor, \
+             Doppelklick öffnet den Handler",
+        );
         Self {
             window,
             scroll,
             canvas,
+            tray_scroll,
+            tray,
+            tray_shown: Cell::new(true),
         }
     }
 
     fn layout(&self, width: i32, height: i32) {
-        self.scroll.set_geometry(0, 0, width, height);
+        let bar = if self.tray_shown.get() { BAR } else { 0 };
+        self.scroll.set_geometry(0, 0, width, (height - bar).max(0));
+        self.tray_scroll
+            .set_geometry(0, (height - bar).max(0), width, bar);
+        self.tray_scroll.widget().set_visible(bar > 0);
+    }
+
+    pub fn tray_widget(&self) -> Widget {
+        self.tray.widget().clone()
+    }
+
+    /// Redraws the component bar (shown for forms, hidden for data modules).
+    fn draw_tray(&self, ide: &Ide) {
+        let session = ide.session();
+        let shown = session.form().is_some_and(|f| f.root.is_some());
+        if shown != self.tray_shown.get() {
+            self.tray_shown.set(shown);
+            let size = self.window.size();
+            self.layout(size.width, size.height);
+        }
+        let Some((tray, primitives)) = session.tray_picture().filter(|_| shown) else {
+            self.tray.set_shapes(Vec::new());
+            return;
+        };
+        let theme = session.theme();
+        let rgb = |c: tdr_core::Color| ruf::Color::rgb(c.r, c.g, c.b);
+        let visible = self.tray_scroll.size();
+        let width = tray.width.max(visible.width - 4);
+        let mut shapes = vec![
+            Shape::Rect {
+                rect: ruf::Rect::new(0, 0, width, BAR),
+                fill: Some(rgb(theme.colors.tray)),
+                stroke: None,
+                radius: 0,
+                dashed: false,
+            },
+            Shape::Line {
+                from: ruf::Point::new(0, 0),
+                to: ruf::Point::new(width, 0),
+                color: rgb(theme.colors.selection),
+            },
+        ];
+        if tray.items.is_empty() {
+            shapes.push(Shape::Text {
+                x: 12,
+                y: BAR / 2 - 9,
+                text: "Nicht-visuelle Komponenten (Datenbank, WebSocket, Timer …) erscheinen hier"
+                    .to_owned(),
+                color: rgb(theme.colors.text),
+                size: 13,
+                bold: false,
+                italic: true,
+                family: None,
+            });
+        }
+        let project = session.project_dir();
+        shapes.extend(convert::shapes(
+            &primitives,
+            theme.colors.tray,
+            project.as_deref(),
+        ));
+        self.tray.set_geometry(0, 0, width, BAR - 4);
+        self.tray_scroll.set_content_size(tray.width, BAR - 4);
+        self.tray.set_shapes(shapes);
     }
 
     pub fn canvas_widget(&self) -> Widget {
@@ -104,6 +191,8 @@ impl DesignerWindow {
         self.canvas.set_geometry(0, 0, w, h);
         self.scroll.set_content_size(layout.width, layout.height);
         self.canvas.set_shapes(shapes);
+        std::mem::drop(session);
+        self.draw_tray(ide);
     }
 
     pub fn refresh(&self, ide: &Ide) {
@@ -304,6 +393,72 @@ pub fn connect(ide: &Rc<Ide>) {
                     ide.designer.canvas.widget().focus();
                 }
             }
+        }));
+
+    // Komponentenleiste: wählen, Doppelklick zum Handler, Kontextmenü,
+    // nicht-visuelle Typen aus der Palette ablegen.
+    designer.tray.on_mouse(with(ide, |ide, e: MouseEvent| {
+        let at = Point::new(e.x, e.y);
+        match (e.action, e.button) {
+            (MouseAction::Pressed, 1) => {
+                let add = e.modifiers.ctrl || e.modifiers.shift;
+                ide.arm(None);
+                let changes = ide.session.borrow_mut().press_tray(at, add);
+                ide.report(Ok(changes));
+            }
+            (MouseAction::DoubleClicked, 1) => {
+                let element = ide.session().single_selection().map(|(n, _)| n.clone());
+                if let Some(element) = element {
+                    ide.open_handler(&element, None);
+                }
+            }
+            (MouseAction::Pressed, 3) => {
+                let changes = ide.session.borrow_mut().press_tray(at, false);
+                ide.report(Ok(changes));
+                let kind = ide.session().single_selection().map(|(_, k)| k);
+                ide.designer
+                    .tray
+                    .widget()
+                    .popup_menu(&context_menu(kind), e.x, e.y);
+            }
+            _ => {}
+        }
+    }));
+    designer
+        .tray
+        .widget()
+        .on_drop(with(ide, |ide, e: ruf::DropEvent| {
+            if e.action != ruf::DropAction::Drop {
+                return;
+            }
+            let Some(type_ref) = e
+                .text
+                .as_deref()
+                .and_then(|t| t.parse::<tdr_core::TypeRef>().ok())
+            else {
+                return;
+            };
+            let non_visual = ide
+                .session()
+                .document()
+                .registry()
+                .get(&type_ref)
+                .is_some_and(|t| !t.kind.is_widget());
+            if non_visual {
+                ide.arm(None);
+                let result = ide
+                    .session
+                    .borrow_mut()
+                    .drop_type(type_ref, Point::new(0, 0));
+                ide.report(result);
+            }
+        }));
+    designer
+        .tray
+        .on_key(with(ide, |ide, e: KeyEvent| match e.key {
+            Key::Delete | Key::Backspace => ide.delete_selection(),
+            Key::Escape => ide.select(Vec::new()),
+            _ => {}
         }));
 
     designer

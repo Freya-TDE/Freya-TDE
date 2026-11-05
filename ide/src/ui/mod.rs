@@ -471,6 +471,11 @@ impl Ide {
         self.designer.canvas_widget()
     }
 
+    /// The designer's component bar (non-visual components; automation).
+    pub fn component_bar(&self) -> Widget {
+        self.designer.tray_widget()
+    }
+
     /// The file in the front tab of the code editor (automation).
     pub fn code_file(&self) -> Option<PathBuf> {
         self.code.current_path()

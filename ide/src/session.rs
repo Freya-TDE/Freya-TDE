@@ -390,6 +390,50 @@ impl Session {
         Some((layout, primitives))
     }
 
+    /// The component bar of the current form (its non-visual components);
+    /// empty for a data module, whose components are on the surface.
+    pub fn tray(&self) -> Option<FormLayout> {
+        Some(tdr_designer::tray(self.form()?, &self.theme))
+    }
+
+    /// What the component bar shows: icons, names and the selection.
+    pub fn tray_picture(&self) -> Option<(FormLayout, Vec<Primitive>)> {
+        let form = self.form()?;
+        let tray = tdr_designer::tray(form, &self.theme);
+        let mut primitives = render(form, &tray, self.doc.registry(), &self.theme);
+        primitives.extend(render_selection(&tray, &self.selection, &self.theme));
+        Some((tray, primitives))
+    }
+
+    /// Mouse pressed on the component bar: selects the component there
+    /// (Ctrl/Shift adds or removes), an empty spot clears the selection.
+    pub fn press_tray(&mut self, at: Point, add_to_selection: bool) -> Changes {
+        self.press = None;
+        self.armed = None;
+        let hit = self
+            .tray()
+            .and_then(|tray| hit_test(&tray, at, &[]))
+            .map(|h| h.element);
+        let before = self.selection.clone();
+        match (hit, add_to_selection) {
+            (Some(name), true) => {
+                if let Some(i) = self.selection.iter().position(|n| n == &name) {
+                    self.selection.remove(i);
+                } else {
+                    self.selection.push(name);
+                }
+            }
+            (Some(name), false) => self.selection = vec![name],
+            (None, true) => {}
+            (None, false) => self.selection.clear(),
+        }
+        if self.selection == before {
+            Changes::default()
+        } else {
+            Changes::selection()
+        }
+    }
+
     /// Mouse pressed on the design surface.
     pub fn press(&mut self, at: Point, add_to_selection: bool) -> Result<Changes, CommandError> {
         self.press = None;
@@ -883,7 +927,11 @@ impl Session {
         let [name] = self.selection.as_slice() else {
             return None;
         };
-        let kind = self.layout()?.item(name)?.kind;
+        let kind = match self.layout()?.item(name) {
+            Some(item) => item.kind,
+            // In der Komponentenleiste.
+            None => self.tray()?.item(name)?.kind,
+        };
         Some((name, kind))
     }
 

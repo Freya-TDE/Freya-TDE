@@ -21,7 +21,7 @@ pub mod layout;
 pub mod theme;
 
 pub use geometry::{Point, Rect};
-pub use layout::{FormLayout, ItemKind, LayoutItem, layout};
+pub use layout::{FormLayout, ItemKind, LayoutItem, layout, tray};
 pub use theme::{Colors, Theme, WidgetMetrics};
 pub mod hit;
 pub mod render;

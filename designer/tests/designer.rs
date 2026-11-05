@@ -324,15 +324,42 @@ fn tray_palette_and_inspector() {
 
     let theme = Theme::for_platform(&Platform::Linux);
     let form = doc.form(&name("main")).unwrap();
-    let layout = layout(form, doc.registry(), &theme);
-    let pool = layout.item(&name("pool1")).unwrap();
+    // Nicht auf der Formularfläche, sondern in der eigenen Komponentenleiste.
+    let surface = layout(form, doc.registry(), &theme);
+    assert!(surface.item(&name("pool1")).is_none());
+    let bar = tray(form, &theme);
+    let pool = bar.item(&name("pool1")).unwrap();
     assert_eq!(pool.kind, ItemKind::Component);
-    assert!(pool.rect.y > layout.rect(&name("window")).unwrap().bottom());
+    assert_eq!((pool.rect.y, bar.height), (0, theme.tray_height));
     assert!(
-        render(form, &layout, doc.registry(), &theme)
+        render(form, &bar, doc.registry(), &theme)
             .iter()
             .any(|p| matches!(p, Primitive::Icon { name, .. } if name == "database"))
     );
+    assert_eq!(
+        hit_test(&bar, pool.rect.center(), &[]).map(|h| h.element),
+        Some(name("pool1"))
+    );
+    // Ein Datenmodul zeigt seine Komponenten auf der Fläche.
+    doc.apply(Command::AddForm {
+        name: name("data"),
+        data_module: true,
+    })
+    .unwrap();
+    doc.apply(Command::AddComponent {
+        form: name("data"),
+        type_ref: tdr_core::TypeRef::pack("sqlx", "Pool"),
+        name: None,
+    })
+    .unwrap();
+    let module = doc.form(&name("data")).unwrap();
+    assert!(
+        layout(module, doc.registry(), &theme)
+            .item(&name("pool1"))
+            .is_some()
+    );
+    assert!(tray(module, &theme).items.is_empty());
+    let form = doc.form(&name("main")).unwrap();
 
     let items = palette(doc.registry(), "plain");
     assert!(items.iter().all(|i| i.type_ref != builtin::form()));
