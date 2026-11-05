@@ -416,12 +416,31 @@ impl {{ form.struct }} {
             })
             .show(ui, |ui| {
                 ui.spacing_mut().item_spacing = egui::vec2({{ l.spacing }} as f32, {{ l.spacing }} as f32);
+            {%- set pct = namespace(any=false) %}
+            {%- for c in kids if c.placement and c.placement.kind == "layout" and (c.placement.width_percent > 0 or c.placement.height_percent > 0) %}{% set pct.any = true %}{% endfor %}
+            {%- if pct.any %}
+                // Inhalt des Containers: Bezug für Größen in Prozent.
+                let full = ui.available_size();
+            {%- endif %}
             {%- if l.kind == "absolute" %}
-                // Absolut: Fläche so groß wie das äußerste Kind.
+            {%- set grow = namespace(x=false, y=false, area="(0, 0)") %}
+            {%- for c in kids if c.placement and c.placement.kind == "absolute" %}
+            {%- set a = c.placement.anchors %}
+            {%- if a.right or not a.left %}{% set grow.x = true %}{% endif %}
+            {%- if a.bottom or not a.top %}{% set grow.y = true %}{% endif %}
+            {%- set grow.area = "(" ~ c.placement.area.width ~ ", " ~ c.placement.area.height ~ ")" %}
+            {%- endfor %}
+                // Absolut: Fläche so groß wie das äußerste Kind; mit Ankern
+                // rechts bzw. unten so groß wie der verfügbare Platz.
                 let extent = [{% for c in kids %}{% set p = c.placement %}{% if p and p.kind == "absolute" %}({{ p.x + p.width }}, {{ p.y + p.height }}), {% endif %}{% endfor %}(0, 0)]
                     .iter()
                     .fold((0, 0), |a, b| (a.0.max(b.0), a.1.max(b.1)));
-                let (area, _) = ui.allocate_exact_size(egui::vec2(extent.0 as f32, extent.1 as f32), egui::Sense::hover());
+                let size = egui::vec2(
+                    {% if grow.x %}ui.available_width().max(extent.0 as f32){% else %}extent.0 as f32{% endif %},
+                    {% if grow.y %}ui.available_height().max(extent.1 as f32){% else %}extent.1 as f32{% endif %},
+                );
+                let (area, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+                let design: (i32, i32) = {{ grow.area }};
             {%- elif l.kind == "horizontal" %}
                 ui.horizontal(|ui| {
             {%- elif l.kind == "grid" %}
@@ -435,14 +454,22 @@ impl {{ form.struct }} {
             {%- for c in kids if l.kind != "stack" or loop.first %}
                 {%- set p = c.placement %}
                 {%- set align = p.align if p and p.kind == "layout" else "Fill" %}
+                {%- if p and p.kind == "layout" and (p.width_percent > 0 or p.height_percent > 0) and align == "Fill" %}{% set align = "Start" %}{% endif %}
                 {%- set item = container(c) if c.type in containers else widget(c, l.kind == "vertical" and align == "Fill" and c.type not in natural) %}
                 {%- if c.type not in containers and (c.props.foreground.a > 0 or c.props.background.a > 0 or c.props.font_size > 0) %}
                 {%- set item = "crate::app::styled(" ~ color(c.props.foreground) ~ ", " ~ color(c.props.background) ~ ", " ~ (("Some(" ~ c.props.font_size ~ " as f32)") if c.props.font_size > 0 else "None") ~ ", " ~ item ~ ")" %}
                 {%- endif %}
                     if self.{{ c.name }}.visible {
                     {%- if l.kind == "absolute" and p and p.kind == "absolute" %}
-                        let rect = egui::Rect::from_min_size(area.min + egui::vec2({{ p.x }} as f32, {{ p.y }} as f32), egui::vec2({{ p.width }} as f32, {{ p.height }} as f32));
+                        let rect = crate::app::anchored(area, design, [{{ p.x }}, {{ p.y }}, {{ p.width }}, {{ p.height }}], [{{ p.anchors.left | lower }}, {{ p.anchors.top | lower }}, {{ p.anchors.right | lower }}, {{ p.anchors.bottom | lower }}]);
                         let response = ui.add_enabled_ui(self.{{ c.name }}.enabled, |ui| ui.put(rect, {{ item | indent(24) }})).inner;
+                    {%- elif p and p.kind == "layout" and (p.width_percent > 0 or p.height_percent > 0) %}
+                        // Prozent vom Inhalt des Containers (fehlende Achse wie bei der Wunschgröße).
+                        let size = egui::vec2(
+                            {% if p.width_percent > 0 %}full.x * {{ p.width_percent }} as f32 / 100.0{% elif p.width > 0 %}{{ p.width }} as f32{% else %}ui.available_width(){% endif %},
+                            {% if p.height_percent > 0 %}full.y * {{ p.height_percent }} as f32 / 100.0{% elif p.height > 0 %}{{ p.height }} as f32{% else %}ui.spacing().interact_size.y{% endif %},
+                        );
+                        let response = ui.add_enabled_ui(self.{{ c.name }}.enabled, |ui| ui.add_sized(size, {{ item | indent(24) }})).inner;
                     {%- elif p and p.kind == "layout" and (p.width > 0 or p.height > 0) %}
                         // Wunschgröße aus dem Designer (fehlende Achse: Fill = verfügbare Breite, sonst Standardhöhe).
                         let size = egui::vec2(

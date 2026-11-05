@@ -529,10 +529,50 @@ impl {{ form.struct }} {
         {{ child(c, f) }}
         {%- endif -%}
         {%- endmacro %}
+        {%- set wp = p.width_percent if p and p.kind == "layout" else 0 %}
+        {%- set hp = p.height_percent if p and p.kind == "layout" else 0 %}
         {%- if l.kind == "absolute" and p and p.kind == "absolute" %}
+        {%- set a = p.anchors %}
+        {#- Anker: Ausrichtung und Innenabstand in einer Ebene des Stapels
+            (links und rechts = wächst mit, nur rechts = wandert mit, keins = mittig). #}
+        {%- set cx = p.x + p.width / 2 - p.area.width / 2 %}
+        {%- set cy = p.y + p.height / 2 - p.area.height / 2 %}
         children.push(
-            iced::widget::container(iced::widget::container({{ child(c, true) }}).width({{ p.width }}).height({{ p.height }}))
-                .padding(iced::Padding { top: {{ p.y }} as f32, right: 0.0, bottom: 0.0, left: {{ p.x }} as f32 })
+            iced::widget::container(
+                iced::widget::container({{ child(c, true) }})
+                    .width({% if a.left and a.right %}iced::Fill{% else %}iced::Length::Fixed({{ p.width }} as f32){% endif %})
+                    .height({% if a.top and a.bottom %}iced::Fill{% else %}iced::Length::Fixed({{ p.height }} as f32){% endif %}),
+            )
+            .width(iced::Fill)
+            .height({% if a.bottom or not a.top %}iced::Fill{% else %}iced::Shrink{% endif %})
+            .align_x(iced::alignment::Horizontal::{% if a.left %}Left{% elif a.right %}Right{% else %}Center{% endif %})
+            .align_y(iced::alignment::Vertical::{% if a.top %}Top{% elif a.bottom %}Bottom{% else %}Center{% endif %})
+            .padding(iced::Padding {
+                top: {% if a.top %}{{ p.y }}{% elif a.bottom %}0{% else %}{{ [2 * cy, 0] | max }}{% endif %} as f32,
+                right: {% if a.right %}{{ p.margin_right }}{% elif a.left %}0{% else %}{{ [-2 * cx, 0] | max }}{% endif %} as f32,
+                bottom: {% if a.bottom %}{{ p.margin_bottom }}{% elif a.top %}0{% else %}{{ [-2 * cy, 0] | max }}{% endif %} as f32,
+                left: {% if a.left %}{{ p.x }}{% elif a.right %}0{% else %}{{ [2 * cx, 0] | max }}{% endif %} as f32,
+            })
+            .into(),
+        );
+        {%- elif (wp > 0 or hp > 0) and l.kind in ["vertical", "custom", "horizontal"] %}
+        {%- set row_layout = l.kind == "horizontal" %}
+        {%- set cross = hp if row_layout else wp %}
+        {%- set main = wp if row_layout else hp %}
+        {#- Prozent: quer zum Layout ein Anteil der Breite bzw. Höhe (FillPortion
+            neben einem Leerraum), in Layout-Richtung ein Anteil am freien Platz. #}
+        {%- set inner = "iced::widget::container(" ~ child(c, true) ~ ")" %}
+        {%- if cross > 0 and cross < 100 %}
+        {%- if row_layout %}
+        {%- set inner = "iced::widget::column(vec![iced::widget::container(" ~ child(c, true) ~ ").height(iced::FillPortion(" ~ cross ~ ")).into(), iced::widget::space().height(iced::FillPortion(" ~ (100 - cross) ~ ")).into()])" %}
+        {%- else %}
+        {%- set inner = "iced::widget::row(vec![iced::widget::container(" ~ child(c, true) ~ ").width(iced::FillPortion(" ~ cross ~ ")).into(), iced::widget::space().width(iced::FillPortion(" ~ (100 - cross) ~ ")).into()])" %}
+        {%- endif %}
+        {%- endif %}
+        children.push(
+            iced::widget::container({{ inner }})
+                .width({% if row_layout and main > 0 %}iced::FillPortion({{ main }}){% elif not row_layout %}iced::Fill{% else %}iced::Shrink{% endif %})
+                .height({% if not row_layout and main > 0 %}iced::FillPortion({{ main }}){% elif row_layout %}iced::Fill{% else %}iced::Shrink{% endif %})
                 .into(),
         );
         {%- elif l.kind in ["vertical", "custom"] and align in ["Center", "End"] %}
@@ -558,6 +598,14 @@ impl {{ form.struct }} {
         children.push({{ child(c, fill) }});
         {%- endif %}
     {%- endfor %}
+    {%- set total = namespace(main=0) %}
+    {%- for c in kids if c.placement and c.placement.kind == "layout" %}
+    {%- set total.main = total.main + (c.placement.width_percent if l.kind == "horizontal" else c.placement.height_percent) %}
+    {%- endfor %}
+    {%- if l.kind in ["vertical", "custom", "horizontal"] and total.main > 0 and total.main < 100 %}
+        // Rest des Platzes neben den Größen in Prozent.
+        children.push(iced::widget::space().{{ "width" if l.kind == "horizontal" else "height" }}(iced::FillPortion({{ 100 - total.main }})).into());
+    {%- endif %}
     {%- endif %}
     {%- if l.kind == "horizontal" %}
         let inner: iced::Element<'_, Message> = iced::widget::row(children)
@@ -566,9 +614,22 @@ impl {{ form.struct }} {
             .align_y(iced::alignment::Vertical::Center)
             .into();
     {%- elif l.kind == "absolute" %}
-        let inner: iced::Element<'_, Message> = iced::widget::container(iced::widget::stack(children))
-            .padding({{ padding(l.padding) }})
-            .into();
+        {%- set ext = namespace(w=0, h=0, grow_x=false, grow_y=false) %}
+        {%- for c in kids if c.placement and c.placement.kind == "absolute" %}
+        {%- set ext.w = [ext.w, c.placement.x + c.placement.width] | max %}
+        {%- set ext.h = [ext.h, c.placement.y + c.placement.height] | max %}
+        {%- if c.placement.anchors.right or not c.placement.anchors.left %}{% set ext.grow_x = true %}{% endif %}
+        {%- if c.placement.anchors.bottom or not c.placement.anchors.top %}{% set ext.grow_y = true %}{% endif %}
+        {%- endfor %}
+        // Unterste Ebene: die Ausdehnung der Kinder (Mindestgröße).
+        children.insert(0, iced::widget::space().width({{ ext.w }}).height({{ ext.h }}).into());
+        let inner: iced::Element<'_, Message> = iced::widget::container(
+            iced::widget::stack(children)
+                .width({% if ext.grow_x %}iced::Fill{% else %}iced::Shrink{% endif %})
+                .height({% if ext.grow_y %}iced::Fill{% else %}iced::Shrink{% endif %}),
+        )
+        .padding({{ padding(l.padding) }})
+        .into();
     {%- else %}
         let inner: iced::Element<'_, Message> = iced::widget::column(children)
             .spacing({{ l.spacing }})

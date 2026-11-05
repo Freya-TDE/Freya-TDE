@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use tdr_core::codegen::{self, Generation};
 use tdr_core::{
     ComponentName, Form, HandlerName, LayoutKind, Placement, Platform, ProjectFile, Size, TypeRef,
-    TypeRegistry,
+    TypeRegistry, Widget,
 };
 use tdr_designer::layout::drop_target;
 use tdr_designer::{
@@ -278,6 +278,38 @@ impl Session {
         done
     }
 
+    /// The inspector's layout rows of `element` on the current form
+    /// (placement in the parent, layout of a container's children).
+    pub fn layout_rows(&self, element: &ComponentName) -> Vec<tdr_designer::PropertyRow> {
+        let Some(form) = self.form() else {
+            return Vec::new();
+        };
+        let absolute = self
+            .doc
+            .registry()
+            .backend(&form.backend)
+            .is_none_or(|b| b.absolute_positioning);
+        tdr_designer::layout_rows(form, element, absolute)
+    }
+
+    /// Sets the layout row `name` (`placement.…`, `layout.…`) of `element`;
+    /// `None` = default. Errors as text (unknown row, invalid value) or from
+    /// the command.
+    pub fn set_layout_row(
+        &mut self,
+        element: &ComponentName,
+        name: &str,
+        value: Option<tdr_core::Value>,
+    ) -> Result<Changes, String> {
+        let Some(form) = self.form() else {
+            return Ok(Changes::default());
+        };
+        let command =
+            tdr_designer::layout_command(form, element, name, value, self.layout().as_ref())
+                .map_err(|e| e.to_string())?;
+        self.apply(command).map_err(|e| e.to_string())
+    }
+
     /// Back to the natural size: clears the requested size of the selected
     /// widgets in layouts (stretch and alignment stay).
     pub fn natural_size(&mut self) -> Result<Changes, CommandError> {
@@ -295,16 +327,20 @@ impl Session {
                         align,
                         cell,
                         size,
-                    } if size != Size::default() => Some(Command::SetPlacement {
-                        form: form.clone(),
-                        element: n.clone(),
-                        placement: Placement::Layout {
-                            stretch,
-                            align,
-                            cell,
-                            size: Size::default(),
-                        },
-                    }),
+                        percent,
+                    } if size != Size::default() || percent != Size::default() => {
+                        Some(Command::SetPlacement {
+                            form: form.clone(),
+                            element: n.clone(),
+                            placement: Placement::Layout {
+                                stretch,
+                                align,
+                                cell,
+                                size: Size::default(),
+                                percent: Size::default(),
+                            },
+                        })
+                    }
                     _ => None,
                 }
             })
@@ -507,6 +543,30 @@ impl Session {
             // The window itself or a tray component: nothing to move.
             return Ok(Changes::default());
         };
+        // Absolute layout: the widget goes where it was dropped.
+        if let Some(placement) = self.dropped_placement(&press, &parent, at) {
+            let same = current.component.name == parent;
+            let set = Command::SetPlacement {
+                form: form.clone(),
+                element: press.element.clone(),
+                placement,
+            };
+            return self.apply(if same {
+                set
+            } else {
+                Command::Batch {
+                    commands: vec![
+                        Command::Move {
+                            form,
+                            element: press.element,
+                            parent,
+                            index,
+                        },
+                        set,
+                    ],
+                }
+            });
+        }
         // Moving down within the same container: the old slot disappears.
         if current.component.name == parent
             && let Some(old) = current
@@ -525,8 +585,69 @@ impl Session {
         })
     }
 
+    /// Placement of a widget dragged into `parent` and dropped at `at`: in an
+    /// absolute layout at the drop position, out of one back into the
+    /// parent's layout; `None` = placement stays.
+    fn dropped_placement(
+        &self,
+        press: &Press,
+        parent: &ComponentName,
+        at: Point,
+    ) -> Option<Placement> {
+        let form = self.form()?;
+        let widget = form.widget(&press.element)?;
+        let into_absolute = form
+            .widget(parent)?
+            .visual
+            .layout
+            .as_ref()
+            .is_some_and(|l| l.kind == LayoutKind::Absolute);
+        let same = form.parent_of(&press.element)?.component.name == *parent;
+        match (widget.visual.placement.clone(), into_absolute) {
+            (
+                Placement::Absolute {
+                    position,
+                    size,
+                    anchors,
+                },
+                true,
+            ) if same => Some(Placement::Absolute {
+                position: tdr_core::Point {
+                    x: position.x + at.x - press.at.x,
+                    y: position.y + at.y - press.at.y,
+                },
+                size,
+                anchors,
+            }),
+            (placement, true) => {
+                let layout = self.layout()?;
+                let content = layout.item(parent)?.content?;
+                let shown = layout.rect(&press.element)?;
+                let size = match placement {
+                    Placement::Absolute { size, .. } => size,
+                    Placement::Layout { .. } => Size {
+                        width: shown.width,
+                        height: shown.height,
+                    },
+                };
+                Some(Placement::Absolute {
+                    position: tdr_core::Point {
+                        x: shown.x + at.x - press.at.x - content.x,
+                        y: shown.y + at.y - press.at.y - content.y,
+                    },
+                    size,
+                    anchors: tdr_core::Anchors::TOP_LEFT,
+                })
+            }
+            (Placement::Absolute { .. }, false) => Some(Placement::default()),
+            (Placement::Layout { .. }, false) => None,
+        }
+    }
+
     /// Applies a resize: the form's `size`, position and size of an
-    /// absolutely placed widget, or the requested size of one in a layout.
+    /// absolutely placed widget, or the requested size (pixels or percent)
+    /// of one in a layout. Anchored children of a resized container follow
+    /// like in Delphi (one undo step).
     fn finish_resize(&mut self, rect: tdr_designer::Rect) -> Result<Changes, CommandError> {
         let Some(press) = self.press.take() else {
             return Ok(Changes::default());
@@ -537,98 +658,142 @@ impl Session {
         if rect == old {
             return Ok(Changes::default());
         }
-        if self.is_root(&press.element) {
-            // Titel- und Menüleiste gehören nicht zur Formulargröße.
-            let size = self
-                .form()
-                .and_then(|f| f.widget(&press.element))
-                .and_then(|w| match w.component.get("size").map(|v| &v.value) {
-                    Some(tdr_core::Value::Size(s)) => Some(*s),
-                    _ => None,
-                })
-                .unwrap_or(Size {
-                    width: 640,
-                    height: 480,
-                });
-            let chrome = old.height - size.height;
-            return self.apply(Command::SetProperty {
-                form,
-                element: press.element,
-                property: "size".into(),
-                value: Some(tdr_core::PropertyValue::new(tdr_core::Value::Size(Size {
-                    width: rect.width,
-                    height: (rect.height - chrome).max(MIN_RESIZE),
-                }))),
-            });
-        }
-        let Some(placement) = self
-            .form()
-            .and_then(|f| f.widget(&press.element))
-            .map(|w| w.visual.placement.clone())
-        else {
+        let Some(widget) = self.form().and_then(|f| f.widget(&press.element)).cloned() else {
             return Ok(Changes::default());
         };
-        let position = match placement {
-            Placement::Absolute { position, .. } => position,
-            Placement::Layout {
-                mut stretch,
-                mut align,
-                cell,
-                mut size,
-            } => {
-                use tdr_designer::Handle as H;
-                let horizontal = !matches!(handle, H::Top | H::Bottom);
-                let vertical = !matches!(handle, H::Left | H::Right);
-                if horizontal {
-                    size.width = rect.width;
-                }
-                if vertical {
-                    size.height = rect.height;
-                }
-                // Damit die neue Größe sichtbar wird: Fill und Dehnen der
-                // geänderten Achse aufheben (rückgängig machbar).
-                let parent = self
-                    .form()
-                    .and_then(|f| f.parent_of(&press.element))
-                    .and_then(|p| p.visual.layout.as_ref().map(|l| l.kind.clone()))
-                    .unwrap_or(LayoutKind::Vertical);
-                let (cross, main) = match parent {
-                    LayoutKind::Horizontal => (vertical, horizontal),
-                    LayoutKind::Grid { .. } => (horizontal || vertical, false),
-                    _ => (horizontal, vertical),
-                };
-                if cross && align == tdr_core::Align::Fill {
-                    align = tdr_core::Align::Start;
-                }
-                if main {
-                    stretch = 0;
-                }
-                return self.apply(Command::SetPlacement {
-                    form,
-                    element: press.element,
-                    placement: Placement::Layout {
-                        stretch,
-                        align,
-                        cell,
-                        size,
+        let mut resized = widget.clone();
+        let main = if self.is_root(&press.element) {
+            // Titel- und Menüleiste gehören nicht zur Formulargröße.
+            let size = match widget.component.get("size").map(|v| &v.value) {
+                Some(tdr_core::Value::Size(s)) => *s,
+                _ => Size {
+                    width: 640,
+                    height: 480,
+                },
+            };
+            let chrome = old.height - size.height;
+            let value = tdr_core::Value::Size(Size {
+                width: rect.width,
+                height: (rect.height - chrome).max(MIN_RESIZE),
+            });
+            resized.component.set("size", value.clone());
+            Command::SetProperty {
+                form: form.clone(),
+                element: press.element.clone(),
+                property: "size".into(),
+                value: Some(tdr_core::PropertyValue::new(value)),
+            }
+        } else {
+            let placement = match widget.visual.placement.clone() {
+                Placement::Absolute {
+                    position,
+                    size,
+                    anchors,
+                } => Placement::Absolute {
+                    // Um die Änderung verschieben: die Anzeige kann wegen
+                    // der Verankerung vom Gespeicherten abweichen.
+                    position: tdr_core::Point {
+                        x: position.x + rect.x - old.x,
+                        y: position.y + rect.y - old.y,
                     },
-                });
+                    size: Size {
+                        width: (size.width + rect.width - old.width).max(MIN_RESIZE),
+                        height: (size.height + rect.height - old.height).max(MIN_RESIZE),
+                    },
+                    anchors,
+                },
+                Placement::Layout {
+                    stretch,
+                    align,
+                    cell,
+                    size,
+                    percent,
+                } => self.layout_resize(
+                    &press.element,
+                    handle,
+                    rect,
+                    stretch,
+                    align,
+                    cell,
+                    size,
+                    percent,
+                ),
+            };
+            resized.visual.placement = placement.clone();
+            Command::SetPlacement {
+                form: form.clone(),
+                element: press.element.clone(),
+                placement,
             }
         };
-        self.apply(Command::SetPlacement {
-            form,
-            element: press.element,
-            placement: Placement::Absolute {
-                position: tdr_core::Point {
-                    x: position.x + rect.x - old.x,
-                    y: position.y + rect.y - old.y,
-                },
-                size: Size {
-                    width: rect.width,
-                    height: rect.height,
-                },
-            },
+        let mut commands = vec![main];
+        commands.extend(anchored_children(&form, &widget, &resized));
+        self.apply(match commands.len() {
+            1 => commands.remove(0),
+            _ => Command::Batch { commands },
         })
+    }
+
+    /// New placement of a widget in a layout resized to `rect` with `handle`:
+    /// axes in percent stay in percent (of the parent's content), the others
+    /// get a requested size in pixels.
+    #[allow(clippy::too_many_arguments)]
+    fn layout_resize(
+        &self,
+        element: &ComponentName,
+        handle: tdr_designer::Handle,
+        rect: tdr_designer::Rect,
+        mut stretch: u32,
+        mut align: tdr_core::Align,
+        cell: Option<tdr_core::GridCell>,
+        mut size: Size,
+        mut percent: Size,
+    ) -> Placement {
+        use tdr_designer::Handle as H;
+        let horizontal = !matches!(handle, H::Top | H::Bottom);
+        let vertical = !matches!(handle, H::Left | H::Right);
+        let parent = self.form().and_then(|f| f.parent_of(element));
+        let content = parent
+            .and_then(|p| self.layout()?.item(&p.component.name)?.content)
+            .unwrap_or_default();
+        let share = |len: i32, space: i32| ((len * 100 + space / 2) / space.max(1)).clamp(1, 100);
+        if horizontal {
+            if percent.width > 0 {
+                percent.width = share(rect.width, content.width);
+            } else {
+                size.width = rect.width;
+            }
+        }
+        if vertical {
+            if percent.height > 0 {
+                percent.height = share(rect.height, content.height);
+            } else {
+                size.height = rect.height;
+            }
+        }
+        // Damit die neue Größe sichtbar wird: Fill und Dehnen der
+        // geänderten Achse aufheben (rückgängig machbar).
+        let kind = parent
+            .and_then(|p| p.visual.layout.as_ref().map(|l| l.kind.clone()))
+            .unwrap_or(LayoutKind::Vertical);
+        let (cross, main) = match kind {
+            LayoutKind::Horizontal => (vertical, horizontal),
+            LayoutKind::Grid { .. } => (horizontal || vertical, false),
+            _ => (horizontal, vertical),
+        };
+        if cross && align == tdr_core::Align::Fill {
+            align = tdr_core::Align::Start;
+        }
+        if main {
+            stretch = 0;
+        }
+        Placement::Layout {
+            stretch,
+            align,
+            cell,
+            size,
+            percent,
+        }
     }
 
     /// A palette type dragged over the design surface: the container and
@@ -701,6 +866,7 @@ impl Session {
                     y: at.y - content.y,
                 },
                 size: ABSOLUTE_DEFAULT,
+                anchors: tdr_core::Anchors::TOP_LEFT,
             });
         self.apply(Command::AddWidget {
             form: form_name,
@@ -827,4 +993,37 @@ pub fn handler_line(source: &str, handler: &HandlerName) -> Option<usize> {
         .lines()
         .position(|line| line.contains(&pattern))
         .map(|i| i + 1)
+}
+
+/// Commands that move and resize the anchored, absolutely placed children
+/// of `before` for its new size `after` (Delphi: resizing a form or panel
+/// in the designer changes the anchored controls with it).
+fn anchored_children(form: &ComponentName, before: &Widget, after: &Widget) -> Vec<Command> {
+    let (old, new) = (before.design_area(), after.design_area());
+    if old == new {
+        return Vec::new();
+    }
+    before
+        .children
+        .iter()
+        .filter_map(|child| match child.visual.placement {
+            Placement::Absolute {
+                position,
+                size,
+                anchors,
+            } if !anchors.is_top_left() => {
+                let (position, size) = anchors.apply(position, size, old, new);
+                Some(Command::SetPlacement {
+                    form: form.clone(),
+                    element: child.component.name.clone(),
+                    placement: Placement::Absolute {
+                        position,
+                        size,
+                        anchors,
+                    },
+                })
+            }
+            _ => None,
+        })
+        .collect()
 }

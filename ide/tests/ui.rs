@@ -314,6 +314,27 @@ fn main() {
     mouse(&surface, MouseAction::Released, to);
     let after = ide.session().layout().unwrap().rect(&dropped[0]).unwrap();
     assert_eq!((after.width, after.height), (r.width - 60, r.height + 10));
+    // Objektinspektor: Breite in Prozent (Zeile „width_percent“ der Gruppe Platzierung).
+    ide.set_layout_row(
+        &dropped[0],
+        "placement.width_percent",
+        Some(tdr_core::Value::Int(50)),
+    );
+    let content = ide
+        .session()
+        .layout()
+        .unwrap()
+        .item(&name("window"))
+        .unwrap()
+        .content
+        .unwrap();
+    let half = ide.session().layout().unwrap().rect(&dropped[0]).unwrap();
+    assert_eq!(half.width, content.width / 2);
+    pump_until(1, || false);
+    if let Some(dir) = std::env::var_os("FREYA_TDE_SHOT") {
+        ide.screenshots(&std::path::Path::new(&dir).join("layout-rows"));
+    }
+    ide.undo();
     ide.undo();
     ide.undo();
     assert!(ide.session().form().unwrap().widget(&dropped[0]).is_none());

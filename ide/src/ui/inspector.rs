@@ -151,6 +151,9 @@ pub struct InspectorWindow {
     pending: RefCell<Option<Box<dyn Fn()>>>,
 }
 
+/// Applies an edited value of one inspector row.
+type ApplyValue = dyn Fn(&Rc<Ide>, Value);
+
 impl InspectorWindow {
     pub fn build() -> Self {
         let window = RnclWindow::new("Objektinspektor");
@@ -315,7 +318,10 @@ impl InspectorWindow {
             return;
         };
         let registry = session.document().registry();
-        let rows = properties(form, &target.name, registry).unwrap_or_default();
+        let mut rows = properties(form, &target.name, registry).unwrap_or_default();
+        if session.form_name() == target.form.as_ref() {
+            rows.extend(session.layout_rows(&target.name));
+        }
         let event_rows =
             events(session.document().forms(), form, &target.name, registry).unwrap_or_default();
         // Kandidaten für Verweise: alle Elemente des Projekts.
@@ -464,7 +470,13 @@ impl InspectorWindow {
         references: Vec<String>,
     ) -> Line {
         let marker = if row.value.is_some() { " •" } else { "" };
-        let label = RnclLabel::new(page, &format!("{}{marker}", row.name));
+        // Layout-Zeilen ohne Präfix anzeigen (die Gruppe sagt, wozu sie gehören).
+        let shown = row
+            .name
+            .split_once('.')
+            .filter(|_| tdr_designer::is_layout_row(&row.name))
+            .map_or(row.name.as_str(), |(_, field)| field);
+        let label = RnclLabel::new(page, &format!("{shown}{marker}"));
         let mut tip = row.description.clone();
         if row.backend_specific {
             tip.push_str(" (nur für dieses UI-Backend)");
@@ -486,14 +498,24 @@ impl InspectorWindow {
             target.name.clone(),
             row.name.clone(),
         );
-        let command = move |value: Value| Command::SetProperty {
-            form: form.clone(),
-            element: element.clone(),
-            property: property.clone(),
-            value: Some(PropertyValue {
-                value,
-                platforms: overrides.clone(),
-            }),
+        // Layout-Zeilen (placement.…, layout.…) gehen über die Session,
+        // echte Eigenschaften als SetProperty.
+        let command: Rc<ApplyValue> = if tdr_designer::is_layout_row(&property) {
+            Rc::new(move |ide: &Rc<Ide>, value: Value| {
+                ide.set_layout_row(&element, &property, Some(value));
+            })
+        } else {
+            Rc::new(move |ide: &Rc<Ide>, value: Value| {
+                ide.apply_from_inspector(Command::SetProperty {
+                    form: form.clone(),
+                    element: element.clone(),
+                    property: property.clone(),
+                    value: Some(PropertyValue {
+                        value,
+                        platforms: overrides.clone(),
+                    }),
+                })
+            })
         };
 
         let editor: Widget = match &row.ty {
@@ -502,7 +524,7 @@ impl InspectorWindow {
                 check.set_checked(matches!(effective, Some(Value::Bool(true))));
                 check.on_toggled(with(ide, move |ide, on: bool| {
                     if !ide.is_refreshing() {
-                        ide.apply_from_inspector(command(Value::Bool(on)));
+                        command(ide, Value::Bool(on));
                     }
                 }));
                 check.widget().clone()
@@ -516,7 +538,7 @@ impl InspectorWindow {
                 }
                 spin.on_value_changed(with(ide, move |ide, v: i32| {
                     if !ide.is_refreshing() {
-                        ide.apply_from_inspector(command(Value::Int(i64::from(v))));
+                        command(ide, Value::Int(i64::from(v)));
                     }
                 }));
                 spin.widget().clone()
@@ -533,7 +555,7 @@ impl InspectorWindow {
                         return;
                     }
                     if let Some(v) = usize::try_from(i).ok().and_then(|i| variants.get(i)) {
-                        ide.apply_from_inspector(command(Value::Enum(v.clone())));
+                        command(ide, Value::Enum(v.clone()));
                     }
                 }));
                 combo.widget().clone()
@@ -546,7 +568,6 @@ impl InspectorWindow {
                 combo.set_placeholder("Standard oder #rrggbb");
                 combo.set_current_text(&effective.as_ref().map(format).unwrap_or_default());
                 let f = combo.clone();
-                let command = Rc::new(command);
                 combo.on_text_changed(with(ide, move |ide, _: String| {
                     if ide.is_refreshing() {
                         return;
@@ -556,7 +577,7 @@ impl InspectorWindow {
                     *ide.inspector.pending.borrow_mut() = Some(Box::new(move || {
                         let Some(ide) = weak.upgrade() else { return };
                         match parse(&f.current_text(), &PropertyType::Color) {
-                            Ok(value) => ide.apply_from_inspector(command(value)),
+                            Ok(value) => command(&ide, value),
                             Err(hint) => ide.main.set_status(&hint),
                         }
                     }));
@@ -579,7 +600,7 @@ impl InspectorWindow {
                         return;
                     };
                     let target = text.parse::<ComponentPath>().ok();
-                    ide.apply_from_inspector(command(Value::Reference(target)));
+                    command(ide, Value::Reference(target));
                 }));
                 combo.widget().clone()
             }
@@ -591,14 +612,13 @@ impl InspectorWindow {
                 }
                 let ty = ty.clone();
                 let f = field.clone();
-                let command = Rc::new(command);
                 let apply = {
                     let weak = Rc::downgrade(ide);
                     let command = command.clone();
                     move || {
                         let Some(ide) = weak.upgrade() else { return };
                         match parse(&f.text(), &ty) {
-                            Ok(value) => ide.apply_from_inspector(command(value)),
+                            Ok(value) => command(&ide, value),
                             Err(hint) => ide.main.set_status(&hint),
                         }
                     }
@@ -634,12 +654,16 @@ impl InspectorWindow {
                 row.name.clone(),
             );
             button.on_clicked(with0(ide, move |ide| {
-                ide.apply(Command::SetProperty {
-                    form: form.clone(),
-                    element: element.clone(),
-                    property: property.clone(),
-                    value: None,
-                });
+                if tdr_designer::is_layout_row(&property) {
+                    ide.set_layout_row(&element, &property, None);
+                } else {
+                    ide.apply(Command::SetProperty {
+                        form: form.clone(),
+                        element: element.clone(),
+                        property: property.clone(),
+                        value: None,
+                    });
+                }
             }));
             button.widget().clone()
         });

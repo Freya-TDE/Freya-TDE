@@ -219,6 +219,47 @@ bei Delphi): `Placement::Layout::size`, je Achse, 0 = natürliche Größe; im Te
 |---|---|---|---|---|
 | `set_size_request` (Mindestgröße: kleiner als das Minimum des Widgets geht nicht) | `add_sized` (fehlende Achse: Breite verfügbar, Höhe Standard) | fester `container` (fehlende Achse: natürlich) | `width`/`height` | `SizedBox` (im Raster linksbündig) |
 
+## Größe in Prozent / size in percent
+
+Statt Pixeln lässt sich je Achse ein Anteil am Inhalt des Elternelements angeben (Objektinspektor, Gruppe
+„Platzierung“: `width_percent`, `height_percent`; `Placement::Layout::percent`, 0 = aus, 1–100). Prozent geht
+der Wunschgröße in Pixeln vor; auf dieser Achse wirkt Fill wie Start und Dehnen entfällt. Zieht man am
+Anfasser, bleibt eine Achse in Prozent in Prozent. Im Template `placement.width_percent` und
+`placement.height_percent`. Der Designer rechnet genau mit dem Inhalt des Containers (ohne Innenabstand).
+*Per axis a share of the parent's content area instead of pixels; it goes before the requested size, fill acts
+like start and stretch does not apply on that axis.*
+
+| | GTK 4 | egui | iced | Slint | Flutter |
+|---|---|---|---|---|---|
+| quer zum Layout (Breite in senkrechten, Höhe in waagerechten Layouts) | Hülle `freya_percent::Percent` (natürliche Größe = Anteil am Elternelement, Minimum des Widgets bleibt) | `add_sized` mit Anteil an der verfügbaren Fläche zu Beginn des Containers | `FillPortion` neben einem Leerraum | Dehnung neben einem Leerraum (bevorzugte und Mindestgröße 0; eine feste Breite gäbe eine Bindungsschleife) | `FractionallySizedBox` |
+| in Layout-Richtung | wie quer | wie quer | Anteil am **freien** Platz (`FillPortion`, Rest als Leerraum) | Anteil am **freien** Platz (Dehnung, Rest als Leerraum) | Höhe: nicht (die Spalte scrollt, ihre Höhe ist unbegrenzt); Breite in Zeilen: Anteil am freien Platz (`Expanded`) |
+| im Raster | wie quer | wie quer | nicht (Pixel bzw. natürlich) | nicht | nicht |
+
+GTK passt die Größe einen Durchlauf nach einer Größenänderung des Elternelements an (gemessen wird mit
+dessen letzter Größe).
+
+## Anker bei absoluter Lage / anchors with absolute positions
+
+Absolut platzierte Widgets hängen wie bei Delphi (`Anchors`) an Kanten des Containers
+(`Placement::Absolute::anchors`, Objektinspektor `anchor_left` … `anchor_bottom`, Standard links oben):
+links und rechts = wächst in der Breite mit, nur rechts = wandert mit dem rechten Rand, weder links noch rechts =
+bleibt mittig; oben/unten ebenso. Bezug ist die Entwurfsfläche (`Widget::design_area`: `size` des Formulars
+bzw. Größe des Containers ohne Innenabstand, sonst die Ausdehnung der Kinder). Zieht man im Designer das
+Formular oder einen Container größer, wandern verankerte Kinder mit (ein Schritt zum Rückgängigmachen).
+Ein absoluter Container mit Ankern rechts bzw. unten nimmt den verfügbaren Platz ein (sonst so groß wie
+seine Kinder). Im Template `placement.anchors.{left,top,right,bottom,any}`, `placement.margin_right`,
+`placement.margin_bottom` und `placement.area`. Wechselt ein Container im Objektinspektor auf `Absolute`,
+behalten seine Kinder ihre Lage; zurück in ein anderes Layout kommen sie wieder in den Fluss.
+*Absolutely placed widgets keep their distance to the anchored edges of their container (like Delphi's
+`Anchors`); resizing the form or container in the designer moves anchored children with it.*
+
+| GTK 4 | egui | iced | Slint | Flutter |
+|---|---|---|---|---|
+| `Overlay` mit `get-child-position` | `crate::app::anchored` und `ui.put` | Stapel aus Ebenen mit Ausrichtung und Innenabstand | Bindungen an `parent.width`/`parent.height` | `LayoutBuilder` und `Positioned` (unten nur bei begrenzter Höhe; im scrollenden Formular nicht) |
+
+Die Editor-Oberfläche selbst (RUF/RNCL) hat Anker ebenfalls: `Component::set_anchors` (siehe RUF-Doku).
+*The editor UI (RUF/RNCL) has anchors as well.*
+
 ## Backend-Pack / backend pack
 
 Ein UI-Backend ist ein Ordner `widgets/<backend>/` mit einer `pack.toml` (`kind = "backend"`):

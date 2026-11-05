@@ -99,4 +99,6 @@ pub use registry::TypeRegistry;
 pub use type_ref::{Origin, TypeRef};
 pub use validate::{Diagnostic, Issue, Severity, ValidationContext, validate};
 pub use value::{Color, Mismatch, Point, PropertyType, Size, Value};
-pub use widget::{Align, ContainerLayout, GridCell, Insets, LayoutKind, Placement, Visual, Widget};
+pub use widget::{
+    Align, Anchors, ContainerLayout, GridCell, Insets, LayoutKind, Placement, Visual, Widget,
+};

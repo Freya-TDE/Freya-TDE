@@ -1560,6 +1560,40 @@ impl Ide {
 
     /// Like [`Ide::apply`], but leaves the object inspector as it is (its
     /// own edits must not rebuild the field being edited).
+    /// Sets a layout row (`placement.…`, `layout.…`) of `element` on the
+    /// current form from the inspector; `None` = default.
+    pub fn set_layout_row(
+        &self,
+        element: &ComponentName,
+        name: &str,
+        value: Option<tdr_core::Value>,
+    ) {
+        let result = self
+            .session
+            .borrow_mut()
+            .set_layout_row(element, name, value);
+        match result {
+            Ok(_) => {
+                self.main.set_status("");
+                self.refreshing.set(true);
+                self.main.refresh(self);
+                self.designer.refresh(self);
+                self.structure.refresh(self);
+                self.refreshing.set(false);
+                self.refresh_problems();
+                // Die Zeilen hängen von der Platzierung ab (Raster, absolut):
+                // neu aufbauen, wenn der auslösende Editor fertig ist.
+                let weak = self.me.clone();
+                ruf::Timer::single_shot(0, move || {
+                    if let Some(ide) = weak.upgrade() {
+                        ide.inspector.refresh(&ide, true);
+                    }
+                });
+            }
+            Err(e) => self.main.set_status(&e),
+        }
+    }
+
     pub fn apply_from_inspector(&self, command: Command) {
         let result = self.session.borrow_mut().apply(command);
         match result {

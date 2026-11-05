@@ -75,12 +75,36 @@ Rectangle {
     {%- for c in kids %}
     {%- set p = c.placement %}
     {%- if p and p.kind == "absolute" %}
+    {%- set a = p.anchors %}
+    {#- Anker: Abstand zu den verankerten Rändern bleibt (Änderung gegenüber der Entwurfsfläche). #}
+    {%- set dx = "(parent.width - " ~ (p.area.width + l.padding.left + l.padding.right) ~ "px)" %}
+    {%- set dy = "(parent.height - " ~ (p.area.height + l.padding.top + l.padding.bottom) ~ "px)" %}
     Rectangle {
+        {%- if a.left %}
         x: {{ p.x + l.padding.left }}px;
+        {%- elif a.right %}
+        x: {{ p.x + l.padding.left }}px + {{ dx }};
+        {%- else %}
+        x: {{ p.x + l.padding.left }}px + {{ dx }} / 2;
+        {%- endif %}
+        {%- if a.top %}
         y: {{ p.y + l.padding.top }}px;
+        {%- elif a.bottom %}
+        y: {{ p.y + l.padding.top }}px + {{ dy }};
+        {%- else %}
+        y: {{ p.y + l.padding.top }}px + {{ dy }} / 2;
+        {%- endif %}
+        {%- if a.left and a.right %}
+        width: max(0px, {{ p.width }}px + {{ dx }});
+        {%- else %}
         width: {{ p.width }}px;
+        {%- endif %}
+        {%- if a.top and a.bottom %}
+        height: max(0px, {{ p.height }}px + {{ dy }});
+        {%- else %}
         height: {{ p.height }}px;
-        {{ item(c, radios) }}
+        {%- endif %}
+        {{ item(c, radios, l) }}
     }
     {%- endif %}
     {%- endfor %}
@@ -105,12 +129,17 @@ GridLayout {
         {%- if cell and cell.row_span > 1 %}
         rowspan: {{ cell.row_span }};
         {%- endif %}
-        {{ item(c, radios) }}
+        {{ item(c, radios, l) }}
     }
     {%- endfor %}
 }
 {%- else %}
 {%- set horizontal = l.kind == "horizontal" %}
+{%- set share = namespace(main=0) %}
+{%- for c in kids if c.placement and c.placement.kind == "layout" and l.kind != "stack" %}
+{%- set share.main = share.main + (c.placement.width_percent if horizontal else c.placement.height_percent) %}
+{%- endfor %}
+{%- if share.main > 0 %}{% set stretched = stretched + ["percent"] %}{% endif %}
 {{ "HorizontalLayout" if horizontal else "VerticalLayout" }} {
     spacing: {{ l.spacing }}px;
     padding_left: {{ l.padding.left }}px;
@@ -124,40 +153,88 @@ GridLayout {
     {%- set p = c.placement %}
     {%- set align = p.align if p and p.kind == "layout" else "Fill" %}
     {%- set stretch = p.stretch if p and p.kind == "layout" else 0 %}
-    {%- if not horizontal and align != "Fill" %}
+    {%- set percent = p and p.kind == "layout" and (p.width_percent > 0 or p.height_percent > 0) and l.kind != "stack" %}
+    {%- if percent %}
+    {{ item(c, radios, l) }}
+    {%- elif not horizontal and align != "Fill" %}
     HorizontalLayout {
         alignment: {{ {"Start": "start", "Center": "center", "End": "end"}[align] }};
         {%- if stretched %}
         vertical_stretch: {{ stretch }};
         {%- endif %}
-        {{ item(c, radios) }}
+        {{ item(c, radios, l) }}
     }
     {%- elif stretched %}
     {{ "HorizontalLayout" if horizontal else "VerticalLayout" }} {
         {{ "horizontal_stretch" if horizontal else "vertical_stretch" }}: {{ stretch }};
-        {{ item(c, radios) }}
+        {{ item(c, radios, l) }}
     }
     {%- else %}
-    {{ item(c, radios) }}
+    {{ item(c, radios, l) }}
     {%- endif %}
     {%- endfor %}
+    {%- if share.main > 0 and share.main < 100 %}
+    // Rest des Platzes neben den Größen in Prozent.
+    Rectangle {
+        {{ "horizontal" if horizontal else "vertical" }}_stretch: {{ 100 - share.main }};
+    }
+    {%- endif %}
 }
 {%- endif -%}
 {%- endmacro %}
 
 {#- A child in a layout: radio buttons of a container are drawn as one group
     where the first of them stands. -#}
-{%- macro item(c, radios) -%}
+{%- macro item(c, radios, l) -%}
+{%- set p = c.placement -%}
 {%- if c.type == "backend:slint/RadioButton" -%}
 {%- if c.name == radios[0].name %}{{ radio_group(radios) }}{% endif -%}
-{%- elif c.placement and c.placement.kind == "layout" and (c.placement.width > 0 or c.placement.height > 0) -%}
+{%- elif p and p.kind == "layout" and l.kind in ["vertical", "horizontal", "custom"] and (p.width_percent > 0 or p.height_percent > 0) -%}
+{#- Prozent: quer zum Layout Element und Leerraum im Verhältnis der Dehnung
+    (bevorzugte Größe 0, eine feste Breite gäbe eine Bindungsschleife),
+    in Layout-Richtung ein Anteil am freien Platz. #}
+{%- set horizontal = l.kind == "horizontal" %}
+{%- set cross = p.height_percent if horizontal else p.width_percent %}
+{%- set main = p.width_percent if horizontal else p.height_percent %}
+{%- set main_axis = "horizontal" if horizontal else "vertical" %}
+{%- set cross_axis = "vertical" if horizontal else "horizontal" %}
+{%- set cross_size = "height" if horizontal else "width" %}
+{%- set main_size = "width" if horizontal else "height" %}
+{%- set fixed = p.width if horizontal else p.height %}
+{{ "VerticalLayout" if horizontal else "HorizontalLayout" }} {
+    spacing: 0px;
+    {%- if main > 0 %}
+    {{ main_axis }}_stretch: {{ main }};
+    min_{{ main_size }}: 0px;
+    preferred_{{ main_size }}: 0px;
+    {%- else %}
+    {{ main_axis }}_stretch: 0;
+    {%- endif %}
+    VerticalLayout {
+        {%- if cross > 0 %}
+        {{ cross_axis }}_stretch: {{ cross }};
+        min_{{ cross_size }}: 0px;
+        preferred_{{ cross_size }}: 0px;
+        {%- endif %}
+        {%- if main == 0 and fixed > 0 %}
+        {{ main_size }}: {{ fixed }}px;
+        {%- endif %}
+        {{ element(c) }}
+    }
+    {%- if cross > 0 and cross < 100 %}
+    Rectangle {
+        {{ cross_axis }}_stretch: {{ 100 - cross }};
+    }
+    {%- endif %}
+}
+{%- elif p and p.kind == "layout" and (p.width > 0 or p.height > 0) -%}
 {#- Wunschgröße aus dem Designer. #}
 VerticalLayout {
-    {%- if c.placement.width > 0 %}
-    width: {{ c.placement.width }}px;
+    {%- if p.width > 0 %}
+    width: {{ p.width }}px;
     {%- endif %}
-    {%- if c.placement.height > 0 %}
-    height: {{ c.placement.height }}px;
+    {%- if p.height > 0 %}
+    height: {{ p.height }}px;
     {%- endif %}
     {{ element(c) }}
 }

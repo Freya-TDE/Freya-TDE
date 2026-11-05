@@ -54,9 +54,12 @@
 //! node has `name`, `type` (`"core/Button"`), `type_name` (`"Button"`),
 //! `field` (has a generated field), `props`, `rust` (references as
 //! `self.<name>`), `events`, `children`, `placement`
-//! (`{kind: "layout", stretch, align, cell, width, height}` – `width`/
-//! `height` the requested size, 0 = natural – or
-//! `{kind: "absolute", x, y, width, height}`) and `layout`
+//! (`{kind: "layout", stretch, align, cell, width, height, width_percent,
+//! height_percent}` – `width`/`height` the requested size, 0 = natural;
+//! `*_percent` a share of the parent's content area, 0 = not set, goes
+//! first – or `{kind: "absolute", x, y, width, height, anchors: {left, top,
+//! right, bottom, any}, margin_right, margin_bottom, area: {width, height}}`
+//! – the margins to the right and bottom edge of the design area `area`) and `layout`
 //! (`{kind, columns, name, spacing, padding}` or none).
 //!
 //! The backend's `run` template gets `forms` (list of `{name, struct,
@@ -1923,7 +1926,14 @@ impl FormData<'_> {
             rust => rust,
             events => events,
             children => children,
-            placement => widget.map(|w| placement_data(&w.visual.placement)),
+            placement => widget.map(|w| {
+                let area = self
+                    .form
+                    .parent_of(&w.component.name)
+                    .map(Widget::design_area)
+                    .unwrap_or_default();
+                placement_data(&w.visual.placement, area)
+            }),
             layout => widget.and_then(|w| w.visual.layout.as_ref()).map(|l| {
                 let (kind, columns, name) = match &l.kind {
                     LayoutKind::Vertical => ("vertical", None, None),
@@ -1955,13 +1965,14 @@ impl FormData<'_> {
     }
 }
 
-fn placement_data(placement: &Placement) -> JValue {
+fn placement_data(placement: &Placement, area: crate::Size) -> JValue {
     match placement {
         Placement::Layout {
             stretch,
             align,
             cell,
             size,
+            percent,
         } => minijinja::context! {
             kind => "layout",
             stretch => stretch,
@@ -1969,6 +1980,9 @@ fn placement_data(placement: &Placement) -> JValue {
             // Wunschgröße, 0 = natürliche Größe.
             width => size.width,
             height => size.height,
+            // Anteil am Inhalt des Elternelements in Prozent, 0 = nicht gesetzt.
+            width_percent => percent.width,
+            height_percent => percent.height,
             cell => cell.as_ref().map(|c| minijinja::context! {
                 row => c.row,
                 column => c.column,
@@ -1976,12 +1990,28 @@ fn placement_data(placement: &Placement) -> JValue {
                 column_span => c.column_span,
             }),
         },
-        Placement::Absolute { position, size } => minijinja::context! {
+        Placement::Absolute {
+            position,
+            size,
+            anchors,
+        } => minijinja::context! {
             kind => "absolute",
             x => position.x,
             y => position.y,
             width => size.width,
             height => size.height,
+            anchors => minijinja::context! {
+                left => anchors.left,
+                top => anchors.top,
+                right => anchors.right,
+                bottom => anchors.bottom,
+                // Abweichend von links oben verankert.
+                any => !anchors.is_top_left(),
+            },
+            // Abstand zum rechten und unteren Rand der Entwurfsfläche.
+            margin_right => area.width - position.x - size.width,
+            margin_bottom => area.height - position.y - size.height,
+            area => minijinja::context! { width => area.width, height => area.height },
         },
     }
 }

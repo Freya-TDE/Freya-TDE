@@ -216,8 +216,23 @@ SizedBox(width: {{ p.width if p.width > 0 else "null" }}, height: {{ p.height if
 {%- macro placed(c, l) -%}
 {%- set p = c.placement -%}
 {%- set align = p.align if p and p.kind == "layout" else "Fill" -%}
+{%- set wp = p.width_percent if p and p.kind == "layout" else 0 -%}
 {%- if l.kind == "absolute" and p and p.kind == "absolute" -%}
-Positioned(left: {{ p.x }}, top: {{ p.y }}, width: {{ p.width }}, height: {{ p.height }}, child: {{ item(c) }})
+{#- Anker: dx/dy = Änderung gegenüber der Entwurfsfläche (LayoutBuilder im Container). -#}
+{%- set a = p.anchors -%}
+Positioned(
+  left: {% if a.left %}{{ p.x }}.0{% elif a.right %}{{ p.x }} + dx{% else %}{{ p.x }} + dx / 2{% endif %},
+  top: {% if a.top %}{{ p.y }}.0{% elif a.bottom %}{{ p.y }} + dy{% else %}{{ p.y }} + dy / 2{% endif %},
+  width: {% if a.left and a.right %}({{ p.width }} + dx).clamp(0.0, double.infinity){% else %}{{ p.width }}.0{% endif %},
+  height: {% if a.top and a.bottom %}({{ p.height }} + dy).clamp(0.0, double.infinity){% else %}{{ p.height }}.0{% endif %},
+  child: {{ item(c) }},
+)
+{%- elif l.kind in ["vertical", "custom"] and wp > 0 -%}
+{#- Prozent der Breite (die Höhe in Prozent gibt es in der scrollenden Spalte nicht). -#}
+FractionallySizedBox(widthFactor: {{ wp / 100 }}, alignment: {{ "Alignment.centerRight" if align == "End" else ("Alignment.center" if align == "Center" else "Alignment.centerLeft") }}, child: {% if p.height > 0 %}SizedBox(height: {{ p.height }}, child: {{ item(c) }}){% else %}{{ item(c) }}{% endif %})
+{%- elif l.kind == "horizontal" and wp > 0 -%}
+{#- Prozent der Breite in einer Zeile: Anteil am freien Platz. -#}
+Expanded(flex: {{ wp }}, child: {% if p.height > 0 %}SizedBox(height: {{ p.height }}, child: {{ item(c) }}){% else %}{{ item(c) }}{% endif %})
 {%- elif l.kind == "horizontal" and ((p and p.kind == "layout" and p.stretch) or (c.type in expanding and not (p and p.kind == "layout" and p.width > 0))) -%}
 Expanded(child: {{ sized(c) }})
 {%- elif l.kind in ["vertical", "custom"] and align == "Start" -%}
@@ -387,18 +402,36 @@ class _{{ view }}State extends State<{{ view }}> {
     {%- set l = w.layout or default_layout %}
     {%- set pad = "EdgeInsets.fromLTRB(" ~ l.padding.left ~ ", " ~ l.padding.top ~ ", " ~ l.padding.right ~ ", " ~ l.padding.bottom ~ ")" %}
     {%- if l.kind == "absolute" %}
-    // Absolut: Fläche so groß wie das äußerste Kind.
+    {%- set ext = namespace(w=0, h=0, grow_x=false, grow_y=false, dw=0, dh=0) %}
+    {%- for c in kids if c.placement and c.placement.kind == "absolute" %}
+    {%- set ext.w = [ext.w, c.placement.x + c.placement.width] | max %}
+    {%- set ext.h = [ext.h, c.placement.y + c.placement.height] | max %}
+    {%- set ext.dw = c.placement.area.width %}
+    {%- set ext.dh = c.placement.area.height %}
+    {%- if c.placement.anchors.right or not c.placement.anchors.left %}{% set ext.grow_x = true %}{% endif %}
+    {%- if c.placement.anchors.bottom or not c.placement.anchors.top %}{% set ext.grow_y = true %}{% endif %}
+    {%- endfor %}
+    // Absolut: Fläche so groß wie das äußerste Kind; mit Ankern rechts bzw.
+    // unten so groß wie der verfügbare (begrenzte) Platz.
     return Padding(
       padding: {{ pad }},
-      child: SizedBox(
-        width: <num>[{% for c in kids %}{% set p = c.placement %}{% if p and p.kind == "absolute" %}{{ p.x + p.width }}, {% endif %}{% endfor %}0].reduce((a, b) => a > b ? a : b).toDouble(),
-        height: <num>[{% for c in kids %}{% set p = c.placement %}{% if p and p.kind == "absolute" %}{{ p.y + p.height }}, {% endif %}{% endfor %}0].reduce((a, b) => a > b ? a : b).toDouble(),
-        child: Stack(clipBehavior: Clip.none, children: [
-        {%- for c in kids if c.placement and c.placement.kind == "absolute" %}
-          if (_get({{ c.name | dart_str }}).visible) {{ placed(c, l) | indent(10) }},
-        {%- endfor %}
-        ]),
-      ),
+      child: LayoutBuilder(builder: (context, box) {
+        final width = {% if ext.grow_x %}box.maxWidth.isFinite && box.maxWidth > {{ ext.w }} ? box.maxWidth : {% endif %}{{ ext.w }}.0;
+        final height = {% if ext.grow_y %}box.maxHeight.isFinite && box.maxHeight > {{ ext.h }} ? box.maxHeight : {% endif %}{{ ext.h }}.0;
+        // ignore: unused_local_variable
+        final dx = width - {{ ext.dw }};
+        // ignore: unused_local_variable
+        final dy = height - {{ ext.dh }};
+        return SizedBox(
+          width: width,
+          height: height,
+          child: Stack(clipBehavior: Clip.none, children: [
+          {%- for c in kids if c.placement and c.placement.kind == "absolute" %}
+            if (_get({{ c.name | dart_str }}).visible) {{ placed(c, l) | indent(12) }},
+          {%- endfor %}
+          ]),
+        );
+      }),
     );
     {%- elif l.kind == "grid" %}
     return Padding(
@@ -426,9 +459,14 @@ class _{{ view }}State extends State<{{ view }}> {
         crossAxisAlignment: CrossAxisAlignment.center,
         spacing: {{ l.spacing }},
         children: [
+        {%- set total = namespace(w=0) %}
         {%- for c in kids %}
+          {%- if c.placement and c.placement.kind == "layout" %}{% set total.w = total.w + c.placement.width_percent %}{% endif %}
           if (_get({{ c.name | dart_str }}).visible) {{ placed(c, l) | indent(10) }},
         {%- endfor %}
+        {%- if total.w > 0 and total.w < 100 %}
+          Spacer(flex: {{ 100 - total.w }}),
+        {%- endif %}
         ],
       ),
     );

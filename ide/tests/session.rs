@@ -264,3 +264,121 @@ fn handlers_and_generated_code() {
     );
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+#[test]
+fn anchors_follow_the_form_and_percent_follows_the_handles() {
+    use tdr_core::{Anchors, Placement, Value};
+    let mut s = session();
+    s.drop_type(builtin::button(), empty_spot(&s)).unwrap();
+    let placement = |s: &Session| {
+        s.form()
+            .unwrap()
+            .widget(&name("button1"))
+            .unwrap()
+            .visual
+            .placement
+            .clone()
+    };
+
+    // Prozent: 50 % per Objektinspektor, dann per Anfasser auf 30 %.
+    s.set_layout_row(
+        &name("button1"),
+        "placement.width_percent",
+        Some(Value::Int(50)),
+    )
+    .unwrap();
+    let content = s
+        .layout()
+        .unwrap()
+        .item(&name("window"))
+        .unwrap()
+        .content
+        .unwrap();
+    let before = s.layout().unwrap().rect(&name("button1")).unwrap();
+    assert_eq!(before.width, content.width / 2);
+    s.select(vec![name("button1")]);
+    let corner = Point::new(before.right() - 1, before.bottom() - 1);
+    s.press(corner, false).unwrap();
+    let to = Point::new(
+        corner.x - (before.width - content.width * 30 / 100),
+        corner.y,
+    );
+    assert!(s.drag(to));
+    assert!(s.release(to).unwrap().model);
+    let Placement::Layout { percent, size, .. } = placement(&s) else {
+        panic!("im Layout erwartet");
+    };
+    assert_eq!(percent.width, 30, "Prozent bleibt Prozent");
+    assert_eq!(size.width, 0);
+    assert!(
+        s.natural_size().unwrap().model,
+        "Natürliche Größe löscht auch Prozent"
+    );
+    assert!(matches!(placement(&s), Placement::Layout { percent, .. } if percent.width == 0));
+
+    // Absolut: Kinder bleiben, wo sie sind; Anker rechts unten.
+    let shown = s.layout().unwrap().rect(&name("button1")).unwrap();
+    s.set_layout_row(
+        &name("window"),
+        "layout.kind",
+        Some(Value::Enum("Absolute".into())),
+    )
+    .unwrap();
+    assert_eq!(s.layout().unwrap().rect(&name("button1")).unwrap(), shown);
+    for (row, on) in [
+        ("placement.anchor_left", false),
+        ("placement.anchor_top", false),
+        ("placement.anchor_right", true),
+        ("placement.anchor_bottom", true),
+    ] {
+        s.set_layout_row(&name("button1"), row, Some(Value::Bool(on)))
+            .unwrap();
+    }
+    let error = s
+        .set_layout_row(&name("button1"), "placement.stretch", Some(Value::Int(1)))
+        .unwrap_err();
+    assert!(error.contains("placement.stretch"), "{error}");
+
+    // Ziehen im absoluten Layout verschiebt um die Mausbewegung.
+    let Placement::Absolute { position, .. } = placement(&s) else {
+        panic!("absolut erwartet");
+    };
+    let from = centre(&s, "button1");
+    s.press(from, false).unwrap();
+    let to = Point::new(from.x + 30, from.y + 10);
+    assert!(s.drag(to));
+    assert!(s.release(to).unwrap().model);
+    let Placement::Absolute {
+        position: moved, ..
+    } = placement(&s)
+    else {
+        panic!("absolut erwartet");
+    };
+    assert_eq!((moved.x, moved.y), (position.x + 30, position.y + 10));
+
+    // Formular größer ziehen: der verankerte Knopf wandert mit (ein Schritt).
+    let window = s.layout().unwrap().item(&name("window")).unwrap().rect;
+    s.select(vec![name("window")]);
+    let corner = Point::new(window.right() - 1, window.bottom() - 1);
+    s.press(corner, false).unwrap();
+    let to = Point::new(corner.x + 100, corner.y + 50);
+    assert!(s.drag(to));
+    assert!(s.release(to).unwrap().model);
+    let Placement::Absolute {
+        position: followed,
+        size,
+        anchors,
+    } = placement(&s)
+    else {
+        panic!("absolut erwartet");
+    };
+    assert_eq!(anchors, Anchors::new(false, false, true, true));
+    assert_eq!((followed.x, followed.y), (moved.x + 100, moved.y + 50));
+    let button = s.layout().unwrap().rect(&name("button1")).unwrap();
+    assert_eq!(button.width, size.width);
+    assert!(s.undo());
+    let Placement::Absolute { position: back, .. } = placement(&s) else {
+        panic!("absolut erwartet");
+    };
+    assert_eq!(back, moved, "Formulargröße und Anker in einem Schritt");
+}

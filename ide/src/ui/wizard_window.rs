@@ -263,65 +263,103 @@ impl WizardWindow {
             page: Cell::new(0),
             registry: RefCell::new(tdr_core::TypeRegistry::with_builtins()),
         };
-        wizard.layout(W, H);
+        wizard.place();
         wizard
     }
 
-    /// Places everything whose size follows the window: fields, hints and
-    /// text areas grow with it, the buttons stay at the bottom right.
-    pub fn layout(&self, w: i32, h: i32) {
-        let inner = (w - 2 * M).max(200);
-        let page_h = (h - BAR - ROW - 24).max(200);
+    /// Places everything for the start size; anchors keep fields, hints
+    /// and text areas growing with the window and the buttons at the bottom
+    /// right.
+    fn place(&self) {
+        use ruf::Anchors as A;
+        let inner = W - 2 * M;
+        let page_h = H - BAR - ROW - 24;
         let fx = LABEL_W + 8;
         let fw = inner - fx;
-        self.title.set_geometry(M, 8, inner, ROW);
+        let put = |w: &dyn Component, x, y, width, height, anchors| {
+            w.set_geometry(x, y, width, height);
+            w.set_anchors(anchors);
+        };
+        put(&self.title, M, 8, inner, ROW, A::TOP_STRETCH);
         for p in &self.pages {
-            p.set_geometry(M, 8 + ROW + 8, inner, page_h);
+            put(p, M, 8 + ROW + 8, inner, page_h, A::ALL);
         }
         // Art
-        self.kind.set_geometry(fx, 0, fw, ROW);
-        self.kind_hint.set_geometry(0, ROW + 12, inner, 120);
+        put(&self.kind, fx, 0, fw, ROW, A::TOP_STRETCH);
+        put(&self.kind_hint, 0, ROW + 12, inner, 120, A::TOP_STRETCH);
         // Name und Ort
-        self.name.set_geometry(fx, 0, fw, ROW);
-        self.parent.set_geometry(fx, ROW + 8, fw - 40, ROW);
-        self.browse.set_geometry(inner - 34, ROW + 8, 34, ROW);
-        self.rust.set_geometry(fx, 2 * (ROW + 8), 120, ROW);
-        self.place_hint
-            .set_geometry(0, 3 * (ROW + 8) + 4, inner, page_h - 3 * (ROW + 8) - 4);
+        put(&self.name, fx, 0, fw, ROW, A::TOP_STRETCH);
+        put(&self.parent, fx, ROW + 8, fw - 40, ROW, A::TOP_STRETCH);
+        put(&self.browse, inner - 34, ROW + 8, 34, ROW, A::TOP_RIGHT);
+        put(&self.rust, fx, 2 * (ROW + 8), 120, ROW, A::TOP_LEFT);
+        let y = 3 * (ROW + 8) + 4;
+        put(&self.place_hint, 0, y, inner, page_h - y, A::ALL);
         // Zielsysteme
-        self.platforms_label.set_geometry(0, 0, inner, ROW);
+        put(&self.platforms_label, 0, 0, inner, ROW, A::TOP_STRETCH);
         for (i, c) in self.platforms.iter().enumerate() {
-            c.set_geometry(0, ROW + 8 + i as i32 * (ROW + 2), inner, ROW);
+            put(
+                c,
+                0,
+                ROW + 8 + i as i32 * (ROW + 2),
+                inner,
+                ROW,
+                A::TOP_STRETCH,
+            );
         }
         // Oberfläche: der Hinweis nimmt den Platz bis zum Häkchen ein.
-        self.backend.set_geometry(fx, 0, fw, ROW);
+        put(&self.backend, fx, 0, fw, ROW, A::TOP_STRETCH);
         let notice_h = page_h - (ROW + 10) - ROW - 20;
-        self.notice.set_geometry(0, ROW + 10, inner, notice_h);
-        self.accept
-            .set_geometry(0, ROW + 10 + notice_h + 10, inner, ROW);
+        put(&self.notice, 0, ROW + 10, inner, notice_h, A::ALL);
+        let y = ROW + 10 + notice_h + 10;
+        put(&self.accept, 0, y, inner, ROW, A::BOTTOM_STRETCH);
         // Komponenten
-        self.components_label.set_geometry(0, 0, inner, ROW);
-        self.database.set_geometry(0, ROW + 6, LABEL_W + 40, ROW);
-        self.driver.set_geometry(fx + 40, ROW + 6, fw - 40, ROW);
-        self.db_url
-            .set_geometry(fx + 40, 2 * ROW + 10, fw - 40, ROW);
-        self.redis.set_geometry(0, 3 * ROW + 20, LABEL_W + 40, ROW);
-        self.redis_url
-            .set_geometry(fx + 40, 3 * ROW + 20, fw - 40, ROW);
-        self.web.set_geometry(0, 4 * ROW + 32, inner, ROW);
-        self.runtime.set_geometry(0, 5 * ROW + 38, inner, ROW);
+        put(&self.components_label, 0, 0, inner, ROW, A::TOP_STRETCH);
+        put(&self.database, 0, ROW + 6, LABEL_W + 40, ROW, A::TOP_LEFT);
+        put(&self.driver, fx + 40, ROW + 6, fw - 40, ROW, A::TOP_STRETCH);
+        put(
+            &self.db_url,
+            fx + 40,
+            2 * ROW + 10,
+            fw - 40,
+            ROW,
+            A::TOP_STRETCH,
+        );
+        put(&self.redis, 0, 3 * ROW + 20, LABEL_W + 40, ROW, A::TOP_LEFT);
+        put(
+            &self.redis_url,
+            fx + 40,
+            3 * ROW + 20,
+            fw - 40,
+            ROW,
+            A::TOP_STRETCH,
+        );
+        put(&self.web, 0, 4 * ROW + 32, inner, ROW, A::TOP_STRETCH);
+        put(&self.runtime, 0, 5 * ROW + 38, inner, ROW, A::TOP_STRETCH);
         // Git und Zusammenfassung
-        self.git.set_geometry(0, 0, inner, ROW);
-        self.commit.set_geometry(24, ROW + 2, inner - 24, ROW);
-        self.summary
-            .set_geometry(0, 2 * ROW + 12, inner, page_h - 2 * ROW - 12);
+        put(&self.git, 0, 0, inner, ROW, A::TOP_STRETCH);
+        put(&self.commit, 24, ROW + 2, inner - 24, ROW, A::TOP_STRETCH);
+        let y = 2 * ROW + 12;
+        put(&self.summary, 0, y, inner, page_h - y, A::ALL);
         // Leiste
-        let y = h - BAR + 8;
-        let right = M + inner;
-        self.cancel.set_geometry(M, y, 110, ROW);
-        self.back.set_geometry(right - 3 * 110 - 16, y, 110, ROW);
-        self.next.set_geometry(right - 2 * 110 - 8, y, 110, ROW);
-        self.finish.set_geometry(right - 110, y, 110, ROW);
+        let y = H - BAR + 8;
+        put(&self.cancel, M, y, 110, ROW, A::BOTTOM_LEFT);
+        put(
+            &self.back,
+            W - M - 3 * 110 - 16,
+            y,
+            110,
+            ROW,
+            A::BOTTOM_RIGHT,
+        );
+        put(
+            &self.next,
+            W - M - 2 * 110 - 8,
+            y,
+            110,
+            ROW,
+            A::BOTTOM_RIGHT,
+        );
+        put(&self.finish, W - M - 110, y, 110, ROW, A::BOTTOM_RIGHT);
     }
 
     fn library(&self) -> bool {
@@ -661,12 +699,6 @@ impl Ide {
 
 pub fn connect(ide: &Rc<Ide>) {
     let w = &ide.wizard;
-    let weak = Rc::downgrade(ide);
-    w.window.on_resized(move |width, height| {
-        if let Some(ide) = weak.upgrade() {
-            ide.wizard.layout(width, height);
-        }
-    });
     w.cancel
         .on_clicked(with0(ide, |ide| ide.wizard.window.hide()));
     w.back.on_clicked(with0(ide, |ide| ide.wizard_step(false)));

@@ -377,7 +377,7 @@ impl Layouter<'_> {
                 .children
                 .iter()
                 .filter_map(|c| match c.visual.placement {
-                    Placement::Absolute { position, size } => {
+                    Placement::Absolute { position, size, .. } => {
                         Some((position.x + size.width, position.y + size.height))
                     }
                     _ => None,
@@ -392,6 +392,36 @@ impl Layouter<'_> {
             (w + left + right).max(metrics.min_width),
             (h + top + bottom + metrics.header).max(metrics.height),
         )
+    }
+
+    /// [`Widget::design_area`] as the designer draws it: a header (frame
+    /// title) takes its part of a known height.
+    fn design_area(&self, widget: &Widget) -> tdr_core::Size {
+        let mut area = widget.design_area();
+        let known_height = match widget.visual.placement {
+            Placement::Absolute { .. } => true,
+            Placement::Layout { size, .. } => size.height > 0,
+        };
+        let is_form = widget.component.type_ref == builtin::form();
+        if !is_form && known_height {
+            area.height -= self.theme.metrics(&widget.component.type_ref).header;
+        }
+        // Ohne eigenes Layout zeichnet der Designer den Rand des Themes.
+        if widget.visual.layout.is_none() {
+            let known_width = is_form
+                || match widget.visual.placement {
+                    Placement::Absolute { .. } => true,
+                    Placement::Layout { size, .. } => size.width > 0,
+                };
+            let extra = 2 * (tdr_core::ContainerLayout::STANDARD.padding.left - self.theme.padding);
+            if known_width {
+                area.width += extra;
+            }
+            if known_height || is_form {
+                area.height += extra;
+            }
+        }
+        area
     }
 
     /// Height of the form's menu bar (0 without main menu).
@@ -471,14 +501,42 @@ impl Layouter<'_> {
                 .clamp(0, flow.len() as i64 - 1) as usize;
             flow = vec![flow[page]];
         }
-        let naturals: Vec<(i32, i32)> = flow.iter().map(|c| self.natural(c)).collect();
+        // Prozent: Anteil am Inhalt dieses Containers, geht der Wunschgröße vor.
+        let percent_of = |w: &Widget| match w.visual.placement {
+            Placement::Layout { percent, .. } => (percent.width, percent.height),
+            Placement::Absolute { .. } => (0, 0),
+        };
+        let naturals: Vec<(i32, i32)> = flow
+            .iter()
+            .map(|c| {
+                let (w, h) = self.natural(c);
+                let (pw, ph) = percent_of(c);
+                (
+                    if pw > 0 { content.width * pw / 100 } else { w },
+                    if ph > 0 { content.height * ph / 100 } else { h },
+                )
+            })
+            .collect();
         let mut placed: Vec<(&Widget, Rect)> = Vec::new();
+        let horizontal_flow = matches!(kind, LayoutKind::Horizontal);
+        // Auf einer Achse in Prozent gelten Dehnen und Fill nicht.
         let stretch_of = |w: &Widget| match w.visual.placement {
-            Placement::Layout { stretch, .. } => stretch as i32,
+            Placement::Layout { stretch, .. } => {
+                let (pw, ph) = percent_of(w);
+                let main = if horizontal_flow { pw } else { ph };
+                if main > 0 { 0 } else { stretch as i32 }
+            }
             Placement::Absolute { .. } => 0,
         };
         let align_of = |w: &Widget| match w.visual.placement {
-            Placement::Layout { align, .. } => align,
+            Placement::Layout { align, .. } => {
+                let (pw, ph) = percent_of(w);
+                if align == tdr_core::Align::Fill && (pw > 0 || ph > 0) {
+                    tdr_core::Align::Start
+                } else {
+                    align
+                }
+            }
             Placement::Absolute { .. } => tdr_core::Align::Start,
         };
         let gaps = spacing * (flow.len().saturating_sub(1) as i32);
@@ -593,8 +651,20 @@ impl Layouter<'_> {
                 }
             }
         }
+        // Absolut: verankert an den Kanten der Fläche, für die sie entworfen wurden.
+        let design = self.design_area(widget);
+        let actual = tdr_core::Size {
+            width: content.width,
+            height: content.height,
+        };
         for child in widget.children.iter() {
-            if let Placement::Absolute { position, size } = child.visual.placement {
+            if let Placement::Absolute {
+                position,
+                size,
+                anchors,
+            } = child.visual.placement
+            {
+                let (position, size) = anchors.apply(position, size, design, actual);
                 placed.push((
                     child,
                     Rect::new(

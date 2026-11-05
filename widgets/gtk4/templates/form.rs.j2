@@ -24,7 +24,19 @@ impl {{ form.struct }} {
             {%- elif l.kind == "stack" %}
             let layout = gtk4::Stack::new();
             {%- elif l.kind == "absolute" %}
-            let layout = gtk4::Fixed::new();
+            // Absolut: ein Overlay legt jedes Kind nach seinen Ankern an
+            // (Abstand zu den verankerten Rändern der Entwurfsfläche bleibt).
+            let layout = gtk4::Overlay::new();
+            {%- set ext = namespace(w=0, h=0) %}
+            {%- for c in w.children if c.placement and c.placement.kind == "absolute" %}
+            {%- set ext.w = [ext.w, c.placement.x + c.placement.width] | max %}
+            {%- set ext.h = [ext.h, c.placement.y + c.placement.height] | max %}
+            {%- endfor %}
+            let base = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+            base.set_size_request({{ ext.w }}, {{ ext.h }});
+            layout.set_child(Some(&base));
+            #[allow(unused_mut)]
+            let mut places: Vec<(gtk4::Widget, [i32; 4], [bool; 4])> = Vec::new();
             {%- else %}
             let layout = gtk4::Box::new(gtk4::Orientation::Vertical, {{ l.spacing }});
             {%- endif %}
@@ -45,21 +57,31 @@ impl {{ form.struct }} {
                 {%- endif %}
                 {%- set p = c.placement %}
                 {%- if l.kind == "absolute" %}
+                layout.add_overlay(&child);
                 {%- if p and p.kind == "absolute" %}
-                child.set_size_request({{ p.width }}, {{ p.height }});
-                layout.put(&child, {{ p.x }} as f64, {{ p.y }} as f64);
+                places.push((child, [{{ p.x }}, {{ p.y }}, {{ p.width }}, {{ p.height }}], [{{ p.anchors.left | lower }}, {{ p.anchors.top | lower }}, {{ p.anchors.right | lower }}, {{ p.anchors.bottom | lower }}]));
                 {%- else %}
-                layout.put(&child, 0.0, 0.0);
+                places.push((child, [0, 0, 0, 0], [true, true, false, false]));
                 {%- endif %}
                 {%- elif l.kind == "stack" %}
                 layout.add_child(&child);
                 {%- else %}
-                {%- if p and p.kind == "layout" and (p.width > 0 or p.height > 0) %}
+                {%- set wp = p.width_percent if p and p.kind == "layout" else 0 %}
+                {%- set hp = p.height_percent if p and p.kind == "layout" else 0 %}
+                {%- set rw = p.width if p and p.kind == "layout" and p.width > 0 and wp == 0 else -1 %}
+                {%- set rh = p.height if p and p.kind == "layout" and p.height > 0 and hp == 0 else -1 %}
+                {%- if rw > 0 or rh > 0 %}
                 // Wunschgröße aus dem Designer (-1 = natürlich).
-                child.set_size_request({{ p.width if p.width > 0 else -1 }}, {{ p.height if p.height > 0 else -1 }});
+                child.set_size_request({{ rw }}, {{ rh }});
+                {%- endif %}
+                {%- if wp > 0 or hp > 0 %}
+                // Prozent vom Inhalt des Elternelements (0 = Achse natürlich).
+                let child: gtk4::Widget = freya_percent::Percent::new(&child, {{ wp }}, {{ hp }}).upcast();
                 {%- endif %}
                 {%- set align = p.align if p and p.kind == "layout" else "Fill" %}
-                {%- set stretch = "true" if (p.stretch if p and p.kind == "layout" else 0) > 0 else "false" %}
+                {%- if (wp > 0 or hp > 0) and align == "Fill" %}{% set align = "Start" %}{% endif %}
+                {%- set main_pct = wp if l.kind == "horizontal" else hp %}
+                {%- set stretch = "true" if (p.stretch if p and p.kind == "layout" else 0) > 0 and main_pct == 0 else "false" %}
                 {%- if l.kind == "horizontal" %}
                 {%- if align != "Fill" %}
                 child.set_valign(gtk4::Align::{{ align }});
@@ -93,6 +115,34 @@ impl {{ form.struct }} {
             self.{{ c.name }}.set_group(Some(&self.{{ radios[0].name }}));
             {%- endif %}
             {%- endfor %}
+            {%- if l.kind == "absolute" %}
+            {%- set area = (w.children | selectattr("placement") | selectattr("placement.kind", "eq", "absolute") | first) %}
+            {%- if area %}
+            let (design_w, design_h) = ({{ area.placement.area.width }}, {{ area.placement.area.height }});
+            {%- else %}
+            let (design_w, design_h) = ({{ ext.w }}, {{ ext.h }});
+            {%- endif %}
+            layout.connect_get_child_position(move |overlay, widget| {
+                let (_, [x, y, w, h], [left, top, right, bottom]) =
+                    places.iter().find(|(c, _, _)| c == widget)?;
+                let (w, h) = if *w > 0 {
+                    (*w, *h)
+                } else {
+                    let natural = widget.preferred_size().1;
+                    (natural.width(), natural.height())
+                };
+                // Wie Delphis Anchors: links und rechts = wächst mit, nur rechts = wandert mit.
+                let axis = |start: bool, end: bool, pos: i32, len: i32, delta: i32| match (start, end) {
+                    (true, true) => (pos, (len + delta).max(0)),
+                    (false, true) => (pos + delta, len),
+                    (false, false) => (pos + delta / 2, len),
+                    (true, false) => (pos, len),
+                };
+                let (x, w) = axis(*left, *right, *x, w, overlay.width() - design_w);
+                let (y, h) = axis(*top, *bottom, *y, h, overlay.height() - design_h);
+                Some(gtk4::gdk::Rectangle::new(x, y, w, h))
+            });
+            {%- endif %}
             {%- if w.type == "core/Container" %}
             layout.set_hexpand(true);
             layout.set_vexpand(true);
@@ -377,4 +427,95 @@ impl {{ form.struct }} {
         self.{{ root.name }}.present();
     }
 }
+{%- set percent = namespace(any=false) %}
+{%- for w in widgets if w.placement and w.placement.kind == "layout" and (w.placement.width_percent > 0 or w.placement.height_percent > 0) %}{% set percent.any = true %}{% endfor %}
+{%- if percent.any %}
+
+/// A widget sized in percent of its parent's content (GTK has no
+/// percentages): its natural size on such an axis is that share; the
+/// minimum stays the child's, so the window can still shrink.
+mod freya_percent {
+    use gtk4::glib;
+    use gtk4::prelude::*;
+    use gtk4::subclass::prelude::*;
+
+    mod imp {
+        use super::*;
+        use std::cell::Cell;
+
+        #[derive(Default)]
+        pub struct Percent {
+            pub percent: Cell<(i32, i32)>,
+            /// Parent size the last measurement used.
+            pub seen: Cell<(i32, i32)>,
+        }
+
+        #[glib::object_subclass]
+        impl ObjectSubclass for Percent {
+            const NAME: &'static str = "FreyaPercent{{ form.struct }}";
+            type Type = super::Percent;
+            type ParentType = gtk4::Widget;
+        }
+
+        impl ObjectImpl for Percent {
+            fn dispose(&self) {
+                while let Some(child) = self.obj().first_child() {
+                    child.unparent();
+                }
+            }
+        }
+
+        impl WidgetImpl for Percent {
+            fn measure(&self, orientation: gtk4::Orientation, for_size: i32) -> (i32, i32, i32, i32) {
+                let obj = self.obj();
+                let Some(child) = obj.first_child() else {
+                    return (0, 0, -1, -1);
+                };
+                let (min, natural, _, _) = child.measure(orientation, for_size);
+                let parent = WidgetExt::parent(&*obj).map_or((0, 0), |p| (p.width(), p.height()));
+                self.seen.set(parent);
+                let (wp, hp) = self.percent.get();
+                let (percent, space) = match orientation {
+                    gtk4::Orientation::Horizontal => (wp, parent.0),
+                    _ => (hp, parent.1),
+                };
+                let natural = if percent > 0 { (space * percent / 100).max(min) } else { natural };
+                (min, natural, -1, -1)
+            }
+
+            fn size_allocate(&self, width: i32, height: i32, baseline: i32) {
+                let obj = self.obj();
+                if let Some(child) = obj.first_child() {
+                    child.allocate(width, height, baseline, None);
+                }
+                // Neue Größe des Elternelements: neu messen (nach dieser Runde).
+                let parent = WidgetExt::parent(&*obj).map_or((0, 0), |p| (p.width(), p.height()));
+                if parent != self.seen.get() {
+                    let weak = obj.downgrade();
+                    glib::idle_add_local_once(move || {
+                        if let Some(obj) = weak.upgrade() {
+                            obj.queue_resize();
+                        }
+                    });
+                }
+            }
+        }
+    }
+
+    glib::wrapper! {
+        pub struct Percent(ObjectSubclass<imp::Percent>)
+            @extends gtk4::Widget,
+            @implements gtk4::Buildable, gtk4::ConstraintTarget;
+    }
+
+    impl Percent {
+        pub fn new(child: &impl IsA<gtk4::Widget>, width: i32, height: i32) -> Self {
+            let this: Self = glib::Object::new();
+            this.imp().percent.set((width, height));
+            child.set_parent(&this);
+            this
+        }
+    }
+}
+{%- endif %}
 {%- endif %}

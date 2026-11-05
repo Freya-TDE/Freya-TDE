@@ -115,6 +115,7 @@ fn sample_form() -> Form {
             align: Align::Fill,
             cell: None,
             size: Size::default(),
+            percent: Size::default(),
         }),
     );
     let mut form = Form::new(name("customers"), "egui", root);
@@ -357,6 +358,7 @@ fn layout_rules() {
             column_span: 1,
         }),
         size: Size::default(),
+        percent: Size::default(),
     };
     form.widget_mut(&name("name_edit"))
         .unwrap()

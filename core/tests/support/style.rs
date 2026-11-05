@@ -7,8 +7,10 @@ fn name(n: &str) -> ComponentName {
     ComponentName::new(n).unwrap()
 }
 
-/// Sets the appearance properties and a requested size in the layout (the generated code must build and run
-/// with them; the look is checked on screenshots).
+/// Sets the appearance properties, a requested size and a size in percent
+/// in the layout and an anchored label in the absolute container `canvas`
+/// (the generated code must build and run with them; the look is checked
+/// on screenshots).
 pub fn apply(form: &mut Form, greeting: &str, button: &str) {
     let window = form.widget_mut(&name("window")).unwrap();
     let c = &mut window.component;
@@ -35,10 +37,42 @@ pub fn apply(form: &mut Form, greeting: &str, button: &str) {
             width: 260,
             height: 40,
         },
+        percent: Size::default(),
     };
     label.component.set("font_size", 20i64);
     label.component.set("bold", true);
     label.component.set("italic", true);
+    // Prozent: das Eingabefeld nimmt 60 % der Breite ein.
+    if let Some(edit) = form.widget_mut(&name("name_edit")) {
+        edit.visual.placement = Placement::Layout {
+            stretch: 0,
+            align: Align::Fill,
+            cell: None,
+            size: Size::default(),
+            percent: Size {
+                width: 60,
+                height: 0,
+            },
+        };
+    }
+    // Anker: der absolute Container füllt die Breite, ein Label hängt rechts.
+    if form.widget(&name("canvas")).is_some() {
+        form.add_widget(
+            &name("canvas"),
+            Widget::from_component(
+                Component::new(name("anchored"), builtin::label()).with("text", "rechts"),
+            )
+            .with_placement(Placement::Absolute {
+                position: Point { x: 120, y: 2 },
+                size: Size {
+                    width: 60,
+                    height: 20,
+                },
+                anchors: Anchors::new(false, true, true, false),
+            }),
+        )
+        .unwrap();
+    }
     let ok = form.widget_mut(&name(button)).unwrap();
     ok.component
         .set("background", Value::Color(Color::rgb(0xc0, 0x39, 0x2b)));

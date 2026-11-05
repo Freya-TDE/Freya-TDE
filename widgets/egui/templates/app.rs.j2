@@ -253,3 +253,27 @@ pub fn background(ui: &eframe::egui::Ui, rect: eframe::egui::Rect, file: &str, f
         .with_clip_rect(rect)
         .image(texture.id, target, uv, egui::Color32::WHITE);
 }
+
+/// Place of an absolutely placed widget in `area` (like Delphi's Anchors):
+/// `rect` = x, y, width, height as designed for an area of size `design`;
+/// `anchors` = left, top, right, bottom.
+#[allow(dead_code)]
+pub fn anchored(
+    area: eframe::egui::Rect,
+    design: (i32, i32),
+    rect: [i32; 4],
+    anchors: [bool; 4],
+) -> eframe::egui::Rect {
+    let axis = |start: bool, end: bool, pos: i32, len: i32, delta: i32| match (start, end) {
+        (true, true) => (pos, (len + delta).max(0)),
+        (false, true) => (pos + delta, len),
+        (false, false) => (pos + delta / 2, len),
+        (true, false) => (pos, len),
+    };
+    let (x, w) = axis(anchors[0], anchors[2], rect[0], rect[2], area.width() as i32 - design.0);
+    let (y, h) = axis(anchors[1], anchors[3], rect[1], rect[3], area.height() as i32 - design.1);
+    eframe::egui::Rect::from_min_size(
+        area.min + eframe::egui::vec2(x as f32, y as f32),
+        eframe::egui::vec2(w as f32, h as f32),
+    )
+}

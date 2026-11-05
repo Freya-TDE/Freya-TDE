@@ -209,6 +209,7 @@ fn layout_stacks_children_and_stretches() {
             align: Align::Center,
             cell: None,
             size: tdr_core::Size::default(),
+            percent: tdr_core::Size::default(),
         },
     })
     .unwrap();
@@ -382,4 +383,141 @@ fn save_and_open() {
     assert!(dir.join("src/start.ftdr").exists());
     assert!(!dir.join("src/main.ftdr").exists());
     std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn layout_rows_percent_and_absolute_with_anchors() {
+    let mut doc = sample();
+    let theme = Theme::for_platform(&Platform::Linux);
+    let main = name("main");
+    let form = doc.form(&main).unwrap();
+    // Zeilen: Platzierung im Layout und Layout des Formulars.
+    let rows = layout_rows(form, &name("label1"), true);
+    let names: Vec<&str> = rows.iter().map(|r| r.name.as_str()).collect();
+    assert!(names.contains(&"placement.width_percent"), "{names:?}");
+    assert!(names.contains(&"placement.align"));
+    assert!(!names.iter().any(|n| n.starts_with("layout.")));
+    let rows = layout_rows(form, &name("window"), false);
+    assert!(rows.iter().all(|r| r.name.starts_with("layout.")));
+    let kinds = rows.iter().find(|r| r.name == "layout.kind").unwrap();
+    assert!(
+        matches!(&kinds.ty, tdr_core::PropertyType::Enum(v) if !v.contains(&"Absolute".to_owned())),
+        "ohne Fähigkeit des Backends kein Absolute"
+    );
+
+    // 50 % Breite: halber Inhalt des Formulars, links (Fill wirkt wie Start).
+    let set = |doc: &mut Document, element: &str, row: &str, value: Value| {
+        let shown = layout(doc.form(&main).unwrap(), doc.registry(), &theme);
+        let command = layout_command(
+            doc.form(&main).unwrap(),
+            &name(element),
+            row,
+            Some(value),
+            Some(&shown),
+        )
+        .unwrap();
+        doc.apply(command).unwrap();
+    };
+    set(
+        &mut doc,
+        "label1",
+        "placement.width_percent",
+        Value::Int(50),
+    );
+    let shown = layout(doc.form(&main).unwrap(), doc.registry(), &theme);
+    let content = shown.item(&name("window")).unwrap().content.unwrap();
+    let label = shown.rect(&name("label1")).unwrap();
+    assert_eq!(label.width, content.width / 2);
+    assert_eq!(label.x, content.x);
+    assert!(matches!(
+        doc.form(&main).unwrap().widget(&name("label1")).unwrap().visual.placement,
+        Placement::Layout { percent, .. } if percent.width == 50
+    ));
+
+    // Absolut: die Kinder bleiben, wo sie zu sehen waren (ein Schritt zum Rückgängigmachen).
+    let button_before = shown.rect(&name("button1")).unwrap();
+    set(
+        &mut doc,
+        "window",
+        "layout.kind",
+        Value::Enum("Absolute".into()),
+    );
+    let shown = layout(doc.form(&main).unwrap(), doc.registry(), &theme);
+    assert_eq!(shown.rect(&name("button1")).unwrap(), button_before);
+    let rows = layout_rows(doc.form(&main).unwrap(), &name("button1"), true);
+    assert!(rows.iter().any(|r| r.name == "placement.anchor_right"));
+
+    // Anker rechts unten: Formular breiter und höher → der Knopf wandert mit.
+    set(
+        &mut doc,
+        "button1",
+        "placement.anchor_left",
+        Value::Bool(false),
+    );
+    set(
+        &mut doc,
+        "button1",
+        "placement.anchor_right",
+        Value::Bool(true),
+    );
+    let widget = doc
+        .form(&main)
+        .unwrap()
+        .widget(&name("button1"))
+        .unwrap()
+        .clone();
+    let Placement::Absolute {
+        position,
+        size,
+        anchors,
+    } = widget.visual.placement
+    else {
+        panic!("absolut erwartet");
+    };
+    assert_eq!(anchors, tdr_core::Anchors::new(false, true, true, false));
+    let design = doc
+        .form(&main)
+        .unwrap()
+        .root
+        .as_ref()
+        .unwrap()
+        .design_area();
+    let wider = tdr_core::Size {
+        width: design.width + 100,
+        height: design.height + 40,
+    };
+    let (moved, same) = anchors.apply(position, size, design, wider);
+    assert_eq!(moved.x, position.x + 100);
+    assert_eq!(moved.y, position.y);
+    assert_eq!(same, size);
+
+    // Zurück in den Fluss.
+    assert!(doc.undo());
+    assert!(doc.undo());
+    assert!(doc.undo());
+    assert!(
+        !doc.form(&main)
+            .unwrap()
+            .widget(&name("button1"))
+            .unwrap()
+            .visual
+            .placement
+            .is_absolute()
+    );
+    // Unbekannte Zeile und falscher Typ: stabile Codes.
+    let form = doc.form(&main).unwrap();
+    let error = layout_command(form, &name("label1"), "placement.nope", None, None).unwrap_err();
+    assert_eq!(serde_json::to_value(&error).unwrap()["code"], "unknown_row");
+    let error = layout_command(
+        form,
+        &name("label1"),
+        "placement.width",
+        Some(Value::Bool(true)),
+        None,
+    )
+    .unwrap_err();
+    assert_eq!(
+        serde_json::to_value(&error).unwrap()["code"],
+        "invalid_value"
+    );
 }

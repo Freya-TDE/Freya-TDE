@@ -37,6 +37,7 @@ fn main() -> Result<(), ModelError> {
             align: Align::Fill,
             cell: None,
             size: Size::default(),
+            percent: Size::default(),
         }),
     )?;
 

@@ -34,10 +34,12 @@ pub mod document;
 pub use command::{Command, CommandError, Outcome};
 pub use document::{Document, DocumentError, Findings, OpenReport};
 pub mod inspector;
+pub mod placement;
 
 pub use inspector::{
     EventRow, PaletteItem, PropertyRow, events, palette, properties, suggest_handler,
 };
+pub use placement::{LayoutRowError, is_layout_row, layout_command, layout_rows};
 pub mod svg;
 
 pub use svg::to_svg;
