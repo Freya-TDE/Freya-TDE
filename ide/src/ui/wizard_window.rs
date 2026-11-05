@@ -20,6 +20,7 @@ const H: i32 = 470;
 const M: i32 = 16;
 const ROW: i32 = 32;
 const BAR: i32 = 48;
+const LABEL_W: i32 = 150;
 
 /// Pages in order; `Ui` is skipped for libraries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -92,6 +93,8 @@ pub struct WizardWindow {
     pub window: RnclWindow,
     title: RnclLabel,
     pages: Vec<RnclPanel>,
+    platforms_label: RnclLabel,
+    components_label: RnclLabel,
     // Art
     kind: RnclComboBox,
     kind_hint: RnclLabel,
@@ -142,19 +145,8 @@ impl WizardWindow {
         let window = RnclWindow::new("Neues Projekt");
         window.set_size(W, H);
         let title = RnclLabel::new(&window, "");
-        title.set_geometry(M, 8, W - 2 * M, ROW);
-        let inner = W - 2 * M;
-        let pages: Vec<RnclPanel> = PAGES
-            .iter()
-            .map(|_| {
-                let p = RnclPanel::new(&window);
-                p.set_geometry(M, 8 + ROW + 8, inner, H - BAR - ROW - 24);
-                p
-            })
-            .collect();
-        let lw = 150;
-        let fx = lw + 8;
-        let fw = inner - fx;
+        let pages: Vec<RnclPanel> = PAGES.iter().map(|_| RnclPanel::new(&window)).collect();
+        let lw = LABEL_W;
 
         // Art
         let p = &pages[0];
@@ -165,42 +157,30 @@ impl WizardWindow {
             "Bibliothek (Datenmodule, ohne Oberfläche)",
         ]);
         kind.set_current_index(0);
-        kind.set_geometry(fx, 0, fw, ROW);
         let kind_hint = RnclLabel::new(p, "");
-        kind_hint.set_geometry(0, ROW + 12, inner, 120);
 
         // Name und Ort
         let p = &pages[1];
         label(p, "Name", 0, 0, lw);
         let name = RnclTextField::new(p);
         name.set_placeholder("z. B. laden (Cargo-Paketname)");
-        name.set_geometry(fx, 0, fw, ROW);
         label(p, "Übergeordneter Ordner", 0, ROW + 8, lw);
         let parent = RnclTextField::new(p);
-        parent.set_geometry(fx, ROW + 8, fw - 40, ROW);
         let browse = RnclButton::new(p, "…");
-        browse.set_geometry(inner - 34, ROW + 8, 34, ROW);
         label(p, "Rust-Version", 0, 2 * (ROW + 8), lw);
         let rust = RnclTextField::new(p);
-        rust.set_geometry(fx, 2 * (ROW + 8), 120, ROW);
         let place_hint = RnclLabel::new(p, "");
-        place_hint.set_geometry(0, 3 * (ROW + 8) + 4, inner, 80);
 
         // Zielsysteme
         let p = &pages[2];
-        label(
+        let platforms_label = RnclLabel::new(
             p,
             "Für welche Systeme? Der Designer zeigt das erste; Unterschiede werden zu cfg-Zweigen.",
-            0,
-            0,
-            inner,
         );
         let platforms = PLATFORMS
             .iter()
-            .enumerate()
-            .map(|(i, (platform, text))| {
+            .map(|(platform, text)| {
                 let c = RnclCheckBox::new(p, text);
-                c.set_geometry(0, ROW + 8 + i as i32 * (ROW + 2), inner, ROW);
                 c.set_checked(*platform == this_platform());
                 c
             })
@@ -210,69 +190,50 @@ impl WizardWindow {
         let p = &pages[3];
         label(p, "UI-Toolkit", 0, 0, lw);
         let backend = RnclComboBox::new(p);
-        backend.set_geometry(fx, 0, fw, ROW);
         let notice = RnclTextArea::new(p);
         notice.set_read_only(true);
         notice.set_word_wrap(true);
-        notice.set_geometry(0, ROW + 10, inner, 190);
         let accept = RnclCheckBox::new(p, "Lizenzhinweis gelesen, Projekt trotzdem anlegen");
-        accept.set_geometry(0, ROW + 210, inner, ROW);
 
         // Komponenten
         let p = &pages[4];
-        label(
+        let components_label = RnclLabel::new(
             p,
             "Im Datenmodul „services“ anlegen (Tokio kommt bei Bedarf dazu):",
-            0,
-            0,
-            inner,
         );
         let database = RnclCheckBox::new(p, "Datenbank (SQLx)");
-        database.set_geometry(0, ROW + 6, lw + 40, ROW);
         let driver = RnclComboBox::new(p);
         driver.set_items(&DRIVERS.map(|d| d.1));
         driver.set_current_index(0);
-        driver.set_geometry(fx + 40, ROW + 6, fw - 40, ROW);
         let db_url = RnclTextField::new(p);
         db_url.set_text(DRIVERS[0].2);
-        db_url.set_geometry(fx + 40, 2 * ROW + 10, fw - 40, ROW);
         let redis = RnclCheckBox::new(p, "Redis / Valkey");
-        redis.set_geometry(0, 3 * ROW + 20, lw + 40, ROW);
         let redis_url = RnclTextField::new(p);
         redis_url.set_text("redis://127.0.0.1/");
-        redis_url.set_geometry(fx + 40, 3 * ROW + 20, fw - 40, ROW);
         let web = RnclCheckBox::new(p, "Webserver (Axum)");
-        web.set_geometry(0, 4 * ROW + 32, inner, ROW);
         let runtime = RnclCheckBox::new(p, "Tokio-Laufzeit für eigenen async-Code");
-        runtime.set_geometry(0, 5 * ROW + 38, inner, ROW);
 
         // Git und Zusammenfassung
         let p = &pages[5];
         let git = RnclCheckBox::new(p, "Git-Repository anlegen (.gitignore mit /target)");
-        git.set_geometry(0, 0, inner, ROW);
         git.set_checked(true);
         let commit = RnclCheckBox::new(p, "… und das neue Projekt committen");
-        commit.set_geometry(24, ROW + 2, inner - 24, ROW);
         let summary = RnclTextArea::new(p);
         summary.set_read_only(true);
         summary.set_monospace(true);
-        summary.set_geometry(0, 2 * ROW + 12, inner, H - BAR - ROW - 24 - 2 * ROW - 12);
 
         // Leiste
-        let y = H - BAR + 8;
         let cancel = RnclButton::new(&window, "Abbrechen");
-        cancel.set_geometry(M, y, 110, ROW);
         let back = RnclButton::new(&window, "< Zurück");
-        back.set_geometry(W - M - 3 * 110 - 16, y, 110, ROW);
         let next = RnclButton::new(&window, "Weiter >");
-        next.set_geometry(W - M - 2 * 110 - 8, y, 110, ROW);
         let finish = RnclButton::new(&window, "Anlegen");
-        finish.set_geometry(W - M - 110, y, 110, ROW);
 
-        Self {
+        let wizard = Self {
             window,
             title,
             pages,
+            platforms_label,
+            components_label,
             kind,
             kind_hint,
             name,
@@ -301,7 +262,66 @@ impl WizardWindow {
             finish,
             page: Cell::new(0),
             registry: RefCell::new(tdr_core::TypeRegistry::with_builtins()),
+        };
+        wizard.layout(W, H);
+        wizard
+    }
+
+    /// Places everything whose size follows the window: fields, hints and
+    /// text areas grow with it, the buttons stay at the bottom right.
+    pub fn layout(&self, w: i32, h: i32) {
+        let inner = (w - 2 * M).max(200);
+        let page_h = (h - BAR - ROW - 24).max(200);
+        let fx = LABEL_W + 8;
+        let fw = inner - fx;
+        self.title.set_geometry(M, 8, inner, ROW);
+        for p in &self.pages {
+            p.set_geometry(M, 8 + ROW + 8, inner, page_h);
         }
+        // Art
+        self.kind.set_geometry(fx, 0, fw, ROW);
+        self.kind_hint.set_geometry(0, ROW + 12, inner, 120);
+        // Name und Ort
+        self.name.set_geometry(fx, 0, fw, ROW);
+        self.parent.set_geometry(fx, ROW + 8, fw - 40, ROW);
+        self.browse.set_geometry(inner - 34, ROW + 8, 34, ROW);
+        self.rust.set_geometry(fx, 2 * (ROW + 8), 120, ROW);
+        self.place_hint
+            .set_geometry(0, 3 * (ROW + 8) + 4, inner, page_h - 3 * (ROW + 8) - 4);
+        // Zielsysteme
+        self.platforms_label.set_geometry(0, 0, inner, ROW);
+        for (i, c) in self.platforms.iter().enumerate() {
+            c.set_geometry(0, ROW + 8 + i as i32 * (ROW + 2), inner, ROW);
+        }
+        // Oberfläche: der Hinweis nimmt den Platz bis zum Häkchen ein.
+        self.backend.set_geometry(fx, 0, fw, ROW);
+        let notice_h = page_h - (ROW + 10) - ROW - 20;
+        self.notice.set_geometry(0, ROW + 10, inner, notice_h);
+        self.accept
+            .set_geometry(0, ROW + 10 + notice_h + 10, inner, ROW);
+        // Komponenten
+        self.components_label.set_geometry(0, 0, inner, ROW);
+        self.database.set_geometry(0, ROW + 6, LABEL_W + 40, ROW);
+        self.driver.set_geometry(fx + 40, ROW + 6, fw - 40, ROW);
+        self.db_url
+            .set_geometry(fx + 40, 2 * ROW + 10, fw - 40, ROW);
+        self.redis.set_geometry(0, 3 * ROW + 20, LABEL_W + 40, ROW);
+        self.redis_url
+            .set_geometry(fx + 40, 3 * ROW + 20, fw - 40, ROW);
+        self.web.set_geometry(0, 4 * ROW + 32, inner, ROW);
+        self.runtime.set_geometry(0, 5 * ROW + 38, inner, ROW);
+        // Git und Zusammenfassung
+        self.git.set_geometry(0, 0, inner, ROW);
+        self.commit.set_geometry(24, ROW + 2, inner - 24, ROW);
+        self.summary
+            .set_geometry(0, 2 * ROW + 12, inner, page_h - 2 * ROW - 12);
+        // Leiste
+        let y = h - BAR + 8;
+        let right = M + inner;
+        self.cancel.set_geometry(M, y, 110, ROW);
+        self.back.set_geometry(right - 3 * 110 - 16, y, 110, ROW);
+        self.next.set_geometry(right - 2 * 110 - 8, y, 110, ROW);
+        self.finish.set_geometry(right - 110, y, 110, ROW);
     }
 
     fn library(&self) -> bool {
@@ -493,7 +513,7 @@ impl WizardWindow {
             }
             None => {
                 self.notice.set_text(
-                    "Weitere Toolkits (WebView, Flutter) kommen als eigene Backend-Packs dazu.",
+                    "Weitere Toolkits (z. B. WebView) kommen als eigene Backend-Packs dazu.",
                 );
                 self.accept.widget().set_visible(false);
             }
@@ -563,6 +583,12 @@ impl Ide {
     /// The wizard window (screenshots, tests).
     pub fn wizard_window(&self) -> &RnclWindow {
         &self.wizard.window
+    }
+
+    /// Size of the license notice field; it grows with the window (tests).
+    pub fn wizard_notice_size(&self) -> (i32, i32) {
+        let size = self.wizard.notice.widget().size();
+        (size.width, size.height)
     }
 
     /// Goes to the next (`true`) or previous page of the wizard.
@@ -635,6 +661,12 @@ impl Ide {
 
 pub fn connect(ide: &Rc<Ide>) {
     let w = &ide.wizard;
+    let weak = Rc::downgrade(ide);
+    w.window.on_resized(move |width, height| {
+        if let Some(ide) = weak.upgrade() {
+            ide.wizard.layout(width, height);
+        }
+    });
     w.cancel
         .on_clicked(with0(ide, |ide| ide.wizard.window.hide()));
     w.back.on_clicked(with0(ide, |ide| ide.wizard_step(false)));

@@ -1040,6 +1040,25 @@ fn main() {
             }
             ide.wizard_step(true);
         }
+        // Größeres Fenster: der Lizenzhinweis (Seite „Oberfläche“) wächst mit.
+        ide.wizard_step(false);
+        ide.wizard_step(false);
+        pump_until(1, || false);
+        let before = ide.wizard_notice_size();
+        ide.wizard_window().widget().set_size(900, 700);
+        assert!(
+            pump_until(5, || {
+                let now = ide.wizard_notice_size();
+                now.0 > before.0 + 200 && now.1 > before.1 + 150
+            }),
+            "Hinweis wächst mit dem Fenster: {before:?} → {:?}",
+            ide.wizard_notice_size()
+        );
+        if let Some(dir) = &shots {
+            ide.wizard_window()
+                .widget()
+                .save_screenshot(dir.join("wizard-large.png"));
+        }
         // Bibliothek: die Seite „Oberfläche“ entfällt.
         let mut library = NewProject::library("werkzeug", &home);
         library.rust_version = request.rust_version.clone();
