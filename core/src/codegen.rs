@@ -62,6 +62,16 @@
 //! – the margins to the right and bottom edge of the design area `area`) and `layout`
 //! (`{kind, columns, name, spacing, padding}` or none).
 //!
+//! Live components (`start`/`methods` in `[component.codegen]`, e.g.
+//! WebSocket, HTTP, Axum) give their form (or data module) a queue
+//! `freya_queue: crate::app::Queue<Self>`; `start` runs in
+//! `freya_start_data`, `methods` go into the form's `impl`, queued handler
+//! calls run in `freya_take_data` (the backend's `data_bound` is then set).
+//! A live data module runs as a Tokio task (`freya_run`, called by `run()`
+//! after `started`; with `host` the backend serves it). `attach` statements
+//! follow their component in `App::init`, `helpers` go to `app.gen.rs`
+//! once per type. Forms in the `run`/`app` contexts have `live`.
+//!
 //! The backend's `run` template gets `forms` (list of `{name, struct,
 //! data_module}`), `app` (the variable holding the `App`) and `runtime`
 //! (the runtime variable or none; with `host` it may be moved). It must evaluate to `Result<(), Error>`.
@@ -77,7 +87,9 @@
 //!
 //! The filter `rust_str` writes a text as a Rust string literal with escapes
 //! (`{{ item | rust_str }}` → `"Don't \"x\""`), e.g. for single list items;
-//! `dart_str` writes a single-quoted Dart string literal (`'Don\'t \$x'`).
+//! `dart_str` writes a single-quoted Dart string literal (`'Don\'t \$x'`);
+//! `url_join` puts a base URL in front of a path (`{{ base | url_join(path) }}`,
+//! absolute URLs stay).
 //!
 //! Every rendered piece is parsed with `syn`; errors are reported for the
 //! component and template part concerned.
@@ -91,7 +103,7 @@
 //! (`#[tokio::main]`) and `started` is async. Types whose `init` awaits
 //! (`is_async`) need a runtime component in the project.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt::{self, Write as _};
 use std::path::{Path, PathBuf};
 
@@ -538,7 +550,27 @@ fn environment() -> Environment<'static> {
     // Text als Rust-Stringliteral (auch für Einträge einer Liste).
     env.add_filter("rust_str", |text: String| format!("{text:?}"));
     env.add_filter("dart_str", |text: String| dart_string(&text));
+    // Basis-URL und Pfad: `{{ base | url_join(url) }}`; eine absolute URL
+    // (mit `://`) oder eine leere Basis lässt `url` stehen.
+    env.add_filter("url_join", |base: String, url: String| {
+        url_join(&base, &url)
+    });
     env
+}
+
+/// `base` and `url` joined with one `/` (see the filter `url_join`).
+fn url_join(base: &str, url: &str) -> String {
+    if base.is_empty() || url.contains("://") {
+        url.to_owned()
+    } else if url.is_empty() {
+        base.to_owned()
+    } else {
+        format!(
+            "{}/{}",
+            base.trim_end_matches('/'),
+            url.trim_start_matches('/')
+        )
+    }
 }
 
 /// Checks the syntax of a template (used when packs are loaded).
@@ -742,6 +774,16 @@ struct Generated {
     entry: Option<String>,
     runtime: Option<String>,
     is_runtime: bool,
+    /// Runs code when its form starts or adds methods (the form gets a queue).
+    live: bool,
+}
+
+/// Is `form` live: does a generated component of it start code or add
+/// methods? Then it has an event queue (`freya_queue`).
+fn is_live(form: &Form, generated: &[Generated]) -> bool {
+    generated
+        .iter()
+        .any(|g| g.live && g.path.form.as_ref() == Some(&form.name))
 }
 
 /// How references are written in a template's `rust` values.
@@ -1080,13 +1122,42 @@ fn render_component(
 
     let path = ComponentPath::on(form.name.clone(), component.name.clone());
     let var = format!("{}__{}", form.name, component.name);
-    let (field_type, statement) = match spec.share {
+    let (field_type, mut statement) = match spec.share {
         ShareMode::Arc => (
             format!("std::sync::Arc<{rust_type}>"),
             format!("let {var} = std::sync::Arc::new({init});"),
         ),
         ShareMode::Clone | ShareMode::Ref => (rust_type, format!("let {var} = {init};")),
     };
+    // Anhängen an eine andere Komponente (z. B. Route am Router), gleich
+    // nach dem Anlegen; ein leerer Verweis hängt nichts an.
+    if let (Some(template), Some(property)) = (&spec.attach, &spec.attach_to) {
+        let target = match component.get(property).map(|v| &v.value) {
+            Some(Value::Reference(Some(target))) => known
+                .get(&target.qualified(&form.name))
+                .map(|(v, _)| v.clone()),
+            _ => None,
+        };
+        if let Some(target) = target {
+            let context = minijinja::context! { this => var.as_str(), ..context };
+            let mut issues = Vec::new();
+            if let Some(text) = render(env, "attach", template, &context, &mut issues) {
+                let expr = format!("{target}{text}");
+                check_rust(
+                    &mut issues,
+                    "attach",
+                    &expr,
+                    syn::parse_str::<syn::Expr>(&expr).map(drop),
+                );
+                if issues.is_empty() {
+                    let _ = write!(statement, "\nlet {target} = {expr};");
+                }
+            }
+            if !issues.is_empty() {
+                return Err(issues);
+            }
+        }
+    }
     Ok(Generated {
         path,
         var,
@@ -1097,7 +1168,86 @@ fn render_component(
         entry,
         runtime,
         is_runtime: spec.is_runtime(),
+        live: spec.is_live(),
     })
+}
+
+/// What live components add to their form: statements for
+/// `freya_start_data` and methods.
+#[derive(Default)]
+struct FormRuntime {
+    starts: Vec<String>,
+    methods: Vec<String>,
+}
+
+/// Renders `start` and `methods` of the live components of `form`.
+fn form_runtime(
+    env: &Environment<'static>,
+    forms: &[Form],
+    form: &Form,
+    generated: &[Generated],
+    registry: &TypeRegistry,
+    out: &mut Diagnostics,
+) -> FormRuntime {
+    let mut runtime = FormRuntime::default();
+    let fields: HashSet<&ComponentName> = form_components(form, generated)
+        .iter()
+        .map(|g| &g.path.name)
+        .collect();
+    let resolve = |target: &ComponentPath| {
+        let own = target.target_form(&form.name) == &form.name;
+        (own && fields.contains(&target.name)).then(|| format!("self.{}", target.name))
+    };
+    for g in form_components(form, generated)
+        .into_iter()
+        .filter(|g| g.live)
+    {
+        let (Some(element), Some(ty)) = (form.element(&g.path.name), registry.get(&g.type_ref))
+        else {
+            continue;
+        };
+        let Some(spec) = registry.codegen(&g.type_ref, &form.backend) else {
+            continue;
+        };
+        let (props, rust, events) = element_data(form, element, ty, registry, &resolve);
+        let context = minijinja::context! {
+            name => g.path.name.as_str(),
+            form => form.name.as_str(),
+            form_struct => pascal_case(form.name.as_str()),
+            props => props,
+            rust => rust,
+            events => events,
+            refs => refs_data(forms, form, element, registry),
+        };
+        let mut issues = Vec::new();
+        if let Some(template) = &spec.start
+            && let Some(text) = render(env, "start", template, &context, &mut issues)
+        {
+            let block = format!("{{ {text} }}");
+            check_rust(
+                &mut issues,
+                "start",
+                &text,
+                syn::parse_str::<syn::Block>(&block).map(drop),
+            );
+            runtime.starts.push(block);
+        }
+        if let Some(template) = &spec.methods
+            && let Some(text) = render(env, "methods", template, &context, &mut issues)
+        {
+            check_rust(
+                &mut issues,
+                "methods",
+                &text,
+                syn::parse_str::<syn::ItemImpl>(&format!("impl X {{ {text} }}")).map(drop),
+            );
+            runtime.methods.push(text);
+        }
+        for issue in issues {
+            out.error(Some(g.path.clone()), issue);
+        }
+    }
+    runtime
 }
 
 /// How `run()` starts the program.
@@ -1234,14 +1384,16 @@ pub fn generate(
         files.push(main_file(start.started_is_async(), source, &mut out));
     }
     files.push(app_file(
-        forms, &generated, &bindings, &start, backend, host, &env, source, &mut out,
+        forms, &generated, &bindings, &start, registry, backend, host, &env, source, &mut out,
     ));
     for form in forms {
         let form_bindings = bindings.get(&form.name).map_or(&[][..], Vec::as_slice);
+        let runtime = form_runtime(&env, forms, form, &generated, registry, &mut out);
         files.push(form_gen_file(
             form,
             &generated,
             form_bindings,
+            &runtime,
             registry,
             backend,
             &env,
@@ -1670,11 +1822,13 @@ fn lib_file(source: &dyn FileSource) -> GeneratedFile {
 }
 
 /// `{name, struct, data_module}` of a form, for templates.
-fn form_data(form: &Form) -> JValue {
+fn form_data(form: &Form, generated: &[Generated]) -> JValue {
     minijinja::context! {
         name => form.name.as_str(),
         struct => pascal_case(form.name.as_str()),
         data_module => form.is_data_module(),
+        // Hat eine Ereignis-Warteschlange (`freya_queue`, `freya_take_data`).
+        live => is_live(form, generated),
     }
 }
 
@@ -1684,6 +1838,7 @@ fn app_file(
     generated: &[Generated],
     bindings: &HashMap<ComponentName, Vec<Binding>>,
     start: &Start,
+    registry: &TypeRegistry,
     backend: Option<&BackendDescriptor>,
     host: bool,
     env: &Environment<'static>,
@@ -1746,18 +1901,72 @@ fn app_file(
         for b in bindings.get(&form.name).into_iter().flatten() {
             code.push_str(&b.init(form.name.as_str()));
         }
+        if is_live(form, generated) {
+            code.push_str("freya_queue: Default::default(),");
+        }
         code.push_str("},\n");
     }
     code.push_str("})\n}\n}\n");
-    if bindings.values().any(|b| !b.is_empty()) {
+    let live: Vec<&Form> = forms.iter().filter(|f| is_live(f, generated)).collect();
+    if bindings.values().any(|b| !b.is_empty()) || !live.is_empty() {
         code.push_str(DATA_HELPERS);
     }
+    if !live.is_empty() {
+        code.push_str(QUEUE_HELPERS);
+    }
+    // Hilfen der Komponenten-Packs, einmal je Typ.
+    let mut helped: Vec<&TypeRef> = Vec::new();
+    for g in generated {
+        if helped.contains(&&g.type_ref) {
+            continue;
+        }
+        let Some(form) = forms.iter().find(|f| g.path.form.as_ref() == Some(&f.name)) else {
+            continue;
+        };
+        let Some(template) = registry
+            .codegen(&g.type_ref, &form.backend)
+            .and_then(|spec| spec.helpers.as_ref())
+        else {
+            continue;
+        };
+        helped.push(&g.type_ref);
+        let mut issues = Vec::new();
+        if let Some(text) = render(
+            env,
+            "helpers",
+            template,
+            &minijinja::context! {},
+            &mut issues,
+        ) {
+            check_rust(
+                &mut issues,
+                "helpers",
+                &text,
+                syn::parse_file(&text).map(drop),
+            );
+            if issues.is_empty() {
+                code.push('\n');
+                code.push_str(&text);
+                code.push('\n');
+            }
+        }
+        for issue in issues {
+            out.error(Some(g.path.clone()), issue);
+        }
+    }
+    // Datenmodule mit Ereignissen laufen auf Tokio weiter (bei `host`
+    // bewahrt das Backend die ganze App auf und bedient sie selbst).
+    let modules: String = live
+        .iter()
+        .filter(|f| f.is_data_module() && !host)
+        .map(|f| format!("app.{}.freya_run();\n", f.name))
+        .collect();
 
     // The event loop of the backend.
     let runtime_var = matches!(start, Start::Runtime(_)).then_some("runtime");
     let ui = backend.and_then(|b| b.run.as_ref()).and_then(|template| {
         let context = minijinja::context! {
-            forms => forms.iter().map(form_data).collect::<Vec<_>>(),
+            forms => forms.iter().map(|f| form_data(f, generated)).collect::<Vec<_>>(),
             app => "app",
             runtime => runtime_var,
         };
@@ -1772,12 +1981,18 @@ fn app_file(
         }
         rendered
     });
-    let ui = ui.unwrap_or_else(|| "Ok(())".to_owned());
+    // Ohne Oberfläche, aber mit laufenden Datenmodulen: bis zum Abbruch warten.
+    let ui = ui.unwrap_or_else(|| match start {
+        _ if modules.is_empty() => "Ok(())".to_owned(),
+        Start::Entry(_) => "std::future::pending::<()>().await;\nOk(())".to_owned(),
+        Start::Runtime(_) => "runtime.block_on(std::future::pending::<()>());\nOk(())".to_owned(),
+        _ => "Ok(())".to_owned(),
+    });
     let setup = backend
         .and_then(|b| b.setup.as_ref())
         .and_then(|template| {
             let context = minijinja::context! {
-                forms => forms.iter().map(form_data).collect::<Vec<_>>(),
+                forms => forms.iter().map(|f| form_data(f, generated)).collect::<Vec<_>>(),
                 app => "app",
                 runtime => runtime_var,
             };
@@ -1798,7 +2013,7 @@ fn app_file(
         .and_then(|b| b.app.as_ref())
         .and_then(|template| {
             let context = minijinja::context! {
-                forms => forms.iter().map(form_data).collect::<Vec<_>>(),
+                forms => forms.iter().map(|f| form_data(f, generated)).collect::<Vec<_>>(),
                 app => "app",
                 runtime => runtime_var,
             };
@@ -1845,7 +2060,7 @@ fn app_file(
                 code,
                 "{entry}\npub async fn run() -> Result<(), Error> {{\n{setup}\n\
                  let mut app = App::init().await?;\n\
-                 crate::started(&mut app).await?;\n{ui}\n}}\n"
+                 crate::started(&mut app).await?;\n{modules}{ui}\n}}\n"
             );
         }
         Start::Runtime(runtime) => {
@@ -1856,7 +2071,7 @@ fn app_file(
                  // Tokio-Kontext für den UI-Thread (z. B. Daten im Hintergrund laden).\n\
                  let _runtime_guard = runtime.enter();\n\
                  let mut app = runtime.block_on(App::init())?;\n\
-                 crate::started(&mut app)?;\n{ui}\n}}\n"
+                 crate::started(&mut app)?;\n{modules}{ui}\n}}\n"
             );
         }
         Start::Plain => {
@@ -2030,8 +2245,9 @@ fn form_context(
         fields: components.iter().map(|g| &g.path.name).collect(),
     };
     minijinja::context! {
-        form => form_data(form),
-        data_bound => !bindings.is_empty(),
+        form => form_data(form, generated),
+        // Etwas kommt aus dem Hintergrund: geladene Daten oder Ereignisse.
+        data_bound => !bindings.is_empty() || is_live(form, generated),
         root => form.root.as_ref().map(|r| data.widget(r)),
         widgets => form.widgets().into_iter().map(|w| data.widget(w)).collect::<Vec<_>>(),
         components => form.components.iter().map(|c| data.node(c, Vec::new(), None)).collect::<Vec<_>>(),
@@ -2062,7 +2278,7 @@ fn backend_files(
     let runtime_var = matches!(start, Start::Runtime(_)).then_some("runtime");
     let project_context = minijinja::context! {
         project => project_data.clone(),
-        forms => forms.iter().map(form_data).collect::<Vec<_>>(),
+        forms => forms.iter().map(|f| form_data(f, generated)).collect::<Vec<_>>(),
         app => "app",
         runtime => runtime_var,
     };
@@ -2149,6 +2365,7 @@ fn form_gen_file(
     form: &Form,
     generated: &[Generated],
     bindings: &[Binding],
+    runtime: &FormRuntime,
     registry: &TypeRegistry,
     backend: Option<&BackendDescriptor>,
     env: &Environment<'static>,
@@ -2179,9 +2396,17 @@ fn form_gen_file(
     for b in bindings {
         code.push_str(&b.fields());
     }
+    let live = is_live(form, generated);
+    if live {
+        code.push_str(
+            "/// Handler calls from background tasks (WebSocket, HTTP …), made by\n\
+             /// `freya_take_data` on the form's thread.\n\
+             pub freya_queue: crate::app::Queue<Self>,\n",
+        );
+    }
     code.push_str("}\n");
-    if form.root.is_some() {
-        code.push_str(&data_impl(form, bindings));
+    if form.root.is_some() || live {
+        code.push_str(&data_impl(form, bindings, runtime, live));
     }
 
     // The backend's code for the form (drawing, building, event dispatch).
@@ -2613,7 +2838,7 @@ fn data_bindings(
             let widget_context = minijinja::context! {
                 name => widget.component.name.as_str(),
                 root => root_name.clone(),
-                form => form_data(form),
+                form => form_data(form, generated),
             };
             let show_part = if is_table { "set-rows" } else { "set-items" };
             let show = render(env, show_part, show_template, &widget_context, &mut issues);
@@ -2719,7 +2944,7 @@ fn data_bindings(
 
 /// Loading and taking over the data of a form's list and table widgets
 /// (empty methods without bindings – the backends call them anyway).
-fn data_impl(form: &Form, bindings: &[Binding]) -> String {
+fn data_impl(form: &Form, bindings: &[Binding], runtime: &FormRuntime, live: bool) -> String {
     let mut code = String::new();
     // Zeilen-Structs der Tabellen.
     for b in bindings {
@@ -2840,12 +3065,21 @@ fn data_impl(form: &Form, bindings: &[Binding]) -> String {
             }
         }
     }
+    for methods in &runtime.methods {
+        code.push_str(methods);
+        code.push('\n');
+    }
     code.push_str(
-        "/// Starts the loads marked `Start` (the backend calls it when the form opens).\n\
+        "/// Starts the loads marked `Start` and the components that run in the\n\
+         /// background (the backend calls it when the form opens).\n\
          pub fn freya_start_data(&self) {\n",
     );
     for b in bindings.iter().filter(|b| b.start) {
         let _ = writeln!(code, "self.{}_reload();", b.widget);
+    }
+    for start in &runtime.starts {
+        code.push_str(start);
+        code.push('\n');
     }
     code.push_str(
         "}\n/// Takes loaded rows into the list and table widgets; `true` if something arrived.\n\
@@ -2888,7 +3122,33 @@ fn data_impl(form: &Form, bindings: &[Binding]) -> String {
              }}\n"
         );
     }
-    code.push_str("changed\n}\n}\n");
+    if live {
+        code.push_str(
+            "for call in self.freya_queue.take() {\n\
+             call(self);\n\
+             changed = true;\n\
+             }\n",
+        );
+    }
+    code.push_str("changed\n}\n");
+    if live && form.root.is_none() {
+        code.push_str(
+            "/// Runs the data module on Tokio: starts its components and calls\n\
+             /// its handlers as events arrive (`run()` calls it).\n\
+             pub fn freya_run(self) {\n\
+             let queue = self.freya_queue.clone();\n\
+             tokio::runtime::Handle::current().spawn(async move {\n\
+             let mut module = self;\n\
+             module.freya_start_data();\n\
+             loop {\n\
+             queue.wait().await;\n\
+             module.freya_take_data();\n\
+             }\n\
+             });\n\
+             }\n",
+        );
+    }
+    code.push_str("}\n");
     code
 }
 
@@ -2937,18 +3197,80 @@ pub fn freya_set_waker(waker: impl Fn() + Send + Sync + 'static) {
 }
 
 /// Runs `load` on the Tokio runtime and hands the result to `pending`.
+#[allow(dead_code)]
 pub fn freya_spawn_load<T: Send + 'static>(
     pending: Pending<T>,
     load: impl std::future::Future<Output = Result<T, Error>> + Send + 'static,
 ) {
     tokio::runtime::Handle::current().spawn(async move {
         pending.put(load.await);
-        if let Ok(waker) = FREYA_WAKER.lock() {
-            if let Some(waker) = waker.as_ref() {
-                waker();
-            }
-        }
+        freya_wake();
     });
+}
+
+/// Wakes the UI (something arrived from the background).
+pub fn freya_wake() {
+    if let Ok(waker) = FREYA_WAKER.lock() {
+        if let Some(waker) = waker.as_ref() {
+            waker();
+        }
+    }
+}
+"#;
+
+/// Helpers in `app.gen.rs` when a form or data module has an event queue.
+const QUEUE_HELPERS: &str = r#"
+/// Handler calls for a form or data module `T`, made on its thread
+/// (`freya_take_data`); background tasks put them in with `push`.
+pub struct Queue<T>(std::sync::Arc<QueueInner<T>>);
+
+/// A call of a handler with the form.
+pub type QueueCall<T> = Box<dyn FnOnce(&mut T) + Send>;
+
+pub struct QueueInner<T> {
+    calls: std::sync::Mutex<Vec<QueueCall<T>>>,
+    notify: tokio::sync::Notify,
+}
+
+impl<T> Default for Queue<T> {
+    fn default() -> Self {
+        Self(std::sync::Arc::new(QueueInner {
+            calls: std::sync::Mutex::new(Vec::new()),
+            notify: tokio::sync::Notify::new(),
+        }))
+    }
+}
+
+impl<T> Clone for Queue<T> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
+
+#[allow(dead_code)]
+impl<T> Queue<T> {
+    /// Queues a call and wakes the form.
+    pub fn push(&self, call: impl FnOnce(&mut T) + Send + 'static) {
+        if let Ok(mut calls) = self.0.calls.lock() {
+            calls.push(Box::new(call));
+        }
+        self.0.notify.notify_one();
+        freya_wake();
+    }
+
+    /// The queued calls, oldest first.
+    pub fn take(&self) -> Vec<QueueCall<T>> {
+        self.0
+            .calls
+            .lock()
+            .map(|mut calls| std::mem::take(&mut *calls))
+            .unwrap_or_default()
+    }
+
+    /// Waits until a call was queued.
+    pub async fn wait(&self) {
+        self.0.notify.notified().await;
+    }
 }
 "#;
 
@@ -2978,6 +3300,17 @@ mod tests {
         let expr = property_expr(&v, &none).unwrap();
         assert!(syn::parse_str::<syn::Expr>(&expr).is_ok(), "{expr}");
         assert!(expr.contains(r#"#[cfg(target_os = "macos")] let value = "Okay";"#));
+    }
+
+    #[test]
+    fn urls() {
+        assert_eq!(url_join("https://a.org/", "/v1/x"), "https://a.org/v1/x");
+        assert_eq!(url_join("https://a.org", "v1"), "https://a.org/v1");
+        assert_eq!(url_join("", "/v1"), "/v1");
+        assert_eq!(
+            url_join("https://a.org", "http://b.org/y"),
+            "http://b.org/y"
+        );
     }
 
     #[test]

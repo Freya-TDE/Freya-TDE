@@ -13,7 +13,7 @@ category = "System"
 icon = "cpu"
 description = "The async runtime all async components run on"
 provides = [{ capability = "tokio.runtime", description = "An async runtime" }]
-cargo = [{ crate = "tokio", version = "1.54", features = ["rt-multi-thread", "macros"] }]
+cargo = [{ crate = "tokio", version = "1.54", features = ["rt-multi-thread", "macros", "sync"] }]
 
 [component.properties.flavor]
 type = "enum"

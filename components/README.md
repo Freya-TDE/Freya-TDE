@@ -14,7 +14,57 @@ Jedes Pack ist ein Ordner mit einer `pack.toml`; Codegen-Templates stehen im Abs
 | `tokio` | `Runtime` | stellt `tokio.runtime` bereit |
 | `sqlx` | `Pool`, `Query` | `sqlx.pool`, `sqlx.query`; Pool braucht `tokio.runtime`, Query braucht `sqlx.pool`; `driver` = Postgres, MySql, Sqlite |
 | `redis` | `Client`, `Read` | `redis.client`; Client braucht `tokio.runtime`, Read braucht `redis.client`; Read ist Datenquelle (`data.rows`) |
-| `axum` | `Router` | `http.router`; braucht `sqlx.pool` nur, wenn eine Query angehängt ist |
+| `axum` | `Router` | `http.router`; braucht `sqlx.pool` nur, wenn eine Query angehängt ist; lauscht beim Start auf `bind` (`on_start`, `on_error`) |
+| `ws` | `Client`, `Endpoint` | Client (ws://, wss://) braucht `tokio.runtime`; Endpoint hängt sich an einen `http.router` |
+| `http` | `Client`, `Request` | `http.client` (reqwest); Request braucht `http.client`, ist wahlweise Datenquelle (`data.rows`) |
+
+## Ereignisse aus dem Hintergrund / events from the background
+
+Komponenten, die auf Tokio arbeiten (WebSocket, HTTP, Axum), rufen ihre Handler über eine Warteschlange des
+Formulars bzw. Datenmoduls auf (`freya_queue`, `crate::app::Queue`): Tasks stellen Aufrufe ein, das Formular
+arbeitet sie in `freya_take_data` mit `&mut self` ab – im UI-Thread, geweckt wie bei der Datenbindung. Ein
+**Datenmodul** mit solchen Komponenten (z. B. `services` mit Axum) läuft nach `started` als eigener Tokio-Task
+(`freya_run`); ohne Oberfläche wartet `run()` dann bis zum Abbruch. Bei Flutter bewahrt die Brücke die App auf
+und bedient die Datenmodule selbst. In einer Bibliothek ruft der Aufrufer `app.services.freya_run()` selbst.
+*Components working on Tokio reach their handlers through the form's (or data module's) queue; a data module
+with such components runs as its own Tokio task.*
+
+Dafür gibt es im Pack-Format unter `[component.codegen]` (nur nicht-visuelle Komponenten):
+
+| Schlüssel | Bedeutung |
+|---|---|
+| `start` / `start-file` | Anweisungen beim Start des Formulars (`freya_start_data`), z. B. verbinden, lauschen |
+| `methods` / `methods-file` | Methoden am Formular, z. B. `pub fn {{ name }}_send(&self, …)` |
+| `attach-to`, `attach` | hängt in `App::init` etwas an das Ziel einer Verweis-Eigenschaft: `let ziel = ziel<attach>;` (`this` = eigene Variable), z. B. `.route({{ rust.path }}, {{ this }}.route())` |
+| `helpers` / `helpers-file` | Typen und Funktionen für `app.gen.rs`, einmal je Typ (`crate::app::WsHub`) |
+
+`start` und `methods` sehen `name`, `form`, `form_struct`, `props`, `rust` (Verweise im selben Formular als
+`self.<name>`), `events` und `refs`; einen Handler ruft man mit
+`self.freya_queue.clone()` … `queue.push(move |f| f.{{ events.on_message }}(&text))`.
+
+## WebSocket (`ws`)
+
+`Client` verbindet sich mit `url` (ws:// oder wss://; TLS über rustls mit `ring`, Wurzelzertifikate von
+webpki-roots), beim Öffnen des Formulars (`auto_connect`) oder mit `self.<name>_connect()`. Ereignisse
+`on_open`, `on_message(text)`, `on_close(reason)`, `on_error(message)`; Methoden `<name>_send(text) -> bool`,
+`<name>_close()`, `<name>_is_open()`. `Endpoint` ist ein WebSocket-Pfad (`path`, Standard `/ws`) am Axum-`Router`
+(`router`): `on_connect(client)`, `on_message(client, text)`, `on_disconnect(client)`; Methoden
+`<name>_send(client, text)`, `<name>_broadcast(text)`, `<name>_clients()`, `<name>_disconnect(client)`.
+Nachrichten sind Text (binäre kommen als UTF-8-Text an).
+*WebSocket client (ws/wss) and endpoint on an Axum router; text messages, handlers through the queue.*
+
+## HTTP (`http`, reqwest)
+
+`Client` ist ein vorbereiteter `reqwest::Client` (`base_url`, `timeout`, `user_agent`, `headers` als
+`Name: Wert`; TLS über rustls mit `ring`). `Request` (`client`, `method`, `url` – absolut oder Pfad nach der
+Basis-URL –, `body`, `content_type`) schickt mit `self.<name>_send()` bzw. `self.<name>_send_body(text)` im
+Hintergrund; die Antwort kommt als `on_response(status, body)` (jeder Status), Fehler als `on_error(message)`.
+Wahlweise ist eine Request **Datenquelle** für Listen und DataGrid: die JSON-Antwort (bzw. das Feld unter
+`rows`, z. B. `data.items`) ist ein Array von Objekten, die Spalten stehen unter `columns`
+(`id: i64`, `note: Option<String>`; gelesen mit serde). Eigener Code im Handler nutzt den Client direkt:
+`let (client, url) = self.<request>.clone();`.
+*`Client` is a prepared reqwest client; `Request` sends in the background and reports `on_response`; optionally
+it is a data source (JSON rows).*
 
 ## SQLx-Treiber / SQLx drivers
 

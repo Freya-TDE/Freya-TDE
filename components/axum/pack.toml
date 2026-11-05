@@ -19,7 +19,10 @@ requires = [
     # Needs a pool only if a query is attached to the router.
     { capability = "sqlx.pool", via = "pool", when = { referenced-by = "sqlx.query" } },
 ]
-cargo = [{ crate = "axum", version = "0.8" }]
+cargo = [
+    { crate = "axum", version = "0.8" },
+    { crate = "tokio", version = "1.54", features = ["net"] },
+]
 
 [component.properties.bind]
 type = "text"
@@ -34,7 +37,47 @@ category = "Server"
 
 [component.events.on_start]
 params = [{ name = "address", type = "std::net::SocketAddr" }]
+description = "The server listens (address with the actual port)"
+
+[component.events.on_error]
+params = [{ name = "message", type = "&str" }]
+description = "The address could not be bound or the server stopped with an error"
 
 [component.codegen]
 type = "axum::Router"
 init = "axum::Router::new(){% if rust.pool %}.with_state({{ rust.pool }}){% endif %}"
+# Beim Start des Formulars bzw. Datenmoduls lauschen und bedienen; Routen
+# (z. B. WebSocket-Endpunkte) hängen sich schon in App::init an.
+# Listens and serves when the form or data module starts; routes (e.g.
+# WebSocket endpoints) attach themselves in App::init.
+start = """
+let router = self.{{ name }}.clone();
+let queue = self.freya_queue.clone();
+tokio::runtime::Handle::current().spawn(async move {
+    match tokio::net::TcpListener::bind({{ rust.bind }}).await {
+        Ok(listener) => {
+            {%- if events.on_start %}
+            if let Ok(address) = listener.local_addr() {
+                queue.push(move |f| f.{{ events.on_start }}(address));
+            }
+            {%- endif %}
+            if let Err(error) = axum::serve(listener, router).await {
+                let message = error.to_string();
+                {%- if events.on_error %}
+                queue.push(move |f| f.{{ events.on_error }}(&message));
+                {%- else %}
+                eprintln!("{{ name }}: {message}");
+                {%- endif %}
+            }
+        }
+        Err(error) => {
+            let message = format!("{}: {error}", {{ rust.bind }});
+            {%- if events.on_error %}
+            queue.push(move |f| f.{{ events.on_error }}(&message));
+            {%- else %}
+            eprintln!("{{ name }}: {message}");
+            {%- endif %}
+        }
+    }
+});
+"""

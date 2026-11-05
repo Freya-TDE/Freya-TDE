@@ -241,10 +241,15 @@ impl MainWindow {
             button.set_geometry(x, 6, width, ROW);
             on_page.borrow_mut().push(button.clone());
             x += width + 4;
+            // Typen aus Komponenten-Packs mit dem Pack: „Runtime (tokio)“.
+            let title = match &item.type_ref.origin {
+                tdr_core::Origin::Pack(pack) => format!("{} ({pack})", item.type_ref.name),
+                _ => item.type_ref.name.clone(),
+            };
             let tip = if item.description.is_empty() {
-                item.type_ref.name.clone()
+                title
             } else {
-                format!("{} – {}", item.type_ref.name, item.description)
+                format!("{title} – {}", item.description)
             };
             button.widget().set_tool_tip(&tip);
             let type_ref = item.type_ref.clone();

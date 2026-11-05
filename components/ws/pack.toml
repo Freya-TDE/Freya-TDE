@@ -1,0 +1,448 @@
+# WebSocket – Client (ws://, wss://) und Server-Endpunkt am Axum-Router
+# WebSocket – client (ws://, wss://) and server endpoint on the Axum router
+#
+# Client: tokio-tungstenite 0.30 (MIT) mit rustls (Provider ring, Wurzeln von
+# webpki-roots). Server: axum 0.8 mit dem Feature `ws`. Nachrichten kommen auf
+# Tokio an und rufen die Handler über die Warteschlange des Formulars auf
+# (im UI-Thread bzw. im Task des Datenmoduls).
+# Client: tokio-tungstenite with rustls (ring); server: axum `ws`. Messages
+# arrive on Tokio and reach the handlers through the form's queue.
+[pack]
+name = "ws"
+version = "0.1.0"
+description = "WebSocket client (ws/wss) and WebSocket endpoint on an Axum router"
+authors = ["Dragon Software <info@dragon-software.net>"]
+license = "MIT OR Apache-2.0"
+generated-code-license = "MIT OR Apache-2.0"
+
+[[component]]
+name = "Client"
+category = "Web"
+icon = "globe"
+description = "A WebSocket connection to a server (ws:// or wss://); text messages in both directions"
+requires = [{ capability = "tokio.runtime", description = "the connection runs on Tokio" }]
+cargo = [
+    { crate = "tokio-tungstenite", version = "0.30", features = ["rustls-tls-webpki-roots"] },
+    { crate = "rustls", version = "0.23", default-features = false, features = ["ring", "std", "logging", "tls12"] },
+    { crate = "futures-util", version = "0.3", default-features = false, features = ["sink", "std"] },
+]
+
+[component.properties.url]
+type = "text"
+required = true
+category = "Connection"
+description = "Server address, e.g. wss://example.com/socket or ws://127.0.0.1:3000/ws"
+
+[component.properties.auto_connect]
+type = "bool"
+default = true
+category = "Connection"
+description = "Connect when the form opens (else call <name>_connect())"
+
+[component.events.on_open]
+params = []
+description = "The connection is open"
+
+[component.events.on_message]
+params = [{ name = "text", type = "&str" }]
+description = "A text message arrived (binary messages as UTF-8 text)"
+
+[component.events.on_close]
+params = [{ name = "reason", type = "&str" }]
+description = "The connection was closed (by either side)"
+
+[component.events.on_error]
+params = [{ name = "message", type = "&str" }]
+description = "Connecting failed or the connection broke"
+
+[component.codegen]
+type = "crate::app::WsClient"
+init = "crate::app::WsClient::default()"
+start = """
+{%- if props.auto_connect %}
+self.{{ name }}_connect();
+{%- endif %}
+"""
+methods = """
+/// Connects `{{ name }}` to its URL (again, after a close).
+pub fn {{ name }}_connect(&self) {
+    let queue = self.freya_queue.clone();
+    self.{{ name }}.connect({{ rust.url }}, move |event| match event {
+        crate::app::WsEvent::Open => {
+            {%- if events.on_open %}
+            queue.push(|f| f.{{ events.on_open }}());
+            {%- endif %}
+        }
+        crate::app::WsEvent::Message(text) => {
+            {%- if events.on_message %}
+            queue.push(move |f| f.{{ events.on_message }}(&text));
+            {%- else %}
+            let _ = text;
+            {%- endif %}
+        }
+        crate::app::WsEvent::Close(reason) => {
+            {%- if events.on_close %}
+            queue.push(move |f| f.{{ events.on_close }}(&reason));
+            {%- else %}
+            let _ = reason;
+            {%- endif %}
+        }
+        crate::app::WsEvent::Error(message) => {
+            {%- if events.on_error %}
+            queue.push(move |f| f.{{ events.on_error }}(&message));
+            {%- else %}
+            eprintln!("{{ name }}: {message}");
+            {%- endif %}
+        }
+    });
+}
+
+/// Sends a text message over `{{ name }}`; `false` if it is not connected.
+pub fn {{ name }}_send(&self, text: &str) -> bool {
+    self.{{ name }}.send(text)
+}
+
+/// Closes the connection of `{{ name }}`.
+pub fn {{ name }}_close(&self) {
+    self.{{ name }}.close();
+}
+
+/// Is `{{ name }}` connected?
+pub fn {{ name }}_is_open(&self) -> bool {
+    self.{{ name }}.is_open()
+}
+"""
+helpers = """
+/// What a WebSocket client reports.
+pub enum WsEvent {
+    Open,
+    Message(String),
+    Close(String),
+    Error(String),
+}
+
+enum WsOut {
+    Text(String),
+    Close,
+}
+
+/// A WebSocket client connection (ws:// or wss://), driven by a Tokio task.
+#[derive(Clone, Default)]
+pub struct WsClient {
+    outgoing: std::sync::Arc<std::sync::Mutex<Option<tokio::sync::mpsc::UnboundedSender<WsOut>>>>,
+}
+
+#[allow(dead_code)]
+impl WsClient {
+    /// Connects to `url`; `on_event` gets everything that happens (on Tokio).
+    pub fn connect(&self, url: &str, on_event: impl Fn(WsEvent) + Send + Sync + 'static) {
+        use futures_util::{SinkExt, StreamExt};
+        use tokio_tungstenite::tungstenite::Message;
+        let url = url.to_owned();
+        let outgoing = self.outgoing.clone();
+        tokio::runtime::Handle::current().spawn(async move {
+            // TLS für wss:// mit ring (einmal je Programm).
+            let _ = rustls::crypto::ring::default_provider().install_default();
+            let stream = match tokio_tungstenite::connect_async(url.as_str()).await {
+                Ok((stream, _)) => stream,
+                Err(error) => {
+                    on_event(WsEvent::Error(error.to_string()));
+                    return;
+                }
+            };
+            let (mut write, mut read) = stream.split();
+            let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+            if let Ok(mut slot) = outgoing.lock() {
+                *slot = Some(sender);
+            }
+            on_event(WsEvent::Open);
+            let mut reason = String::new();
+            loop {
+                tokio::select! {
+                    out = receiver.recv() => match out {
+                        Some(WsOut::Text(text)) => {
+                            if let Err(error) = write.send(Message::text(text)).await {
+                                on_event(WsEvent::Error(error.to_string()));
+                                break;
+                            }
+                        }
+                        Some(WsOut::Close) | None => {
+                            let _ = write.send(Message::Close(None)).await;
+                            reason = "closed".to_owned();
+                            break;
+                        }
+                    },
+                    incoming = read.next() => match incoming {
+                        Some(Ok(Message::Text(text))) => on_event(WsEvent::Message(text.to_string())),
+                        Some(Ok(Message::Binary(bytes))) => {
+                            on_event(WsEvent::Message(String::from_utf8_lossy(&bytes).into_owned()))
+                        }
+                        Some(Ok(Message::Close(frame))) => {
+                            reason = frame.map(|f| f.reason.to_string()).unwrap_or_default();
+                            break;
+                        }
+                        Some(Ok(_)) => {}
+                        Some(Err(error)) => {
+                            on_event(WsEvent::Error(error.to_string()));
+                            break;
+                        }
+                        None => break,
+                    },
+                }
+            }
+            if let Ok(mut slot) = outgoing.lock() {
+                *slot = None;
+            }
+            on_event(WsEvent::Close(reason));
+        });
+    }
+
+    /// Sends a text message; `false` if not connected.
+    pub fn send(&self, text: &str) -> bool {
+        self.outgoing
+            .lock()
+            .ok()
+            .and_then(|slot| slot.as_ref().map(|s| s.send(WsOut::Text(text.to_owned())).is_ok()))
+            .unwrap_or(false)
+    }
+
+    /// Closes the connection.
+    pub fn close(&self) {
+        if let Ok(slot) = self.outgoing.lock() {
+            if let Some(sender) = slot.as_ref() {
+                let _ = sender.send(WsOut::Close);
+            }
+        }
+    }
+
+    /// Is the connection open?
+    pub fn is_open(&self) -> bool {
+        self.outgoing.lock().map(|slot| slot.is_some()).unwrap_or(false)
+    }
+}
+"""
+
+[[component]]
+name = "Endpoint"
+category = "Web"
+icon = "globe"
+description = "A WebSocket endpoint on an Axum router: clients connect to its path; send to one or all"
+requires = [{ capability = "http.router", via = "router" }]
+cargo = [
+    { crate = "axum", version = "0.8", features = ["ws"] },
+    { crate = "futures-util", version = "0.3", default-features = false, features = ["sink", "std"] },
+]
+
+[component.properties.router]
+type = "reference"
+capability = "http.router"
+required = true
+category = "Server"
+description = "The Axum router serving the endpoint"
+
+[component.properties.path]
+type = "text"
+default = "/ws"
+category = "Server"
+description = "Path of the endpoint, e.g. /ws"
+
+[component.events.on_connect]
+params = [{ name = "client", type = "u64" }]
+description = "A client connected (its number, unique while the program runs)"
+
+[component.events.on_message]
+params = [{ name = "client", type = "u64" }, { name = "text", type = "&str" }]
+description = "A client sent a text message"
+
+[component.events.on_disconnect]
+params = [{ name = "client", type = "u64" }]
+description = "A client went away"
+
+[component.codegen]
+type = "crate::app::WsHub"
+init = "crate::app::WsHub::default()"
+attach-to = "router"
+attach = ".route({{ rust.path }}, {{ this }}.route())"
+start = """
+let queue = self.freya_queue.clone();
+self.{{ name }}.set_sink(move |event| match event {
+    crate::app::WsServerEvent::Connect(client) => {
+        {%- if events.on_connect %}
+        queue.push(move |f| f.{{ events.on_connect }}(client));
+        {%- else %}
+        let _ = client;
+        {%- endif %}
+    }
+    crate::app::WsServerEvent::Message(client, text) => {
+        {%- if events.on_message %}
+        queue.push(move |f| f.{{ events.on_message }}(client, &text));
+        {%- else %}
+        let _ = (client, text);
+        {%- endif %}
+    }
+    crate::app::WsServerEvent::Disconnect(client) => {
+        {%- if events.on_disconnect %}
+        queue.push(move |f| f.{{ events.on_disconnect }}(client));
+        {%- else %}
+        let _ = client;
+        {%- endif %}
+    }
+});
+"""
+methods = """
+/// Sends a text message to client `client` of `{{ name }}`; `false` if it is gone.
+pub fn {{ name }}_send(&self, client: u64, text: &str) -> bool {
+    self.{{ name }}.send(client, text)
+}
+
+/// Sends a text message to all clients of `{{ name }}`.
+pub fn {{ name }}_broadcast(&self, text: &str) {
+    self.{{ name }}.broadcast(text);
+}
+
+/// The connected clients of `{{ name }}`.
+pub fn {{ name }}_clients(&self) -> Vec<u64> {
+    self.{{ name }}.clients()
+}
+
+/// Disconnects client `client` of `{{ name }}`.
+pub fn {{ name }}_disconnect(&self, client: u64) {
+    self.{{ name }}.disconnect(client);
+}
+"""
+helpers = """
+/// What a WebSocket endpoint reports.
+pub enum WsServerEvent {
+    Connect(u64),
+    Message(u64, String),
+    Disconnect(u64),
+}
+
+enum WsServerOut {
+    Text(String),
+    Close,
+}
+
+type WsSink = std::sync::Arc<dyn Fn(WsServerEvent) + Send + Sync>;
+
+#[derive(Default)]
+struct WsHubState {
+    next: u64,
+    clients: std::collections::BTreeMap<u64, tokio::sync::mpsc::UnboundedSender<WsServerOut>>,
+    sink: Option<WsSink>,
+}
+
+/// The clients of a WebSocket endpoint on an Axum router.
+#[derive(Clone, Default)]
+pub struct WsHub {
+    state: std::sync::Arc<std::sync::Mutex<WsHubState>>,
+}
+
+#[allow(dead_code)]
+impl WsHub {
+    /// Where events go (set when the form or data module starts).
+    pub fn set_sink(&self, sink: impl Fn(WsServerEvent) + Send + Sync + 'static) {
+        if let Ok(mut state) = self.state.lock() {
+            state.sink = Some(std::sync::Arc::new(sink));
+        }
+    }
+
+    fn emit(&self, event: WsServerEvent) {
+        let sink = self.state.lock().ok().and_then(|s| s.sink.clone());
+        if let Some(sink) = sink {
+            sink(event);
+        }
+    }
+
+    /// The Axum route upgrading requests to WebSocket connections.
+    pub fn route<S: Clone + Send + Sync + 'static>(&self) -> axum::routing::MethodRouter<S> {
+        let hub = self.clone();
+        axum::routing::any(move |upgrade: axum::extract::ws::WebSocketUpgrade| {
+            let hub = hub.clone();
+            async move { upgrade.on_upgrade(move |socket| hub.serve(socket)) }
+        })
+    }
+
+    async fn serve(self, socket: axum::extract::ws::WebSocket) {
+        use axum::extract::ws::Message;
+        use futures_util::{SinkExt, StreamExt};
+        let (mut write, mut read) = socket.split();
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        let client = match self.state.lock() {
+            Ok(mut state) => {
+                state.next += 1;
+                let client = state.next;
+                state.clients.insert(client, sender);
+                client
+            }
+            Err(_) => return,
+        };
+        self.emit(WsServerEvent::Connect(client));
+        loop {
+            tokio::select! {
+                out = receiver.recv() => match out {
+                    Some(WsServerOut::Text(text)) => {
+                        if write.send(Message::Text(text.into())).await.is_err() {
+                            break;
+                        }
+                    }
+                    Some(WsServerOut::Close) | None => {
+                        let _ = write.send(Message::Close(None)).await;
+                        break;
+                    }
+                },
+                incoming = read.next() => match incoming {
+                    Some(Ok(Message::Text(text))) => {
+                        self.emit(WsServerEvent::Message(client, text.as_str().to_owned()))
+                    }
+                    Some(Ok(Message::Binary(bytes))) => self.emit(WsServerEvent::Message(
+                        client,
+                        String::from_utf8_lossy(&bytes).into_owned(),
+                    )),
+                    Some(Ok(Message::Close(_))) | Some(Err(_)) | None => break,
+                    Some(Ok(_)) => {}
+                },
+            }
+        }
+        if let Ok(mut state) = self.state.lock() {
+            state.clients.remove(&client);
+        }
+        self.emit(WsServerEvent::Disconnect(client));
+    }
+
+    /// Sends a text message to one client; `false` if it is gone.
+    pub fn send(&self, client: u64, text: &str) -> bool {
+        self.state
+            .lock()
+            .ok()
+            .and_then(|s| s.clients.get(&client).map(|c| c.send(WsServerOut::Text(text.to_owned())).is_ok()))
+            .unwrap_or(false)
+    }
+
+    /// Sends a text message to all clients.
+    pub fn broadcast(&self, text: &str) {
+        if let Ok(state) = self.state.lock() {
+            for client in state.clients.values() {
+                let _ = client.send(WsServerOut::Text(text.to_owned()));
+            }
+        }
+    }
+
+    /// The connected clients.
+    pub fn clients(&self) -> Vec<u64> {
+        self.state
+            .lock()
+            .map(|s| s.clients.keys().copied().collect())
+            .unwrap_or_default()
+    }
+
+    /// Disconnects one client.
+    pub fn disconnect(&self, client: u64) {
+        if let Ok(state) = self.state.lock() {
+            if let Some(sender) = state.clients.get(&client) {
+                let _ = sender.send(WsServerOut::Close);
+            }
+        }
+    }
+}
+"""

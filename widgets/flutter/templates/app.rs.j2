@@ -184,6 +184,24 @@ pub fn freya_keep(app: App{% if runtime %}, runtime: tokio::runtime::Runtime{% e
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     *host = Some(FreyaHost { app{% if runtime %}, runtime{% endif %} });
+    {%- set modules = forms | selectattr("data_module") | selectattr("live") | list %}
+    {%- if modules %}
+    drop(host);
+    // Datenmodule mit Ereignissen (WebSocket, HTTP …): starten und ihre
+    // Handler aufrufen, sobald etwas ankommt.
+    freya_with(|app| {
+    {%- for m in modules %}
+        app.{{ m.name }}.freya_start_data();
+        let queue = app.{{ m.name }}.freya_queue.clone();
+        tokio::runtime::Handle::current().spawn(async move {
+            loop {
+                queue.wait().await;
+                freya_with(|app| app.{{ m.name }}.freya_take_data());
+            }
+        });
+    {%- endfor %}
+    });
+    {%- endif %}
 }
 
 /// Runs `f` with the application (inside the Tokio runtime, if there is one).

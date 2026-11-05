@@ -1,0 +1,226 @@
+# HTTP-Client mit reqwest 0.13 (MIT OR Apache-2.0), TLS über rustls (Provider ring)
+# HTTP client with reqwest, TLS via rustls (ring)
+#
+# `Client` ist ein vorbereiteter reqwest::Client (Basis-URL, Zeitlimit,
+# Kopfzeilen). `Request` ist eine Anfrage darauf: `<name>_send()` schickt sie
+# im Hintergrund, die Antwort kommt als `on_response(status, body)`. Wahlweise
+# ist eine Request auch Datenquelle für Listen und DataGrid (JSON-Antwort als
+# Zeilen, Spalten unter `columns`).
+# `Client` is a prepared reqwest::Client; `Request` sends in the background and
+# reports `on_response`; optionally it is a data source (JSON rows).
+[pack]
+name = "http"
+version = "0.1.0"
+description = "HTTP client (reqwest): a prepared client and requests with responses as events or rows"
+authors = ["Dragon Software <info@dragon-software.net>"]
+license = "MIT OR Apache-2.0"
+generated-code-license = "MIT OR Apache-2.0"
+
+[[component]]
+name = "Client"
+category = "Web"
+icon = "globe"
+description = "A prepared HTTP client (reqwest::Client): base URL, timeout, user agent, default headers"
+provides = [{ capability = "http.client", description = "An HTTP client" }]
+requires = [{ capability = "tokio.runtime", description = "reqwest runs on Tokio" }]
+cargo = [
+    { crate = "reqwest", version = "0.13", default-features = false, features = ["rustls-no-provider", "charset", "http2"] },
+    { crate = "rustls", version = "0.23", default-features = false, features = ["ring", "std", "logging", "tls12"] },
+]
+
+[component.properties.base_url]
+type = "text"
+default = ""
+category = "Connection"
+description = "Put in front of request URLs that are paths, e.g. https://api.example.com"
+
+[component.properties.timeout]
+type = "float"
+min = 0.1
+default = 30.0
+category = "Connection"
+description = "Seconds until a request gives up"
+
+[component.properties.user_agent]
+type = "text"
+default = ""
+category = "Connection"
+description = "User-Agent header (empty = reqwest's)"
+
+[component.properties.headers]
+type = "list"
+item = "text"
+default = []
+category = "Connection"
+description = "Headers sent with every request, as `Name: value`"
+
+[component.codegen]
+type = "reqwest::Client"
+init = """
+{
+    // TLS mit ring (einmal je Programm).
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    let lines: Vec<&str> = {{ rust.headers }};
+    let mut headers = reqwest::header::HeaderMap::new();
+    for line in lines {
+        if let Some((name, value)) = line.split_once(':') {
+            headers.insert(
+                reqwest::header::HeaderName::from_bytes(name.trim().as_bytes())?,
+                reqwest::header::HeaderValue::from_str(value.trim())?,
+            );
+        }
+    }
+    reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs_f64({{ rust.timeout }}))
+        {%- if props.user_agent %}
+        .user_agent({{ rust.user_agent }})
+        {%- endif %}
+        .default_headers(headers)
+        .build()?
+}
+"""
+
+[[component]]
+name = "Request"
+category = "Web"
+icon = "table"
+description = "An HTTP request: send it with <name>_send(), the answer comes as on_response; optionally a data source (JSON rows)"
+provides = [{ capability = "data.rows", description = "JSON rows for lists and grids" }]
+requires = [
+    { capability = "http.client", via = "client" },
+    { capability = "tokio.runtime", description = "requests run on Tokio" },
+]
+cargo = [
+    { crate = "serde_json", version = "1.0.154" },
+    { crate = "reqwest", version = "0.13", default-features = false, features = ["rustls-no-provider"] },
+    { crate = "chrono", version = "0.4.45", features = ["serde"], uses = { columns = "chrono::" } },
+    { crate = "uuid", version = "1.29", features = ["serde"], uses = { columns = "uuid::" } },
+]
+
+[component.properties.client]
+type = "reference"
+capability = "http.client"
+required = true
+category = "Connection"
+
+[component.properties.method]
+type = "enum"
+variants = ["GET", "POST", "PUT", "PATCH", "DELETE"]
+category = "Request"
+description = "HTTP method"
+
+[component.properties.url]
+type = "text"
+required = true
+category = "Request"
+description = "Absolute URL or a path after the client's base URL, e.g. /api/customers"
+
+[component.properties.body]
+type = "text"
+default = ""
+category = "Request"
+description = "Body sent with <name>_send() (empty = none); <name>_send_body(…) sends another"
+
+[component.properties.content_type]
+type = "text"
+default = "application/json"
+category = "Request"
+description = "Content-Type of a body"
+
+[component.properties.columns]
+type = "list"
+item = "text"
+default = []
+category = "Data"
+description = "As a data source: columns of the JSON rows, `name: Type` (e.g. id: i64, name: String, note: Option<String>)"
+
+[component.properties.rows]
+type = "text"
+default = ""
+category = "Data"
+description = "As a data source: where the row array is in the JSON answer, e.g. data.items (empty = the answer itself)"
+
+[component.events.on_response]
+params = [{ name = "status", type = "u16" }, { name = "body", type = "&str" }]
+description = "The answer of <name>_send() arrived (any status)"
+
+[component.events.on_error]
+params = [{ name = "message", type = "&str" }]
+description = "The request failed (no connection, timeout …)"
+
+# Datenquelle: JSON-Antwort als Zeilen (Objekte); `get` liest eine Spalte
+# mit serde in ihren Typ. / Data source: JSON answer as rows.
+[component.data]
+fetch = """
+{
+    let text = source
+        .0
+        .request(reqwest::Method::{{ props.method }}, source.1)
+        {%- if props.body %}
+        .header(reqwest::header::CONTENT_TYPE, {{ rust.content_type }})
+        .body({{ rust.body }})
+        {%- endif %}
+        .send()
+        .await?
+        .error_for_status()?
+        .text()
+        .await?;
+    let value: serde_json::Value = serde_json::from_str(&text)?;
+    {%- for part in props.rows | split(".") if part %}
+    let value = value.get({{ part | rust_str }}).cloned().unwrap_or_default();
+    {%- endfor %}
+    match value {
+        serde_json::Value::Array(items) => items,
+        other => vec![other],
+    }
+}
+"""
+get = "serde_json::from_value::<{{ type }}>({{ row }}.get({{ column | rust_str }}).cloned().unwrap_or_default())?"
+
+[component.codegen]
+type = "(reqwest::Client, &'static str)"
+init = """({{ rust.client }}, {{ ((refs.client.props.base_url if refs.client is defined else "") | url_join(props.url)) | rust_str }})"""
+methods = """
+/// Sends `{{ name }}` with its body in the background; the answer comes as `on_response`.
+pub fn {{ name }}_send(&self) {
+    self.{{ name }}_send_body({{ rust.body }});
+}
+
+/// Sends `{{ name }}` with `body` (empty = none) in the background.
+pub fn {{ name }}_send_body(&self, body: &str) {
+    let (client, url) = self.{{ name }}.clone();
+    let body = body.to_owned();
+    let queue = self.freya_queue.clone();
+    tokio::runtime::Handle::current().spawn(async move {
+        let mut request = client.request(reqwest::Method::{{ props.method }}, url);
+        if !body.is_empty() {
+            request = request
+                .header(reqwest::header::CONTENT_TYPE, {{ rust.content_type }})
+                .body(body);
+        }
+        let result = async {
+            let response = request.send().await?;
+            let status = response.status().as_u16();
+            Ok::<_, reqwest::Error>((status, response.text().await?))
+        }
+        .await;
+        match result {
+            Ok((status, text)) => {
+                {%- if events.on_response %}
+                queue.push(move |f| f.{{ events.on_response }}(status, &text));
+                {%- else %}
+                let _ = (status, text);
+                {%- endif %}
+            }
+            Err(error) => {
+                let message = error.to_string();
+                {%- if events.on_error %}
+                queue.push(move |f| f.{{ events.on_error }}(&message));
+                {%- else %}
+                eprintln!("{{ name }}: {message}");
+                {%- endif %}
+            }
+        }
+    });
+}
+"""

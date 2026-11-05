@@ -150,6 +150,30 @@ pub struct CodegenSpec {
     /// `block_on` method.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub runtime: Option<String>,
+    /// Statements run when the form (or data module) starts, e.g. connect
+    /// or start serving. Context as for `init` plus `form_struct`; `rust`
+    /// refers to elements of the same form as `self.<name>`. Code that runs
+    /// later on Tokio reaches the handlers through the form's queue
+    /// (`self.freya_queue.push(move |f| f.<handler>(…))`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start: Option<String>,
+    /// Items added to the form's `impl` (e.g. `pub fn <name>_send(&self, …)`);
+    /// same context as `start`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub methods: Option<String>,
+    /// Property (a reference) naming the component this one attaches to.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attach_to: Option<String>,
+    /// Applied to the value of the `attach_to` target in `App::init` right
+    /// after this component is created: `let target = target<attach>;`
+    /// (e.g. `.route("/ws", {{ this }}.route())`); `this` is this
+    /// component's variable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attach: Option<String>,
+    /// Items for `app.gen.rs` (types and functions the other templates use
+    /// as `crate::app::…`), written once per type if it is used.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub helpers: Option<String>,
 }
 
 impl CodegenSpec {
@@ -162,7 +186,18 @@ impl CodegenSpec {
             share: ShareMode::default(),
             entry: None,
             runtime: None,
+            start: None,
+            methods: None,
+            attach_to: None,
+            attach: None,
+            helpers: None,
         }
+    }
+
+    /// Does the component run code when its form starts or add methods to
+    /// it? Then the form gets an event queue (`freya_queue`).
+    pub fn is_live(&self) -> bool {
+        self.start.is_some() || self.methods.is_some()
     }
 
     /// Does the type provide the async runtime?

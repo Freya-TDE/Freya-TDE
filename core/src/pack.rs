@@ -55,6 +55,11 @@
 //! async = true                          # init uses .await (needs an async runtime)
 //! share = "clone"                       # how dependents get it: "clone" (default), "arc", "ref"
 //! # entry = "#[tokio::main]"            # makes this component the async runtime
+//! # start = "self.{{ name }}_connect();"   # statements when the form starts (or start-file)
+//! # methods = "pub fn {{ name }}_send(&self, …) { … }"   # items in the form's impl (or methods-file)
+//! # attach-to = "router"               # a reference property …
+//! # attach = ".route({{ rust.path }}, {{ this }}.route())"   # … applied to its target in App::init
+//! # helpers = "pub struct WsHub { … }"  # items for app.gen.rs, once per type (or helpers-file)
 //!
 //! [component.data]                      # optional: a data source for list widgets (see tdr_core::data)
 //! fetch = "sqlx::query(…).fetch_all(…).await?"   # rows, in an async block; `source` = the component's value
@@ -289,6 +294,14 @@ struct RawCodegen {
     share: ShareMode,
     entry: Option<String>,
     runtime: Option<String>,
+    start: Option<String>,
+    start_file: Option<String>,
+    methods: Option<String>,
+    methods_file: Option<String>,
+    attach_to: Option<String>,
+    attach: Option<String>,
+    helpers: Option<String>,
+    helpers_file: Option<String>,
 }
 
 /// The type part of a property (also used for list items).
@@ -1042,11 +1055,24 @@ impl Checker<'_> {
                 "only non-visual components can provide `entry` or `runtime`",
             );
         }
+        let start = self.template(location, "start", &raw.start, &raw.start_file);
+        let methods = self.template(location, "methods", &raw.methods, &raw.methods_file);
+        let helpers = self.template(location, "helpers", &raw.helpers, &raw.helpers_file);
+        if (start.is_some() || methods.is_some()) && kind.is_widget() {
+            self.problem(
+                location,
+                "only non-visual components can provide `start` or `methods`",
+            );
+        }
+        if raw.attach.is_some() != raw.attach_to.is_some() {
+            self.problem(location, "`attach` and `attach-to` go together");
+        }
         let templates = [
             ("type", Some(&raw.rust_type)),
             ("init", Some(&init)),
             ("entry", raw.entry.as_ref()),
             ("runtime", raw.runtime.as_ref()),
+            ("attach", raw.attach.as_ref()),
         ];
         for (part, source) in templates {
             let Some(source) = source else { continue };
@@ -1063,6 +1089,11 @@ impl Checker<'_> {
             share: raw.share,
             entry: raw.entry.clone(),
             runtime: raw.runtime.clone(),
+            start,
+            methods,
+            attach_to: raw.attach_to.clone(),
+            attach: raw.attach.clone(),
+            helpers,
         })
     }
 

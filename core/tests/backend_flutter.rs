@@ -498,6 +498,68 @@ fn generated_project_builds_runs_and_reacts_to_clicks() {
         "{:#?}",
         report.messages
     );
+
+    // Ereignisse aus dem Hintergrund (WebSocket, HTTP): die Brücke bedient
+    // das Datenmodul (die App bleibt beim Host), das Formular ihre Warteschlange.
+    let web_dir = dir.with_file_name(format!("freya-flutter-web-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&web_dir);
+    let mut services = Form::data_module(name("services"), "flutter");
+    let pack = |p: &str, t: &str| TypeRef::pack(p, t);
+    for component in [
+        Component::new(name("runtime"), pack("tokio", "Runtime")),
+        Component::new(name("api"), pack("axum", "Router")).on("on_start", handler("served")),
+        Component::new(name("echo"), pack("ws", "Endpoint"))
+            .with("router", Value::reference(name("api")))
+            .on("on_message", handler("echoed")),
+        Component::new(name("web"), pack("http", "Client")),
+    ] {
+        services.add_component(component).unwrap();
+    }
+    let mut web = Form::new(
+        name("main_form"),
+        "flutter",
+        Widget::from_component(widget("window", builtin::form())),
+    );
+    web.add_widget(
+        &name("window"),
+        Widget::from_component(widget("status", builtin::label())),
+    )
+    .unwrap();
+    for component in [
+        Component::new(name("socket"), pack("ws", "Client"))
+            .with("url", "wss://example.org/ws")
+            .on("on_message", handler("received")),
+        Component::new(name("ping"), pack("http", "Request"))
+            .with("client", Value::reference_on(name("services"), name("web")))
+            .with("url", "https://example.org/")
+            .on("on_response", handler("answered")),
+    ] {
+        web.add_component(component).unwrap();
+    }
+    let web_project = ProjectFile::new("flutter_web", "1.95", "flutter").unwrap();
+    let generation = generate(&web_project, &[services, web], &registry, &web_dir);
+    assert!(!generation.has_errors(), "{:#?}", generation.diagnostics);
+    let app = generation
+        .files
+        .iter()
+        .find(|f| f.path == "src/app.gen.rs")
+        .unwrap();
+    assert!(app.content.contains("app.services.freya_start_data();"));
+    assert!(!app.content.contains("app.services.freya_run();"));
+    write(&web_dir, &generation).unwrap();
+    let report = preview::build(&web_dir, Some(&generation)).unwrap();
+    let errors: Vec<_> = report.errors().collect();
+    assert!(report.success, "{errors:#?}");
+    let warnings: Vec<_> = report
+        .messages
+        .iter()
+        .filter(|m| m.file.as_deref().is_some_and(|f| f.ends_with(".gen.rs")))
+        .collect();
+    assert!(
+        warnings.is_empty(),
+        "generated code has warnings: {warnings:#?}"
+    );
+    let _ = std::fs::remove_dir_all(&web_dir);
     let _ = std::fs::remove_dir_all(&plain_dir);
 
     // Flutter-App: Plattform-Ordner anlegen, prüfen, bauen.
