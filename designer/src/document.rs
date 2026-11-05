@@ -12,7 +12,7 @@ use tdr_core::{
     ValidationContext, Widget, builtin, project,
 };
 
-use crate::command::{Command, CommandError, Outcome, name_prefix};
+use crate::command::{Command, CommandError, Outcome, name_prefix_for};
 
 /// How many steps can be undone.
 pub const UNDO_LIMIT: usize = 200;
@@ -317,7 +317,7 @@ impl Document {
                 }
                 let name = match name {
                     Some(n) => n,
-                    None => f.unique_name(&name_prefix(&type_ref.name))?,
+                    None => f.unique_name(&name_prefix_for(&type_ref))?,
                 };
                 let mut widget = Widget::new(name.clone(), type_ref);
                 if let Some(placement) = placement {
@@ -341,7 +341,7 @@ impl Document {
                 let f = self.form_mut(&form)?;
                 let name = match name {
                     Some(n) => n,
-                    None => f.unique_name(&name_prefix(&type_ref.name))?,
+                    None => f.unique_name(&name_prefix_for(&type_ref))?,
                 };
                 f.add_component(Component::new(name.clone(), type_ref))?;
                 outcome.created.push(ComponentPath::on(form, name));

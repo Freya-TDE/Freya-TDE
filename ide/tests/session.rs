@@ -181,15 +181,15 @@ fn non_visual_components_go_to_the_tray() {
     *s.document_mut().registry_mut() = registry;
     s.arm(Some(TypeRef::pack("demo", "Timer")));
     s.press(Point::new(5, 5), false).unwrap();
-    assert_eq!(s.selection(), [name("timer1")]);
+    assert_eq!(s.selection(), [name("demo_timer1")]);
     assert_eq!(s.form().unwrap().components.len(), 1);
 
     // In der Komponentenleiste, nicht auf der Formularfläche.
-    assert!(s.layout().unwrap().item(&name("timer1")).is_none());
-    let icon = s.tray().unwrap().rect(&name("timer1")).unwrap();
+    assert!(s.layout().unwrap().item(&name("demo_timer1")).is_none());
+    let icon = s.tray().unwrap().rect(&name("demo_timer1")).unwrap();
     assert_eq!(
         s.single_selection(),
-        Some((&name("timer1"), tdr_designer::ItemKind::Component))
+        Some((&name("demo_timer1"), tdr_designer::ItemKind::Component))
     );
     // Klick daneben hebt die Auswahl auf, Klick aufs Symbol wählt wieder.
     assert!(
@@ -198,7 +198,7 @@ fn non_visual_components_go_to_the_tray() {
     );
     assert!(s.selection().is_empty());
     assert!(s.press_tray(icon.center(), false).selection);
-    assert_eq!(s.selection(), [name("timer1")]);
+    assert_eq!(s.selection(), [name("demo_timer1")]);
     let (_, picture) = s.tray_picture().unwrap();
     assert!(
         picture

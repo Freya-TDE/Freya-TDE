@@ -184,9 +184,38 @@ pub(crate) fn name_prefix(type_name: &str) -> String {
     out
 }
 
+/// The prefix of automatic names for `type_ref`: types from component packs
+/// carry the pack (`ws/Client` → `ws_client`, `sqlx/Pool` → `sqlx_pool`),
+/// so equally named types of different packs stay apart; core and backend
+/// types keep their plain name (`button`, `drop_down`).
+pub(crate) fn name_prefix_for(type_ref: &tdr_core::TypeRef) -> String {
+    match &type_ref.origin {
+        tdr_core::Origin::Pack(pack) => {
+            format!("{}_{}", name_prefix(pack), name_prefix(&type_ref.name))
+        }
+        _ => name_prefix(&type_ref.name),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pack_types_carry_the_pack() {
+        use tdr_core::TypeRef;
+        assert_eq!(name_prefix_for(&TypeRef::pack("ws", "Client")), "ws_client");
+        assert_eq!(
+            name_prefix_for(&TypeRef::pack("http", "Client")),
+            "http_client"
+        );
+        assert_eq!(name_prefix_for(&TypeRef::pack("sqlx", "Pool")), "sqlx_pool");
+        assert_eq!(name_prefix_for(&tdr_core::builtin::button()), "button");
+        assert_eq!(
+            name_prefix_for(&TypeRef::backend("gtk4", "DropDown")),
+            "drop_down"
+        );
+    }
 
     #[test]
     fn prefixes() {

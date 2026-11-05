@@ -320,15 +320,15 @@ fn tray_palette_and_inspector() {
             name: None,
         })
         .unwrap();
-    assert_eq!(created.created[0].to_string(), "main::pool1");
+    assert_eq!(created.created[0].to_string(), "main::sqlx_pool1");
 
     let theme = Theme::for_platform(&Platform::Linux);
     let form = doc.form(&name("main")).unwrap();
     // Nicht auf der Formularfläche, sondern in der eigenen Komponentenleiste.
     let surface = layout(form, doc.registry(), &theme);
-    assert!(surface.item(&name("pool1")).is_none());
+    assert!(surface.item(&name("sqlx_pool1")).is_none());
     let bar = tray(form, &theme);
-    let pool = bar.item(&name("pool1")).unwrap();
+    let pool = bar.item(&name("sqlx_pool1")).unwrap();
     assert_eq!(pool.kind, ItemKind::Component);
     assert_eq!((pool.rect.y, bar.height), (0, theme.tray_height));
     assert!(
@@ -338,7 +338,7 @@ fn tray_palette_and_inspector() {
     );
     assert_eq!(
         hit_test(&bar, pool.rect.center(), &[]).map(|h| h.element),
-        Some(name("pool1"))
+        Some(name("sqlx_pool1"))
     );
     // Ein Datenmodul zeigt seine Komponenten auf der Fläche.
     doc.apply(Command::AddForm {
@@ -355,7 +355,7 @@ fn tray_palette_and_inspector() {
     let module = doc.form(&name("data")).unwrap();
     assert!(
         layout(module, doc.registry(), &theme)
-            .item(&name("pool1"))
+            .item(&name("sqlx_pool1"))
             .is_some()
     );
     assert!(tray(module, &theme).items.is_empty());
@@ -369,7 +369,7 @@ fn tray_palette_and_inspector() {
             .any(|i| i.type_ref.to_string() == "pack:sqlx/Pool" && !i.visual)
     );
 
-    let rows = properties(form, &name("pool1"), doc.registry()).unwrap();
+    let rows = properties(form, &name("sqlx_pool1"), doc.registry()).unwrap();
     let url = rows.iter().find(|r| r.name == "url").unwrap();
     assert!(url.default.is_none() && url.value.is_none());
     let rows = properties(form, &name("button1"), doc.registry()).unwrap();
