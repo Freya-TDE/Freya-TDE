@@ -6,7 +6,7 @@
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::rc::Rc;
 
 use rncl::prelude::*;
@@ -117,25 +117,35 @@ fn warnings(plan: &Plan) -> String {
 }
 
 /// The CT-Editor program: `FREYA_TDE_CT_EDITOR`, next to Freya TDE, in the
-/// repository (development) or in the `PATH`.
+/// repository (development: the newer of the release and debug build, so an
+/// old build never wins) or in the `PATH`.
 fn ct_editor() -> PathBuf {
     if let Some(path) = std::env::var_os("FREYA_TDE_CT_EDITOR").filter(|p| !p.is_empty()) {
         return PathBuf::from(path);
     }
     let file = format!("ct-editor{}", std::env::consts::EXE_SUFFIX);
-    let exe_dir = std::env::current_exe()
+    let beside = std::env::current_exe()
         .ok()
-        .and_then(|e| e.parent().map(Path::to_path_buf));
+        .and_then(|e| e.parent().map(|d| d.join(&file)))
+        .filter(|p| p.is_file());
+    if let Some(beside) = beside {
+        return beside;
+    }
     let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../CT-Editor/target");
-    [
-        exe_dir.map(|d| d.join(&file)),
-        Some(repo.join("release").join(&file)),
-        Some(repo.join("debug").join(&file)),
-    ]
-    .into_iter()
-    .flatten()
-    .find(|p| p.is_file())
+    newest(&[
+        repo.join("release").join(&file),
+        repo.join("debug").join(&file),
+    ])
     .unwrap_or_else(|| PathBuf::from(file))
+}
+
+/// The most recently built of `candidates` that exist.
+fn newest(candidates: &[PathBuf]) -> Option<PathBuf> {
+    candidates
+        .iter()
+        .filter_map(|p| Some((std::fs::metadata(p).ok()?.modified().ok()?, p)))
+        .max_by_key(|(time, _)| *time)
+        .map(|(_, p)| p.clone())
 }
 
 pub struct ProjectWindow {
