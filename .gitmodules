@@ -1,0 +1,6 @@
+[submodule "RUF"]
+	path = RUF
+	url = git@github.com:Dragon-InterActive/RUF.git
+[submodule "CT-Editor"]
+	path = CT-Editor
+	url = git@github.com:Dragon-InterActive/CT-E.git
