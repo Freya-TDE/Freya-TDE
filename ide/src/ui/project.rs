@@ -514,7 +514,9 @@ impl ProjectWindow {
         };
         let dir = root.join(parent(&target));
         let program = ct_editor();
+        // Eingebettet: ohne eigenes Menü, in der Sprache von Freya TDE.
         match std::process::Command::new(&program)
+            .args(["--embedded", "--lang", "de"])
             .arg("--path")
             .arg(&dir)
             .spawn()
