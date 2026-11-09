@@ -1,8 +1,0 @@
-# Freya TDE: RUF und CT-Editor sind eigene Repositories (Submodule RUF/ und
-# CT-Editor/). Der CT-Editor holt RUF eigenständig von GitHub; innerhalb von
-# Freya TDE nimmt er stattdessen den Ordner RUF/ (gleicher Stand wie die IDE).
-# RUF and the CT-Editor are separate repositories; inside Freya TDE the
-# CT-Editor uses the RUF/ folder instead of the GitHub copy.
-[patch."https://github.com/Dragon-InterActive/RUF"]
-ruf = { path = "RUF/crates/ruf" }
-rncl = { path = "RUF/crates/rncl" }
