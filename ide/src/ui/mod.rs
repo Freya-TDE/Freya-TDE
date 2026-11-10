@@ -16,6 +16,7 @@ mod main_window;
 pub mod panel;
 mod project;
 mod project_manager;
+mod settings_window;
 pub mod shortcuts;
 mod structure;
 mod terminal_view;
@@ -173,6 +174,12 @@ pub struct Ide {
     about: AboutWindow,
     database_window: DatabaseWindow,
     wizard: wizard_window::WizardWindow,
+    settings_window: settings_window::SettingsWindow,
+    /// Settings in effect and their file (`settings.toml`).
+    settings: RefCell<crate::settings::Settings>,
+    settings_file: Option<PathBuf>,
+    /// Where API keys are kept (system keyring; tests use memory).
+    secrets: RefCell<Box<dyn crate::settings::SecretStore>>,
     /// The database helper (shared with background requests).
     db_access: DbAccess,
     /// Delivers results of background database requests.
@@ -282,6 +289,14 @@ impl Ide {
             about: AboutWindow::build(),
             database_window: DatabaseWindow::build(),
             wizard: wizard_window::WizardWindow::build(),
+            settings_window: settings_window::SettingsWindow::build(),
+            settings: RefCell::new(
+                crate::settings::Settings::file()
+                    .map(|f| crate::settings::Settings::load_from(&f))
+                    .unwrap_or_default(),
+            ),
+            settings_file: crate::settings::Settings::file(),
+            secrets: RefCell::new(Box::new(crate::settings::SystemKeyring)),
             db_access: DbAccess::default(),
             db_results: RefCell::new(None),
             db_schemas: RefCell::new(Default::default()),
@@ -358,6 +373,8 @@ impl Ide {
         about::connect(&ide);
         database_window::connect(&ide);
         wizard_window::connect(&ide);
+        settings_window::connect(&ide);
+        ide.apply_settings();
         // Wie bei Delphi: Strg+G, F9, Strg+Umschalt+G … aus jedem Fenster.
         for (name, window) in ide.windows() {
             if name != window::MAIN {

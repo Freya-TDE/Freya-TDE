@@ -45,6 +45,8 @@ pub(super) fn menu_bar() -> MenuBar {
                     None,
                 )
                 .separator()
+                .item("file.settings", "Einstellungen …", Some("Ctrl+,"))
+                .separator()
                 .item("file.quit", "Beenden", Some("Ctrl+Q")),
         ),
         (
@@ -316,6 +318,7 @@ pub fn connect(ide: &Rc<Ide>) {
                 ide.show_window(window::PROJECT);
                 ide.project.menu_from_main(ide, "pm.cargo");
             }
+            "file.settings" => ide.show_settings(),
             "file.save" => {
                 ide.save();
             }

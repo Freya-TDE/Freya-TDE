@@ -514,9 +514,16 @@ impl ProjectWindow {
         };
         let dir = root.join(parent(&target));
         let program = ct_editor();
-        // Eingebettet: ohne eigenes Menü, in der Sprache von Freya TDE.
-        match std::process::Command::new(&program)
-            .args(["--embedded", "--lang", "de"])
+        // Eingebettet: ohne eigenes Menü, Sprache und Darstellung aus den
+        // Einstellungen von Freya TDE (Sprache „System“ = LANG).
+        let settings = ide.settings();
+        let mut command = std::process::Command::new(&program);
+        command.arg("--embedded");
+        if let Some(lang) = settings.language.code() {
+            command.args(["--lang", lang]);
+        }
+        match command
+            .args(["--theme", settings.theme.arg()])
             .arg("--path")
             .arg(&dir)
             .spawn()

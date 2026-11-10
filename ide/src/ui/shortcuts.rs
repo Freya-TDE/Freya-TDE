@@ -31,6 +31,9 @@ fn description(id: &str) -> &'static str {
         }
         "file.open" => "Öffnet eine Projektdatei (.ptdr).",
         "file.save" => "Speichert Projekt und Formulare.",
+        "file.settings" => {
+            "Einstellungen: Arbeitsverzeichnis, Sprache, Darstellung und KI-Profile."
+        }
         "file.quit" => "Beendet Freya TDE (fragt bei ungespeicherten Änderungen).",
         "edit.undo" => "Nimmt die letzte Änderung im Designer zurück.",
         "edit.redo" => "Stellt die zurückgenommene Änderung wieder her.",

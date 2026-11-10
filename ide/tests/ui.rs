@@ -1146,6 +1146,71 @@ fn main() {
         passed += 1;
     }
 
+    // Einstellungen: Arbeitsverzeichnis, Darstellung, KI-Profil mit Key
+    // (Schlüsselbund im Speicher); der Assistent beginnt im Arbeitsverzeichnis.
+    {
+        use freya_tde::settings::{MemoryStore, Settings, Theme, codes};
+        let ide = freya_tde::Ide::start(None);
+        ide.set_secret_store(Box::new(MemoryStore::default()));
+        ide.show_settings();
+        assert!(ide.settings_window().widget().is_visible());
+        let work = home.join("arbeit");
+        std::fs::create_dir_all(&work).unwrap();
+        let mut edit = ide.settings_edit();
+        edit.settings.base_dir = Some(work.clone());
+        edit.settings.theme = Theme::Dark;
+        edit.settings.language = freya_tde::settings::Language::English;
+        ide.set_settings_edit(edit.clone());
+        assert_eq!(ide.settings_edit(), edit, "Füllen ändert nichts");
+        ide.settings_add_profile();
+        let mut edit = ide.settings_edit();
+        assert_eq!(
+            edit.settings.ai.default_profile.as_deref(),
+            Some("Profil 1")
+        );
+        edit.rename("Profil 1", "Claude").unwrap();
+        edit.keys.insert("Claude".into(), Some("sk-test".into()));
+        ide.set_settings_edit(edit.clone());
+        let shots = std::env::var_os("FREYA_TDE_SHOT").map(std::path::PathBuf::from);
+        if let Some(dir) = &shots {
+            for tab in 0..2 {
+                ide.settings_tab(tab);
+                pump_until(1, || false);
+                let _ = std::fs::create_dir_all(dir);
+                ide.settings_window()
+                    .widget()
+                    .save_screenshot(dir.join(format!("settings-{tab}.png")));
+            }
+        }
+        // Fehlendes Arbeitsverzeichnis blockiert.
+        let mut wrong = edit.clone();
+        wrong.settings.base_dir = Some(home.join("gibt-es-nicht"));
+        let errors = ide.update_settings(&wrong).unwrap_err();
+        assert_eq!(errors[0].code, codes::BASE_DIR_MISSING);
+
+        let settings = ide.update_settings(&edit).unwrap();
+        assert_eq!(ide.settings(), settings);
+        assert!(settings.ai.profile("Claude").unwrap().key_in_keyring);
+        assert_eq!(ide.ai_key().as_deref(), Some("sk-test"));
+        let file = Settings::file().unwrap();
+        let text = std::fs::read_to_string(&file).unwrap();
+        assert!(!text.contains("sk-test"), "Key nicht in der Datei: {text}");
+        assert_eq!(Settings::load_from(&file), settings);
+        assert_eq!(
+            ruf::dialog::default_folder().as_deref(),
+            Some(work.as_path())
+        );
+        ide.settings_window().hide();
+        ide.show_wizard();
+        assert_eq!(ide.wizard_request().parent, work);
+        ide.wizard_window().hide();
+        let mut back = freya_tde::settings::SettingsEdit::new(&ide.settings());
+        back.settings.theme = Theme::System;
+        ide.update_settings(&back).unwrap();
+        println!("test settings ... ok");
+        passed += 1;
+    }
+
     Application::process_events();
     let _ = std::fs::remove_dir_all(&home);
     println!("\ntest result: ok. {passed} passed");

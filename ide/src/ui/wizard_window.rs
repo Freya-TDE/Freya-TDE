@@ -494,11 +494,18 @@ impl WizardWindow {
         self.backend.set_items(&labels);
         self.backend.set_current_index(0);
         *self.backends.borrow_mut() = names;
-        let parent = ide
-            .session()
-            .project_dir()
-            .and_then(|d| d.parent().map(PathBuf::from))
-            .or_else(|| std::env::var_os("HOME").map(PathBuf::from))
+        // Arbeitsverzeichnis aus den Einstellungen, sonst neben dem Projekt.
+        let settings = ide.settings();
+        let parent = settings
+            .base_dir
+            .clone()
+            .filter(|d| d.is_dir())
+            .or_else(|| {
+                ide.session()
+                    .project_dir()
+                    .and_then(|d| d.parent().map(PathBuf::from))
+            })
+            .or_else(|| settings.start_folder())
             .unwrap_or_default();
         let request = NewProject::program("", &parent, &self.backends.borrow()[0]);
         self.set_request(&NewProject {
