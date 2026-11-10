@@ -1,0 +1,280 @@
+{#- WebView: a form as an HTML page plus its Rust side (appended to
+    <form>.gen.rs). The page reports input (IPC), which goes into the
+    widget's state and to the handler in <form>.rs; the new state goes back
+    to the page (`freya.render`). Layouts become CSS. -#}
+{%- set menus = components | selectattr("type", "eq", "backend:webview/MainMenu") | selectattr("field") | list %}
+{%- set containers = widgets | selectattr("field") | selectattr("children") | list %}
+{#- Wie die Theme-Tabelle des Designers ohne eigenes Layout: senkrecht, Abstand 8, Rand 12. -#}
+{%- set default_layout = {"kind": "vertical", "spacing": 8, "padding": {"left": 12, "top": 12, "right": 12, "bottom": 12}} %}
+
+{%- macro color(c) -%}rgba({{ c.r }},{{ c.g }},{{ c.b }},{{ c.a / 255 }}){%- endmacro %}
+
+{#- Farben und Schrift eines Widgets aus dem Designer. -#}
+{%- macro look(w) -%}
+{%- set p = w.props -%}
+{%- if p.background is defined and p.background.a > 0 %}background-color:{{ color(p.background) }};{% endif -%}
+{%- if p.foreground is defined and p.foreground.a > 0 %}color:{{ color(p.foreground) }};{% endif -%}
+{%- if p.font_size is defined and p.font_size > 0 %}font-size:{{ p.font_size }}px;{% endif -%}
+{%- if p.bold is defined and p.bold %}font-weight:bold;{% endif -%}
+{%- if p.italic is defined and p.italic %}font-style:italic;{% endif -%}
+{%- endmacro %}
+
+{#- Wie ein Container seine Kinder anordnet. -#}
+{%- macro box(w) -%}
+{%- set l = w.layout or default_layout -%}
+{%- set pad = "padding:" ~ l.padding.top ~ "px " ~ l.padding.right ~ "px " ~ l.padding.bottom ~ "px " ~ l.padding.left ~ "px;" -%}
+{%- if l.kind == "horizontal" -%}display:flex;flex-direction:row;gap:{{ l.spacing }}px;{{ pad }}
+{%- elif l.kind == "grid" -%}display:grid;grid-template-columns:repeat({{ l.columns or 1 }},minmax(0,1fr));gap:{{ l.spacing }}px;{{ pad }}
+{%- elif l.kind == "stack" -%}display:grid;{{ pad }}
+{%- elif l.kind == "absolute" -%}
+{%- set ext = namespace(w=0, h=0, grow=false) -%}
+{%- for c in w.children if c.placement and c.placement.kind == "absolute" -%}
+{%- set ext.w = [ext.w, c.placement.x + c.placement.width] | max -%}
+{%- set ext.h = [ext.h, c.placement.y + c.placement.height] | max -%}
+{%- if c.placement.anchors.bottom or not c.placement.anchors.top %}{% set ext.grow = true %}{% endif -%}
+{%- endfor -%}
+position:relative;{{ pad }}min-width:{{ ext.w + l.padding.left + l.padding.right }}px;min-height:{{ ext.h + l.padding.top + l.padding.bottom }}px;{% if ext.grow %}flex-grow:1;{% endif %}
+{%- else -%}display:flex;flex-direction:column;gap:{{ l.spacing }}px;{{ pad }}
+{%- endif -%}
+{%- endmacro %}
+
+{#- Lage eines Kindes `c` im Layout `l` seines Containers. -#}
+{%- macro place(c, l) -%}
+{%- set p = c.placement -%}
+{%- if l.kind == "absolute" -%}
+{%- if p and p.kind == "absolute" -%}
+{%- set a = p.anchors -%}
+{%- set pl = l.padding.left %}{% set pr = l.padding.right %}{% set pt = l.padding.top %}{% set pb = l.padding.bottom -%}
+position:absolute;
+{%- if a.left %}left:{{ p.x + pl }}px;{% endif -%}
+{%- if a.right %}right:{{ p.margin_right + pr }}px;{% endif -%}
+{%- if not a.left and not a.right %}left:calc(50% + {{ pl + p.x - (pl + pr + p.area.width) / 2 }}px);{% endif -%}
+{%- if not (a.left and a.right) %}width:{{ p.width }}px;{% endif -%}
+{%- if a.top %}top:{{ p.y + pt }}px;{% endif -%}
+{%- if a.bottom %}bottom:{{ p.margin_bottom + pb }}px;{% endif -%}
+{%- if not a.top and not a.bottom %}top:calc(50% + {{ pt + p.y - (pt + pb + p.area.height) / 2 }}px);{% endif -%}
+{%- if not (a.top and a.bottom) %}height:{{ p.height }}px;{% endif -%}
+{%- else -%}position:absolute;left:{{ l.padding.left }}px;top:{{ l.padding.top }}px;
+{%- endif -%}
+{%- elif l.kind == "stack" -%}grid-area:1/1;
+{%- elif p and p.kind == "layout" -%}
+{%- set wp = p.width_percent %}{% set hp = p.height_percent -%}
+{%- set align = "Start" if (wp > 0 or hp > 0) and p.align == "Fill" else p.align -%}
+{%- set css_align = {"Fill": "stretch", "Start": "flex-start", "Center": "center", "End": "flex-end"}[align] -%}
+{%- if l.kind == "grid" -%}
+{%- if p.cell %}grid-row:{{ p.cell.row + 1 }}/span {{ p.cell.row_span }};grid-column:{{ p.cell.column + 1 }}/span {{ p.cell.column_span }};{% endif -%}
+justify-self:{{ {"Fill": "stretch", "Start": "start", "Center": "center", "End": "end"}[align] }};align-self:{{ {"Fill": "stretch", "Start": "start", "Center": "center", "End": "end"}[align] }};
+{%- if wp > 0 %}width:{{ wp }}%;{% elif p.width > 0 %}width:{{ p.width }}px;{% endif -%}
+{%- if hp > 0 %}height:{{ hp }}%;{% elif p.height > 0 %}height:{{ p.height }}px;{% endif -%}
+{%- else -%}
+{%- set row = l.kind == "horizontal" -%}
+{%- set main_pct = wp if row else hp -%}
+align-self:{{ css_align }};
+{%- if p.stretch > 0 and main_pct == 0 %}flex-grow:{{ p.stretch }};{% else %}flex-shrink:0;{% endif -%}
+{%- if wp > 0 %}width:{{ wp }}%;{% elif p.width > 0 %}{{ "min-width" if (not row and align == "Fill") else "width" }}:{{ p.width }}px;{% endif -%}
+{%- if hp > 0 %}height:{{ hp }}%;{% elif p.height > 0 %}{{ "min-height" if (row and align == "Fill") else "height" }}:{{ p.height }}px;{% endif -%}
+{%- endif -%}
+{%- endif -%}
+{%- endmacro %}
+
+{#- Ein Widget samt Kindern als HTML; Texte setzt erst `freya.render`. -#}
+{%- macro node(c, l, group) -%}
+{%- set t = c.type -%}
+{%- set st = place(c, l) ~ look(c) -%}
+{%- if t == "core/Container" -%}
+<div id="{{ c.name }}" data-kind="container" style="{{ box(c) }}{{ st }}">{% for k in c.children %}{{ node(k, c.layout or default_layout, c.name) }}{% endfor %}</div>
+{%- elif t == "backend:webview/Frame" -%}
+<fieldset id="{{ c.name }}" data-kind="frame" style="display:flex;flex-direction:column;padding:0;{{ st }}"><legend></legend><div style="{{ box(c) }}flex-grow:1">{% for k in c.children %}{{ node(k, c.layout or default_layout, c.name) }}{% endfor %}</div></fieldset>
+{%- elif t == "backend:webview/Tabs" -%}
+<div id="{{ c.name }}" data-kind="tabs" style="display:flex;flex-direction:column;{{ st }}"><nav></nav>{% for k in c.children %}<div class="freya-page" data-title="{{ k.name }}" style="display:flex;flex-direction:column;flex-grow:1;padding-top:8px">{{ node(k, {"kind": "vertical", "spacing": 0, "padding": {"left": 0, "top": 0, "right": 0, "bottom": 0}}, c.name) }}</div>{% endfor %}</div>
+{%- elif t == "core/Label" -%}
+<span id="{{ c.name }}" data-kind="label" style="{{ st }}"></span>
+{%- elif t == "core/Button" -%}
+<button type="button" id="{{ c.name }}" data-kind="button" style="{{ st }}"></button>
+{%- elif t == "core/Edit" -%}
+<input id="{{ c.name }}" data-kind="edit" type="{{ 'password' if c.props.password else 'text' }}"{% if c.props.placeholder %} placeholder="{{ c.props.placeholder | e }}"{% endif %}{% if c.props.max_length is defined and c.props.max_length > 0 %} maxlength="{{ c.props.max_length }}"{% endif %}{% if c.props.read_only %} readonly{% endif %} style="{{ st }}">
+{%- elif t == "core/CheckBox" -%}
+<label id="{{ c.name }}" data-kind="check" style="{{ st }}"><input type="checkbox"><span></span></label>
+{%- elif t == "backend:webview/RadioButton" -%}
+<label id="{{ c.name }}" data-kind="check" style="{{ st }}"><input type="radio" name="{{ group }}"><span></span></label>
+{%- elif t == "backend:webview/Switch" -%}
+<label id="{{ c.name }}" data-kind="check" style="{{ st }}"><input type="checkbox" role="switch"><span></span></label>
+{%- elif t == "backend:webview/Slider" -%}
+<input id="{{ c.name }}" data-kind="slider" type="range" min="{{ c.props.minimum }}" max="{{ c.props.maximum }}" step="{{ c.props.step if c.props.step > 0 else 'any' }}" style="{{ st }}">
+{%- elif t == "backend:webview/ProgressBar" -%}
+<progress id="{{ c.name }}" data-kind="progress" max="1" style="{{ st }}"></progress>
+{%- elif t == "backend:webview/ComboBox" -%}
+<select id="{{ c.name }}" data-kind="select" style="{{ st }}"></select>
+{%- elif t == "backend:webview/ListBox" -%}
+<select id="{{ c.name }}" data-kind="select" size="{{ c.props.rows }}" style="{{ st }}"></select>
+{%- elif t == "backend:webview/TextEdit" -%}
+<textarea id="{{ c.name }}" data-kind="memo" rows="{{ c.props.rows }}"{% if c.props.read_only %} readonly{% endif %} style="{% if c.props.monospace %}font-family:monospace;{% endif %}{{ st }}"></textarea>
+{%- elif t == "backend:webview/Separator" -%}
+{%- if c.props.vertical -%}
+<div id="{{ c.name }}" data-kind="separator" style="border-left:1px solid color-mix(in srgb,currentColor 25%,transparent);align-self:stretch;{{ st }}"></div>
+{%- else -%}
+<hr id="{{ c.name }}" data-kind="separator" style="{{ st }}">
+{%- endif -%}
+{%- elif t == "backend:webview/DataGrid" -%}
+<table id="{{ c.name }}" data-kind="grid" style="{{ st }}"><thead></thead><tbody></tbody></table>
+{%- else -%}
+<div id="{{ c.name }}" data-kind="container" style="{{ st }}"></div>
+{%- endif -%}
+{%- endmacro %}
+
+{%- if root %}
+{%- set rp = root.props %}
+#[allow(clippy::needless_borrow, unused_variables)]
+impl {{ form.struct }} {
+    /// The state of all widgets, as the page draws it.
+    pub fn freya_snapshot(&self) -> serde_json::Value {
+        serde_json::Value::Array(vec![
+        {%- for w in widgets + menus if w.field %}
+            self.{{ w.name }}.freya_control("{{ w.name }}"),
+        {%- endfor %}
+        ])
+    }
+
+    /// The window title (the form's caption).
+    pub fn freya_title(&self) -> String {
+        self.{{ root.name }}.caption.clone()
+    }
+
+    /// The form is shown: start loading its data, then `on_create`.
+    pub fn freya_created(&mut self) {
+        self.freya_start_data();
+    {%- if root.events.on_create %}
+        self.{{ root.events.on_create }}();
+    {%- endif %}
+    }
+
+    /// The window is about to close; `false` keeps it open.
+    pub fn freya_close(&mut self) -> bool {
+    {%- if root.events.on_close %}
+        self.{{ root.events.on_close }}()
+    {%- else %}
+        true
+    {%- endif %}
+    }
+
+    /// Sets what wakes the event loop when data or queued handler calls arrive.
+    pub fn freya_wake_with(waker: impl Fn() + Send + Sync + 'static) {
+    {%- if data_bound %}
+        crate::app::freya_set_waker(waker);
+    {%- else %}
+        let _ = waker;
+    {%- endif %}
+    }
+
+    /// Input from the page: into the widget's state, then the handler.
+    pub fn freya_event(&mut self, widget: &str, event: &str, input: &crate::app::Input) {
+        match widget {
+        {%- for c in widgets + menus if c.field %}
+        {%- set t = c.type %}
+            "{{ c.name }}" => {
+                self.{{ c.name }}.freya_take(input);
+            {%- if t == "backend:webview/RadioButton" %}
+                // Optionsfelder desselben Containers bilden eine Gruppe.
+                if self.{{ c.name }}.value {
+                {%- for p in containers %}{% if c.name in (p.children | map(attribute="name") | list) %}
+                {%- for o in p.children if o.type == "backend:webview/RadioButton" and o.name != c.name and o.field %}
+                    self.{{ o.name }}.value = false;
+                {%- endfor %}
+                {%- endif %}{% endfor %}
+                }
+            {%- endif %}
+                match event {
+                {%- for event, handler in c.events | items if handler %}
+                {%- set key = t ~ "." ~ event %}
+                {%- if key in ["core/Button.on_click", "core/Edit.on_submit"] %}
+                    "{{ event }}" => self.{{ handler }}(),
+                {%- elif key in ["core/Edit.on_change", "backend:webview/TextEdit.on_change"] %}
+                    "{{ event }}" => {
+                        let text = self.{{ c.name }}.value.clone();
+                        self.{{ handler }}(&text);
+                    }
+                {%- elif key in ["core/CheckBox.on_toggle", "backend:webview/Switch.on_toggle", "backend:webview/RadioButton.on_toggle"] %}
+                    "{{ event }}" => {
+                        let checked = self.{{ c.name }}.value;
+                        self.{{ handler }}(checked);
+                    }
+                {%- elif key == "backend:webview/Slider.on_change" %}
+                    "{{ event }}" => {
+                        let value = self.{{ c.name }}.value;
+                        self.{{ handler }}(value);
+                    }
+                {%- elif key in ["backend:webview/ComboBox.on_select", "backend:webview/ListBox.on_select"] %}
+                    "{{ event }}" => {
+                        let index = self.{{ c.name }}.value;
+                        self.{{ handler }}(index);
+                    }
+                {%- elif key == "backend:webview/Tabs.on_page" %}
+                    "{{ event }}" => {
+                        let page = self.{{ c.name }}.value.max(0) as u32;
+                        self.{{ handler }}(page);
+                    }
+                {%- elif key == "backend:webview/DataGrid.on_select" %}
+                    "{{ event }}" => {
+                        let index = self.{{ c.name }}.value.selected.map_or(-1, |i| i as i32);
+                        self.{{ handler }}(index);
+                    }
+                {%- elif key == "backend:webview/MainMenu.on_select" %}
+                    "{{ event }}" => {
+                        let item = self.{{ c.name }}.value.clone();
+                        self.{{ handler }}(&item);
+                    }
+                {%- endif %}
+                {%- endfor %}
+                    _ => {}
+                }
+            }
+        {%- endfor %}
+            _ => {}
+        }
+    }
+
+    /// The window as set in the designer (size, limits, position, state, theme).
+    pub fn freya_window() -> tao::window::WindowBuilder {
+        tao::window::WindowBuilder::new()
+            .with_title({{ root.rust.title }})
+            .with_inner_size(tao::dpi::LogicalSize::new({{ rp.size.width }} as f64, {{ rp.size.height }} as f64))
+            .with_resizable({{ root.rust.resizable }})
+        {%- if rp.min_size.width > 0 or rp.min_size.height > 0 %}
+            .with_min_inner_size(tao::dpi::LogicalSize::new({{ rp.min_size.width }} as f64, {{ rp.min_size.height }} as f64))
+        {%- endif %}
+        {%- if rp.max_size.width > 0 or rp.max_size.height > 0 %}
+            .with_max_inner_size(tao::dpi::LogicalSize::new({{ rp.max_size.width if rp.max_size.width > 0 else 100000 }} as f64, {{ rp.max_size.height if rp.max_size.height > 0 else 100000 }} as f64))
+        {%- endif %}
+        {%- if rp.position == "Manual" %}
+            .with_position(tao::dpi::LogicalPosition::new({{ rp.location.x }} as f64, {{ rp.location.y }} as f64))
+        {%- endif %}
+        {%- if rp.start_state == "Maximized" %}
+            .with_maximized(true)
+        {%- elif rp.start_state == "Fullscreen" %}
+            .with_fullscreen(Some(tao::window::Fullscreen::Borderless(None)))
+        {%- endif %}
+        {%- if rp.theme == "Dark" %}
+            .with_theme(Some(tao::window::Theme::Dark))
+        {%- elif rp.theme == "Light" %}
+            .with_theme(Some(tao::window::Theme::Light))
+        {%- endif %}
+    }
+
+    /// The page: style ({{ rp.style }}), layout as HTML and CSS, the script.
+    pub fn freya_page() -> String {
+        [
+            r####"<!doctype html><html{% if rp.theme == "Dark" %} data-theme="dark"{% elif rp.theme == "Light" %} data-theme="light"{% endif %}><head><meta charset="utf-8"><meta name="color-scheme" content="light dark"><style>"####,
+        {%- if rp.style == "Pico" %}
+            crate::app::freya_pico::PICO_CSS,
+        {%- else %}
+            crate::app::FREYA_NATIVE_CSS,
+        {%- endif %}
+            crate::app::FREYA_BASE_CSS,
+            r####"[data-kind][data-kind]{margin:0}</style></head><body{% if rp.font_family %} style="font-family:{{ rp.font_family | e }}"{% endif %}>{% for m in menus %}<nav id="{{ m.name }}" data-kind="menubar"></nav>{% endfor %}<div id="{{ root.name }}" data-kind="form" style="{{ box(root) }}{{ look(root) }}">{% for k in root.children %}{{ node(k, root.layout or default_layout, root.name) }}{% endfor %}</div><script>"####,
+            crate::app::FREYA_JS,
+            r####"</script></body></html>"####,
+        ]
+        .concat()
+    }
+}
+{%- endif %}

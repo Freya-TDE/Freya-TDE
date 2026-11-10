@@ -311,7 +311,9 @@ fn cargo_toml_is_merged_not_replaced() {
     assert!(cargo.contains("version = \"0.3.0\""));
     // The user's version stays, the features are added.
     assert!(
-        cargo.contains("tokio = { version = \"1\", features = [\"macros\", \"rt-multi-thread\"] }"),
+        cargo.contains(
+            "tokio = { version = \"1\", features = [\"macros\", \"net\", \"rt-multi-thread\", \"sync\"] }"
+        ),
         "{cargo}"
     );
     assert!(generation.diagnostics.iter().any(|d| matches!(

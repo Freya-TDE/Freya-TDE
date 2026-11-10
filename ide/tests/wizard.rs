@@ -170,6 +170,21 @@ fn wizard() {
         );
     }
     assert!(!preview.files.contains(&"src/main.rs".to_owned()));
+    // WebView: ein normales Programm mit eingebettetem Pico CSS.
+    let webview = NewProject::program("webapp", &home, "webview");
+    let preview = plan(&webview, &registry);
+    assert!(preview.is_ok(), "{:#?}", preview.errors);
+    for f in [
+        "src/main.rs",
+        "src/main_form.gen.rs",
+        "src/freya_pico.gen.rs",
+    ] {
+        assert!(
+            preview.files.contains(&f.to_owned()),
+            "{f}: {:?}",
+            preview.files
+        );
+    }
     let mut lib_ui = NewProject::library("libui", &home);
     lib_ui.backend = "gtk4".into();
     assert_eq!(

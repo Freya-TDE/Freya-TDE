@@ -10,6 +10,7 @@ Visuelle Widgets und Backend-Paletten, aufbauend auf `tdr-core` (der gemeinsame 
 | `iced` | fertig / done | iced 0.14 (Elm-Architektur); Kern-Widgets plus Palette „iced“: RadioButton, Toggler, Slider, ProgressBar, PickList, ListBox, TextEditor, Rule, GroupBox, Tabs |
 | `slint` | fertig / done | Slint 1.18 (deklarativ, mit Lizenzhinweis); Kern-Widgets plus Palette „Slint“: RadioButton, Switch, SpinBox, Slider, ProgressIndicator, ComboBox, ListView, TextEdit, Separator, Image, AboutSlint, GroupBox, TabWidget, MainMenu |
 | `flutter` | fertig / done | Flutter (Material 3) mit flutter_rust_bridge 2.13, Logik in Rust; Kern-Widgets plus Palette „Flutter“: RadioButton, Switch, Slider, ProgressBar, ComboBox, ListBox, TextEdit, Separator, Card, Tabs, MainMenu, DataGrid |
+| `webview` | fertig / done | Natives Fenster mit System-WebView (wry 0.57 + tao 0.37), Formular als HTML/CSS, Logik in Rust; Stil Native oder Pico; Kern-Widgets plus Palette „WebView“: RadioButton, Switch, Slider, ProgressBar, ComboBox, ListBox, TextEdit, Separator, Frame, Tabs, MainMenu, DataGrid |
 
 Der Neu-Assistent (Datei → Neues Projekt …) bietet alle installierten Backends an, `gtk4` vorgewählt.
 *The new-project wizard offers all installed backends, `gtk4` preselected.*
@@ -182,6 +183,42 @@ Bibliothek aus `../target/debug/`); Ausgabe im Kanal „Programm“ (`freya_tde:
 *Limits: no window title/size/position settings (the native runner owns them), no container background
 pictures, menu shortcuts not bound, no debugger, the library is not bundled for release yet; tested on Linux.*
 
+## WebView
+
+Ein natives Fenster (tao) mit der Web-Engine des Systems (wry): WebKitGTK unter Linux, WebView2 unter Windows,
+WKWebView unter macOS. Das Formular wird eine HTML-Seite, die Layouts werden CSS; die Logik bleibt in Rust.
+Widgets sind wie bei egui und Flutter Felder `crate::app::Control<T>`; ein Handler ändert den Zustand
+(`self.greeting.value = …`), die Seite zeichnet danach neu.
+*A native window (tao) with the system's web engine (wry); the form becomes an HTML page, layouts become CSS,
+the logic stays in Rust (`Control<T>` state fields).*
+
+Ablauf: Die Seite meldet Eingaben per IPC (`window.ipc.postMessage({widget, event, input})`), Rust übernimmt
+sie in den Zustand, ruft den Handler und schickt den neuen Zustand mit `evaluate_script("freya.render(…)")`
+zurück. Daten aus dem Hintergrund (Datenbindung, WebSocket, HTTP) wecken die Ereignisschleife
+(`EventLoopProxy`). Aussehen über die Formular-Eigenschaft **`style`**: *Native* (eigenes schlichtes CSS mit
+Systemfarben, folgt Hell/Dunkel) oder *Pico* ([Pico CSS](https://picocss.com) 2.1.1, MIT, klassenlos, als
+`src/freya_pico.gen.rs` eingebettet). Das Programm braucht keinen Server und keine Dateien neben sich.
+*Input comes in via IPC, the new state goes back via `evaluate_script`; `style` = Native (own CSS) or Pico.*
+
+- Layouts als CSS: senkrecht/waagerecht als Flexbox, Raster als CSS-Grid (gleich breite Spalten), Stapel als
+  übereinanderliegende Grid-Zellen, absolut mit `position: absolute`. Prozent und Anker sind direkt CSS-Werte und
+  entsprechen dem Designer genau.
+- Optionsfelder eines Containers bilden eine Gruppe; `MainMenu` wird eine Menüleiste aus aufklappenden Menüs
+  (Pfade, `-`, Untermenüs als „Export › PDF“); Kürzel werden angezeigt, aber nicht gebunden.
+- Gezeigt wird das erste Formular (weitere Fenster noch nicht).
+- Fenster: Titel, Größe, Mindest-/Höchstgröße, `position = Manual`, Startzustand und Hell/Dunkel über tao;
+  `position = Center` setzt tao nicht (das System platziert).
+- Nicht unterstützt: Hintergrundbilder (die Seite lädt keine lokalen Dateien), Bild-Widget.
+- Linux: braucht WebKitGTK 4.1 (`webkit2gtk-4.1`, Arch `webkit2gtk-4.1`, Debian/Ubuntu `libwebkit2gtk-4.1-dev`).
+  Das Programm setzt `WEBKIT_DISABLE_DMABUF_RENDERER=1`, falls nicht gesetzt – sonst zeigen manche Treiber
+  (z. B. NVIDIA) nur ein leeres Fenster. Windows braucht die WebView2-Laufzeit (in Windows 10/11 enthalten).
+- Getestet unter Linux; Windows und macOS sind vorgesehen, aber ungetestet.
+- Test: `xvfb-run -a cargo test -p tdr-core --test backend_webview` (braucht `xdotool`) erzeugt ein Projekt mit
+  allen Widgets, baut, startet, klickt OK und das Menü und baut dasselbe Formular im Stil Pico.
+
+*Limits: first form only, menu shortcuts not bound, no background pictures or image widget, `Center`
+position not applied; tested on Linux.*
+
 ## Aussehen und Fenster / appearance and window
 
 Jedes Widget hat `background`, `foreground` (Farbe; Alpha 0 = Standard des Backends), `font_size`
@@ -193,15 +230,15 @@ Vordergrund des Formulars erben die Widgets, im Designer wie im erzeugten Progra
 *Every widget has colours and font settings; the form adds font family, background picture and window
 settings. Alpha 0 means "backend default".*
 
-| | GTK 4 | egui | iced | Slint | Flutter |
-|---|---|---|---|---|---|
-| Farben, Schriftgröße | CSS je Widget | ja | ja | Text: ja; Standard-Widgets nur Hintergrundfläche | ja (Knöpfe über `ButtonStyle`, sonst Text und Hintergrund) |
-| fett / kursiv | ja | nur kursiv | ja | ja (Text, Fenster-Standard) | ja (Texte) |
-| Schriftfamilie | ja | nein | ja | ja | ja |
-| Hintergrundbild | ja (CSS) | ja | ja | ja (Formular) | nur Formular |
-| Position, Höchstgröße | nein (GTK 4 kann es nicht) | ja | ja | ja | nein (nativer Runner) |
-| Mindestgröße, Zustand | ja | ja | ja | ja | nein (nativer Runner) |
-| Hell/Dunkel | ja | ja | ja | ja | ja |
+| | GTK 4 | egui | iced | Slint | Flutter | WebView |
+|---|---|---|---|---|---|---|
+| Farben, Schriftgröße | CSS je Widget | ja | ja | Text: ja; Standard-Widgets nur Hintergrundfläche | ja (Knöpfe über `ButtonStyle`, sonst Text und Hintergrund) | ja (CSS je Element) |
+| fett / kursiv | ja | nur kursiv | ja | ja (Text, Fenster-Standard) | ja (Texte) | ja |
+| Schriftfamilie | ja | nein | ja | ja | ja | ja |
+| Hintergrundbild | ja (CSS) | ja | ja | ja (Formular) | nur Formular | nein |
+| Position, Höchstgröße | nein (GTK 4 kann es nicht) | ja | ja | ja | nein (nativer Runner) | ja (`Manual`; `Center` nicht) |
+| Mindestgröße, Zustand | ja | ja | ja | ja | nein (nativer Runner) | ja |
+| Hell/Dunkel | ja | ja | ja | ja | ja | ja |
 
 Grenzen: iced wendet `enabled` nicht auf Container an; Slints Standard-Widgets haben keine Farb-Properties;
 bei Flutter bestimmt der native Runner das Fenster.
@@ -215,9 +252,9 @@ bei Delphi): `Placement::Layout::size`, je Achse, 0 = natürliche Größe; im Te
 `placement.height`. Fill und Dehnen können das Widget weiter vergrößern.
 *Resizing a widget in a layout sets a requested size per axis (0 = natural); fill and stretch may still enlarge it.*
 
-| GTK 4 | egui | iced | Slint | Flutter |
-|---|---|---|---|---|
-| `set_size_request` (Mindestgröße: kleiner als das Minimum des Widgets geht nicht) | `add_sized` (fehlende Achse: Breite verfügbar, Höhe Standard) | fester `container` (fehlende Achse: natürlich) | `width`/`height` | `SizedBox` (im Raster linksbündig) |
+| GTK 4 | egui | iced | Slint | Flutter | WebView |
+|---|---|---|---|---|---|
+| `set_size_request` (Mindestgröße: kleiner als das Minimum des Widgets geht nicht) | `add_sized` (fehlende Achse: Breite verfügbar, Höhe Standard) | fester `container` (fehlende Achse: natürlich) | `width`/`height` | `SizedBox` (im Raster linksbündig) | CSS `width`/`height` (auf einer Fill-Achse `min-width`/`min-height`) |
 
 ## Größe in Prozent / size in percent
 
@@ -229,11 +266,11 @@ Anfasser, bleibt eine Achse in Prozent in Prozent. Im Template `placement.width_
 *Per axis a share of the parent's content area instead of pixels; it goes before the requested size, fill acts
 like start and stretch does not apply on that axis.*
 
-| | GTK 4 | egui | iced | Slint | Flutter |
-|---|---|---|---|---|---|
-| quer zum Layout (Breite in senkrechten, Höhe in waagerechten Layouts) | Hülle `freya_percent::Percent` (natürliche Größe = Anteil am Elternelement, Minimum des Widgets bleibt) | `add_sized` mit Anteil an der verfügbaren Fläche zu Beginn des Containers | `FillPortion` neben einem Leerraum | Dehnung neben einem Leerraum (bevorzugte und Mindestgröße 0; eine feste Breite gäbe eine Bindungsschleife) | `FractionallySizedBox` |
-| in Layout-Richtung | wie quer | wie quer | Anteil am **freien** Platz (`FillPortion`, Rest als Leerraum) | Anteil am **freien** Platz (Dehnung, Rest als Leerraum) | Höhe: nicht (die Spalte scrollt, ihre Höhe ist unbegrenzt); Breite in Zeilen: Anteil am freien Platz (`Expanded`) |
-| im Raster | wie quer | wie quer | nicht (Pixel bzw. natürlich) | nicht | nicht |
+| | GTK 4 | egui | iced | Slint | Flutter | WebView |
+|---|---|---|---|---|---|---|
+| quer zum Layout (Breite in senkrechten, Höhe in waagerechten Layouts) | Hülle `freya_percent::Percent` (natürliche Größe = Anteil am Elternelement, Minimum des Widgets bleibt) | `add_sized` mit Anteil an der verfügbaren Fläche zu Beginn des Containers | `FillPortion` neben einem Leerraum | Dehnung neben einem Leerraum (bevorzugte und Mindestgröße 0; eine feste Breite gäbe eine Bindungsschleife) | `FractionallySizedBox` | CSS `%` |
+| in Layout-Richtung | wie quer | wie quer | Anteil am **freien** Platz (`FillPortion`, Rest als Leerraum) | Anteil am **freien** Platz (Dehnung, Rest als Leerraum) | Höhe: nicht (die Spalte scrollt, ihre Höhe ist unbegrenzt); Breite in Zeilen: Anteil am freien Platz (`Expanded`) | CSS `%` (Höhe, solange die des Elternelements feststeht – das Formular füllt das Fenster) |
+| im Raster | wie quer | wie quer | nicht (Pixel bzw. natürlich) | nicht | nicht | CSS `%` |
 
 GTK passt die Größe einen Durchlauf nach einer Größenänderung des Elternelements an (gemessen wird mit
 dessen letzter Größe).
@@ -253,9 +290,9 @@ behalten seine Kinder ihre Lage; zurück in ein anderes Layout kommen sie wieder
 *Absolutely placed widgets keep their distance to the anchored edges of their container (like Delphi's
 `Anchors`); resizing the form or container in the designer moves anchored children with it.*
 
-| GTK 4 | egui | iced | Slint | Flutter |
-|---|---|---|---|---|
-| `Overlay` mit `get-child-position` | `crate::app::anchored` und `ui.put` | Stapel aus Ebenen mit Ausrichtung und Innenabstand | Bindungen an `parent.width`/`parent.height` | `LayoutBuilder` und `Positioned` (unten nur bei begrenzter Höhe; im scrollenden Formular nicht) |
+| GTK 4 | egui | iced | Slint | Flutter | WebView |
+|---|---|---|---|---|---|
+| `Overlay` mit `get-child-position` | `crate::app::anchored` und `ui.put` | Stapel aus Ebenen mit Ausrichtung und Innenabstand | Bindungen an `parent.width`/`parent.height` | `LayoutBuilder` und `Positioned` (unten nur bei begrenzter Höhe; im scrollenden Formular nicht) | CSS `position: absolute` mit `left`/`right`/`top`/`bottom` (mittig über `calc(50% …)`) |
 
 Die Editor-Oberfläche selbst (RUF/RNCL) hat Anker ebenfalls: `Component::set_anchors` (siehe RUF-Doku).
 *The editor UI (RUF/RNCL) has anchors as well.*

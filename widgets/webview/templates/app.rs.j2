@@ -1,0 +1,441 @@
+{#- WebView: shared helpers of the generated code, appended to app.gen.rs:
+    the widget state `Control<T>`, the JSON exchange with the page, the page's
+    JavaScript and the plain "Native" style sheet. -#}
+#[path = "freya_pico.gen.rs"]
+pub mod freya_pico;
+
+/// The state of a widget: the page draws it from these values, so a handler
+/// changes the widget by changing them (`self.ok_button.enabled = false`,
+/// `self.greeting.value = …`). `value` is reachable directly through `Deref`
+/// (`self.name_edit.trim()`).
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq)]
+pub struct Control<T> {
+    /// What the widget shows or edits (text, checked, number, selection …).
+    pub value: T,
+    /// Caption of buttons, check boxes, frames; title of the window.
+    pub caption: String,
+    /// Entries of lists, combo boxes, menus; titles of tabs.
+    pub items: Vec<String>,
+    pub enabled: bool,
+    pub visible: bool,
+    /// Hint shown on hover (empty = none).
+    pub tooltip: String,
+}
+
+#[allow(dead_code)]
+impl<T> Control<T> {
+    pub fn new(value: T) -> Self {
+        Self {
+            value,
+            caption: String::new(),
+            items: Vec::new(),
+            enabled: true,
+            visible: true,
+            tooltip: String::new(),
+        }
+    }
+
+    pub fn with_caption(mut self, caption: impl Into<String>) -> Self {
+        self.caption = caption.into();
+        self
+    }
+
+    pub fn with_items<S: ToString>(mut self, items: Vec<S>) -> Self {
+        self.items = items.iter().map(ToString::to_string).collect();
+        self
+    }
+
+    pub fn with_state(mut self, enabled: bool, visible: bool, tooltip: &str) -> Self {
+        self.enabled = enabled;
+        self.visible = visible;
+        self.tooltip = tooltip.to_owned();
+        self
+    }
+}
+
+impl<T: FreyaValue> Control<T> {
+    /// The state as the page draws it (`freya.render`).
+    pub fn freya_control(&self, name: &str) -> serde_json::Value {
+        let mut control = serde_json::Map::new();
+        control.insert("name".into(), name.into());
+        control.insert("caption".into(), self.caption.clone().into());
+        control.insert("items".into(), self.items.clone().into());
+        control.insert("enabled".into(), self.enabled.into());
+        control.insert("visible".into(), self.visible.into());
+        control.insert("tooltip".into(), self.tooltip.clone().into());
+        self.value.put(&mut control);
+        serde_json::Value::Object(control)
+    }
+
+    /// Takes what the user entered.
+    pub fn freya_take(&mut self, input: &Input) {
+        self.value.take(input);
+    }
+}
+
+impl<T> std::ops::Deref for Control<T> {
+    type Target = T;
+    fn deref(&self) -> &T {
+        &self.value
+    }
+}
+
+impl<T> std::ops::DerefMut for Control<T> {
+    fn deref_mut(&mut self) -> &mut T {
+        &mut self.value
+    }
+}
+
+/// Headers and rows of a `DataGrid` (cells as text).
+#[allow(dead_code)]
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Table {
+    pub headers: Vec<String>,
+    pub rows: Vec<Vec<String>>,
+    pub selected: Option<usize>,
+}
+
+/// What the user entered on the page; only the field of the widget's kind is set.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Input {
+    pub text: Option<String>,
+    pub checked: Option<bool>,
+    pub number: Option<f64>,
+    pub index: Option<i32>,
+}
+
+impl Input {
+    /// From the `input` object of a message of the page.
+    pub fn from_json(value: &serde_json::Value) -> Self {
+        Self {
+            text: value.get("text").and_then(|v| v.as_str()).map(str::to_owned),
+            checked: value.get("checked").and_then(|v| v.as_bool()),
+            number: value.get("number").and_then(|v| v.as_f64()),
+            index: value
+                .get("index")
+                .and_then(|v| v.as_i64())
+                .and_then(|i| i32::try_from(i).ok()),
+        }
+    }
+}
+
+/// How the value of a widget travels to the page and back.
+pub trait FreyaValue {
+    fn put(&self, control: &mut serde_json::Map<String, serde_json::Value>);
+    fn take(&mut self, input: &Input) {
+        let _ = input;
+    }
+}
+
+impl FreyaValue for () {
+    fn put(&self, _control: &mut serde_json::Map<String, serde_json::Value>) {}
+}
+
+impl FreyaValue for String {
+    fn put(&self, control: &mut serde_json::Map<String, serde_json::Value>) {
+        control.insert("text".into(), self.clone().into());
+    }
+    fn take(&mut self, input: &Input) {
+        if let Some(text) = &input.text {
+            self.clone_from(text);
+        }
+    }
+}
+
+impl FreyaValue for bool {
+    fn put(&self, control: &mut serde_json::Map<String, serde_json::Value>) {
+        control.insert("checked".into(), (*self).into());
+    }
+    fn take(&mut self, input: &Input) {
+        if let Some(checked) = input.checked {
+            *self = checked;
+        }
+    }
+}
+
+impl FreyaValue for f64 {
+    fn put(&self, control: &mut serde_json::Map<String, serde_json::Value>) {
+        control.insert("number".into(), (*self).into());
+    }
+    fn take(&mut self, input: &Input) {
+        if let Some(number) = input.number {
+            *self = number;
+        }
+    }
+}
+
+impl FreyaValue for i32 {
+    fn put(&self, control: &mut serde_json::Map<String, serde_json::Value>) {
+        control.insert("index".into(), (*self).into());
+    }
+    fn take(&mut self, input: &Input) {
+        if let Some(index) = input.index {
+            *self = index;
+        }
+    }
+}
+
+impl FreyaValue for Table {
+    fn put(&self, control: &mut serde_json::Map<String, serde_json::Value>) {
+        control.insert("items".into(), self.headers.clone().into());
+        control.insert("rows".into(), self.rows.clone().into());
+        control.insert(
+            "index".into(),
+            self.selected.map_or(-1, |i| i as i64).into(),
+        );
+    }
+    fn take(&mut self, input: &Input) {
+        if let Some(index) = input.index {
+            self.selected = usize::try_from(index).ok().filter(|i| *i < self.rows.len());
+        }
+    }
+}
+
+/// What reaches the event loop: a message of the page or a wake-up
+/// (data loaded, handler queued in the background).
+#[derive(Debug)]
+pub enum FreyaEvent {
+    Ipc(String),
+    Wake,
+}
+
+/// A message of the page: `{widget, event, input}` (the page sends
+/// `{"widget": "", "event": "ready"}` once it is loaded).
+pub fn freya_message(text: &str) -> Option<(String, String, Input)> {
+    let value: serde_json::Value = serde_json::from_str(text).ok()?;
+    let widget = value.get("widget")?.as_str()?.to_owned();
+    let event = value.get("event")?.as_str()?.to_owned();
+    let input = value.get("input").map(Input::from_json).unwrap_or_default();
+    Some((widget, event, input))
+}
+
+/// The script that hands the state to the page.
+pub fn freya_render_script(snapshot: &serde_json::Value) -> String {
+    format!("window.freya && window.freya.render({snapshot});")
+}
+
+/// The page's part: draws the state (`freya.render`) and reports input
+/// (`window.ipc.postMessage`).
+pub const FREYA_JS: &str = r####"
+(() => {
+  const send = (widget, event, input) =>
+    window.ipc.postMessage(JSON.stringify({ widget, event, input: input || {} }));
+  const fill = (select, items) => {
+    const key = JSON.stringify(items);
+    if (select.dataset.items !== key) {
+      select.replaceChildren(...items.map((t) => new Option(t)));
+      select.dataset.items = key;
+    }
+  };
+  const focused = (el) => document.activeElement === el;
+  const kinds = {
+    form: (el, c) => { document.title = c.caption; },
+    label: (el, c) => { el.textContent = c.text; },
+    button: (el, c) => { el.textContent = c.caption; },
+    edit: (el, c) => { if (!focused(el)) el.value = c.text; },
+    memo: (el, c) => { if (!focused(el)) el.value = c.text; },
+    check: (el, c) => {
+      el.querySelector("input").checked = c.checked;
+      el.querySelector("span").textContent = c.caption;
+    },
+    slider: (el, c) => { if (!focused(el)) el.value = c.number; },
+    progress: (el, c) => { el.value = c.number; },
+    select: (el, c) => { fill(el, c.items); el.selectedIndex = c.index; },
+    frame: (el, c) => {
+      const legend = el.querySelector(":scope > legend");
+      legend.textContent = c.caption;
+      legend.classList.toggle("freya-hidden", !c.caption);
+    },
+    tabs: (el, c) => {
+      const nav = el.querySelector(":scope > nav");
+      const pages = [...el.querySelectorAll(":scope > .freya-page")];
+      const titles = pages.map((p, i) => c.items[i] || p.dataset.title);
+      if (nav.dataset.titles !== JSON.stringify(titles)) {
+        nav.replaceChildren(...titles.map((t, i) => {
+          const b = document.createElement("button");
+          b.type = "button";
+          b.textContent = t;
+          b.dataset.index = i;
+          return b;
+        }));
+        nav.dataset.titles = JSON.stringify(titles);
+      }
+      [...nav.children].forEach((b, i) => b.classList.toggle("freya-active", i === c.index));
+      pages.forEach((p, i) => p.classList.toggle("freya-hidden", i !== c.index));
+    },
+    grid: (el, c) => {
+      const key = JSON.stringify([c.items, c.rows]);
+      if (el.dataset.content !== key) {
+        const head = document.createElement("tr");
+        head.replaceChildren(...c.items.map((h) => {
+          const th = document.createElement("th");
+          th.textContent = h;
+          return th;
+        }));
+        el.tHead.replaceChildren(head);
+        el.tBodies[0].replaceChildren(...c.rows.map((row) => {
+          const tr = document.createElement("tr");
+          tr.replaceChildren(...row.map((cell) => {
+            const td = document.createElement("td");
+            td.textContent = cell;
+            return td;
+          }));
+          return tr;
+        }));
+        el.dataset.content = key;
+      }
+      [...el.tBodies[0].rows].forEach((r, i) => r.classList.toggle("freya-selected", i === c.index));
+    },
+    menubar: (el, c) => {
+      const key = JSON.stringify(c.items);
+      if (el.dataset.items === key) return;
+      el.dataset.items = key;
+      const top = new Map();
+      for (const line of c.items) {
+        const [path, keys] = line.split("|").map((s) => s.trim());
+        const parts = path.split("/");
+        if (!top.has(parts[0])) top.set(parts[0], []);
+        if (parts.length > 1) top.get(parts[0]).push({ path, label: parts.slice(1).join(" › "), keys: keys || "" });
+      }
+      el.replaceChildren(...[...top].map(([title, entries]) => {
+        const menu = document.createElement("details");
+        const summary = document.createElement("summary");
+        summary.textContent = title;
+        const list = document.createElement("div");
+        for (const e of entries) {
+          if (e.label === "-") { list.append(document.createElement("hr")); continue; }
+          const b = document.createElement("button");
+          b.type = "button";
+          b.dataset.path = e.path;
+          b.textContent = e.label;
+          if (e.keys) { const k = document.createElement("kbd"); k.textContent = e.keys; b.append(k); }
+          list.append(b);
+        }
+        menu.append(summary, list);
+        return menu;
+      }));
+    },
+  };
+  window.freya = {
+    render(controls) {
+      for (const c of controls) {
+        const el = document.getElementById(c.name);
+        if (!el) continue;
+        const draw = kinds[el.dataset.kind];
+        if (draw) draw(el, c);
+        el.classList.toggle("freya-hidden", !c.visible);
+        el.classList.toggle("freya-disabled", !c.enabled);
+        for (const input of el.matches("input,select,textarea,button") ? [el] : el.querySelectorAll(":scope > input, :scope > label > input")) {
+          input.disabled = !c.enabled;
+        }
+        if (c.tooltip) el.title = c.tooltip; else el.removeAttribute("title");
+      }
+    },
+  };
+  document.addEventListener("DOMContentLoaded", () => {
+    for (const el of document.querySelectorAll("[data-kind]")) {
+      const name = el.id;
+      switch (el.dataset.kind) {
+        case "button":
+          el.addEventListener("click", () => send(name, "on_click"));
+          break;
+        case "edit":
+          el.addEventListener("input", () => send(name, "on_change", { text: el.value }));
+          el.addEventListener("keydown", (e) => { if (e.key === "Enter") send(name, "on_submit", { text: el.value }); });
+          break;
+        case "memo":
+          el.addEventListener("input", () => send(name, "on_change", { text: el.value }));
+          break;
+        case "check": {
+          const input = el.querySelector("input");
+          input.addEventListener("change", () => send(name, "on_toggle", { checked: input.checked }));
+          break;
+        }
+        case "slider":
+          el.addEventListener("input", () => send(name, "on_change", { number: parseFloat(el.value) }));
+          break;
+        case "select":
+          el.addEventListener("change", () => send(name, "on_select", { index: el.selectedIndex }));
+          break;
+        case "tabs":
+          el.querySelector(":scope > nav").addEventListener("click", (e) => {
+            const b = e.target.closest("button");
+            if (b) send(name, "on_page", { index: Number(b.dataset.index) });
+          });
+          break;
+        case "grid":
+          el.tBodies[0].addEventListener("click", (e) => {
+            const row = e.target.closest("tr");
+            if (row) send(name, "on_select", { index: row.sectionRowIndex });
+          });
+          break;
+        case "menubar":
+          el.addEventListener("click", (e) => {
+            const b = e.target.closest("button[data-path]");
+            if (!b) return;
+            b.closest("details").open = false;
+            send(name, "on_select", { text: b.dataset.path });
+          });
+          break;
+      }
+    }
+    send("", "ready");
+  });
+})();
+"####;
+
+/// Layout and state classes, for every style.
+pub const FREYA_BASE_CSS: &str = r####"
+html, body { margin: 0; padding: 0; height: 100%; box-sizing: border-box; }
+*, *::before, *::after { box-sizing: inherit; }
+body > [data-kind="form"] { min-height: 100%; }
+.freya-hidden { display: none !important; }
+.freya-disabled { opacity: 0.55; }
+[data-kind] { margin: 0; }
+[data-kind="check"] { display: flex; align-items: center; gap: 0.4em; }
+[data-kind="tabs"] > nav { display: flex; gap: 2px; border-bottom: 1px solid color-mix(in srgb, currentColor 25%, transparent); }
+[data-kind="tabs"] > nav > button { border-radius: 4px 4px 0 0; margin: 0; width: auto; }
+[data-kind="tabs"] > nav > button.freya-active { font-weight: bold; }
+[data-kind="grid"] { border-collapse: collapse; width: 100%; }
+[data-kind="grid"] th, [data-kind="grid"] td { text-align: left; padding: 4px 8px; }
+[data-kind="grid"] tr.freya-selected td { background: Highlight; color: HighlightText; }
+[data-kind="menubar"] { display: flex; gap: 2px; padding: 2px 6px; border-bottom: 1px solid color-mix(in srgb, currentColor 20%, transparent); }
+[data-kind="menubar"] details { position: relative; margin: 0; }
+[data-kind="menubar"] summary { list-style: none; padding: 4px 10px; cursor: default; }
+[data-kind="menubar"] summary::-webkit-details-marker { display: none; }
+[data-kind="menubar"] details > div { position: absolute; z-index: 10; min-width: 12em; display: flex; flex-direction: column;
+  background: Canvas; border: 1px solid color-mix(in srgb, currentColor 30%, transparent); padding: 4px 0; }
+[data-kind="menubar"] details > div > button { text-align: left; border: 0; background: none; padding: 4px 14px; margin: 0;
+  display: flex; justify-content: space-between; gap: 2em; width: 100%; color: inherit; }
+[data-kind="menubar"] details > div > button:hover { background: Highlight; color: HighlightText; }
+[data-kind="menubar"] details > div > hr { margin: 4px 0; }
+[data-kind="menubar"], [data-kind="tabs"] > nav { justify-content: flex-start; align-items: stretch; }
+[data-kind="menubar"] summary::after { display: none !important; }
+"####;
+
+/// The plain "Native" style: system font and colours, follows light/dark.
+pub const FREYA_NATIVE_CSS: &str = r####"
+:root { color-scheme: light dark; font: 14px system-ui, -apple-system, "Segoe UI", Cantarell, Ubuntu, sans-serif; }
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"] { color-scheme: dark; }
+body { background: Canvas; color: CanvasText; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { padding: 5px 14px; border-radius: 6px; border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+  background: color-mix(in srgb, ButtonFace 85%, CanvasText 5%); cursor: default; }
+button:hover:not(:disabled) { background: color-mix(in srgb, ButtonFace 70%, CanvasText 12%); }
+input[type="text"], input[type="password"], select, textarea { padding: 5px 8px; border-radius: 6px;
+  border: 1px solid color-mix(in srgb, currentColor 30%, transparent); background: Field; color: FieldText; }
+input:focus, select:focus, textarea:focus, button:focus-visible { outline: 2px solid AccentColor; outline-offset: 1px; }
+input[type="checkbox"], input[type="radio"] { accent-color: AccentColor; width: 1.1em; height: 1.1em; }
+input[type="checkbox"][role="switch"] { appearance: none; width: 2.2em; height: 1.2em; border-radius: 1em; margin: 0;
+  position: relative; background: color-mix(in srgb, currentColor 25%, transparent); transition: background 0.15s; }
+input[type="checkbox"][role="switch"]::after { content: ""; position: absolute; top: 0.15em; left: 0.15em; width: 0.9em;
+  height: 0.9em; border-radius: 50%; background: Canvas; transition: left 0.15s; }
+input[type="checkbox"][role="switch"]:checked { background: AccentColor; }
+input[type="checkbox"][role="switch"]:checked::after { left: 1.15em; }
+progress { width: 100%; accent-color: AccentColor; }
+fieldset { border: 1px solid color-mix(in srgb, currentColor 25%, transparent); border-radius: 6px; }
+legend { padding: 0 4px; }
+hr { border: 0; border-top: 1px solid color-mix(in srgb, currentColor 25%, transparent); }
+"####;

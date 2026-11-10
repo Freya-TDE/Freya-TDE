@@ -473,7 +473,7 @@ impl WizardWindow {
         let mut names: Vec<String> = registry.backends().map(|b| b.name.clone()).collect();
         names.sort_by_key(|n| {
             // Reihenfolge wie beschlossen: GTK 4, egui, iced, Slint, Flutter, dann der Rest.
-            ["gtk4", "egui", "iced", "slint", "flutter"]
+            ["gtk4", "egui", "iced", "slint", "flutter", "webview"]
                 .iter()
                 .position(|k| k == n)
                 .unwrap_or(99)

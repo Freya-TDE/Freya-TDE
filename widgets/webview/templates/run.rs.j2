@@ -1,0 +1,70 @@
+{#- WebView event loop (tao on the main thread): the first form (the main
+    form) is shown in a window with the system web view (wry). Messages of
+    the page and wake-ups from the background arrive as user events. -#}
+{%- set ui = forms | rejectattr("data_module") | list %}
+{%- if ui %}
+{%- set main = ui[0] %}
+// WebKitGTK zeigt mit manchen Treibern (z. B. NVIDIA) sonst nur ein leeres Fenster.
+#[cfg(target_os = "linux")]
+if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
+    // SAFETY: vor dem Start der WebView, noch ohne deren Threads.
+    unsafe { std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1") };
+}
+let mut form = {{ app }}.{{ main.name }};
+let event_loop = tao::event_loop::EventLoopBuilder::<crate::app::FreyaEvent>::with_user_event().build();
+let proxy = event_loop.create_proxy();
+let window = {{ main.name }}::{{ main.struct }}::freya_window()
+    .build(&event_loop)
+    .map_err(|e| e.to_string())?;
+let ipc = proxy.clone();
+let builder = wry::WebViewBuilder::new()
+    .with_html({{ main.name }}::{{ main.struct }}::freya_page())
+    .with_ipc_handler(move |request: wry::http::Request<String>| {
+        let _ = ipc.send_event(crate::app::FreyaEvent::Ipc(request.into_body()));
+    });
+#[cfg(target_os = "linux")]
+let webview = {
+    use tao::platform::unix::WindowExtUnix;
+    use wry::WebViewBuilderExtUnix;
+    let vbox = window.default_vbox().ok_or("no GTK box in the window")?;
+    builder.build_gtk(vbox).map_err(|e| e.to_string())?
+};
+#[cfg(not(target_os = "linux"))]
+let webview = builder.build(&window).map_err(|e| e.to_string())?;
+let waker = std::sync::Mutex::new(proxy);
+{{ main.name }}::{{ main.struct }}::freya_wake_with(move || {
+    if let Ok(proxy) = waker.lock() {
+        let _ = proxy.send_event(crate::app::FreyaEvent::Wake);
+    }
+});
+event_loop.run(move |event, _, control_flow| {
+    use tao::event::{Event, WindowEvent};
+    *control_flow = tao::event_loop::ControlFlow::Wait;
+    let mut changed = false;
+    match event {
+        Event::UserEvent(crate::app::FreyaEvent::Ipc(text)) => {
+            if let Some((widget, event, input)) = crate::app::freya_message(&text) {
+                if widget.is_empty() && event == "ready" {
+                    form.freya_created();
+                } else {
+                    form.freya_event(&widget, &event, &input);
+                }
+                changed = true;
+            }
+        }
+        Event::UserEvent(crate::app::FreyaEvent::Wake) => changed = form.freya_take_data(),
+        Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => {
+            if form.freya_close() {
+                *control_flow = tao::event_loop::ControlFlow::Exit;
+            }
+        }
+        _ => {}
+    }
+    if changed {
+        window.set_title(&form.freya_title());
+        let _ = webview.evaluate_script(&crate::app::freya_render_script(&form.freya_snapshot()));
+    }
+});
+{%- else %}
+Ok(())
+{%- endif %}

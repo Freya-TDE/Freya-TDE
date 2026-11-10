@@ -383,3 +383,61 @@ header = 56
 height = 160
 min-width = 240
 padding-x = 0
+
+# --- WebView (widgets/webview) – HTML-Bedienelemente / HTML controls
+[widgets."backend:webview/RadioButton"]
+height = 26
+min-width = 40
+padding-x = 0
+
+[widgets."backend:webview/Switch"]
+height = 26
+min-width = 48
+padding-x = 0
+
+[widgets."backend:webview/Slider"]
+height = 26
+min-width = 140
+padding-x = 0
+
+[widgets."backend:webview/ProgressBar"]
+height = 10
+min-width = 120
+padding-x = 0
+
+[widgets."backend:webview/ComboBox"]
+height = 34
+min-width = 120
+padding-x = 10
+
+[widgets."backend:webview/ListBox"]
+height = 120
+min-width = 140
+padding-x = 8
+
+[widgets."backend:webview/TextEdit"]
+height = 80
+min-width = 160
+padding-x = 8
+
+[widgets."backend:webview/Separator"]
+height = 12
+min-width = 20
+padding-x = 0
+
+[widgets."backend:webview/Frame"]
+height = 80
+min-width = 120
+padding-x = 0
+header = 26
+
+[widgets."backend:webview/Tabs"]
+height = 120
+min-width = 200
+padding-x = 0
+header = 40
+
+[widgets."backend:webview/DataGrid"]
+height = 160
+min-width = 240
+padding-x = 0
