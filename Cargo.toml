@@ -9,7 +9,7 @@ version = "0.1.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["Dragon Software <info@dragon-software.net>"]
-repository = "https://github.com/Dragon-InterActive/Freya-TD"
+repository = "https://github.com/Dragon-InterActive/Freya-TDE"
 rust-version = "1.99"
 
 [workspace.dependencies]
