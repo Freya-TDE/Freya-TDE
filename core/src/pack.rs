@@ -198,6 +198,9 @@ struct RawBackendFile {
     path: String,
     template: Option<String>,
     template_file: Option<String>,
+    /// A folder of the pack copied as it is (every file, recursively) to
+    /// `path/…`, e.g. vendored build tools.
+    dir: Option<String>,
     #[serde(default)]
     owner: FileOwner,
     #[serde(default)]
@@ -1152,6 +1155,22 @@ impl Checker<'_> {
             if let Err(message) = crate::codegen::check_template(&f.path) {
                 self.problem(&location, format!("`path`: {message}"));
             }
+            if let Some(dir) = &f.dir {
+                if f.template.is_some() || f.template_file.is_some() {
+                    self.problem(&location, "give `dir` without `template`/`template-file`");
+                    continue;
+                }
+                for (relative, text) in self.dir_files(&location, dir) {
+                    backend.files.push(BackendFile {
+                        path: format!("{}/{relative}", f.path.trim_end_matches('/')),
+                        template: text,
+                        owner: f.owner,
+                        each: f.each,
+                        raw: true,
+                    });
+                }
+                continue;
+            }
             let template = if f.raw {
                 match (&f.template, &f.template_file) {
                     (Some(text), None) => Some(text.clone()),
@@ -1220,6 +1239,66 @@ impl Checker<'_> {
     }
 
     /// Reads a template file relative to the pack directory.
+    /// Every file below `dir` of the pack as (relative path with `/`, text),
+    /// sorted (deterministic output).
+    fn dir_files(&mut self, location: &str, dir: &str) -> Vec<(String, String)> {
+        let relative = Path::new(dir);
+        let inside = relative
+            .components()
+            .all(|c| matches!(c, std::path::Component::Normal(_)));
+        if !inside {
+            self.problem(
+                location,
+                format!("`dir` {dir:?} must be a relative path inside the pack"),
+            );
+            return Vec::new();
+        }
+        let Some(root) = self.dir else {
+            self.problem(
+                location,
+                "`dir` needs a pack directory; load the pack with Pack::load",
+            );
+            return Vec::new();
+        };
+        let base = root.join(relative);
+        let mut files = Vec::new();
+        let mut pending = vec![base.clone()];
+        while let Some(folder) = pending.pop() {
+            let entries = match std::fs::read_dir(&folder) {
+                Ok(entries) => entries,
+                Err(e) => {
+                    self.problem(location, format!("cannot read {}: {e}", folder.display()));
+                    continue;
+                }
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    pending.push(path);
+                    continue;
+                }
+                let name = path
+                    .strip_prefix(&base)
+                    .unwrap_or(&path)
+                    .components()
+                    .map(|c| c.as_os_str().to_string_lossy().into_owned())
+                    .collect::<Vec<_>>()
+                    .join("/");
+                match std::fs::read_to_string(&path) {
+                    Ok(text) => files.push((name, text)),
+                    Err(e) => {
+                        self.problem(location, format!("cannot read {}: {e}", path.display()))
+                    }
+                }
+            }
+        }
+        if files.is_empty() {
+            self.problem(location, format!("`dir` {dir:?} has no files"));
+        }
+        files.sort();
+        files
+    }
+
     fn template_file(&mut self, location: &str, file: &str) -> Option<String> {
         let relative = Path::new(file);
         let inside = relative

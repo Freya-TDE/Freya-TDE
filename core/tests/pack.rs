@@ -594,3 +594,47 @@ license-notice = """
     let plain = Pack::parse(&text.replace("license-notice", "description")).unwrap();
     assert_eq!(plain.info.license_notice, None);
 }
+
+#[test]
+fn backend_files_copy_a_folder() {
+    let dir = std::env::temp_dir().join(format!("tdr-pack-dir-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("tool/cmake")).unwrap();
+    std::fs::write(dir.join("tool/run.sh"), "echo {{ not a template }}\n").unwrap();
+    std::fs::write(dir.join("tool/cmake/tool.cmake"), "# cmake\n").unwrap();
+    let header = r#"[pack]
+name = "copier"
+version = "0.1.0"
+kind = "backend"
+license = "MIT"
+generated-code-license = "MIT"
+
+[backend]
+"#;
+    std::fs::write(
+        dir.join("pack.toml"),
+        format!("{header}\n[[backend.files]]\npath = \"flutter/tool\"\ndir = \"tool\"\nowner = \"user\"\n"),
+    )
+    .unwrap();
+    let pack = Pack::load(&dir).unwrap();
+    let mut registry = TypeRegistry::with_builtins();
+    pack.register(&mut registry).unwrap();
+    let files = &registry.backend("copier").unwrap().files;
+    let paths: Vec<&str> = files.iter().map(|f| f.path.as_str()).collect();
+    assert_eq!(
+        paths,
+        ["flutter/tool/cmake/tool.cmake", "flutter/tool/run.sh"]
+    );
+    assert!(files.iter().all(|f| f.raw && f.owner == FileOwner::User));
+    assert_eq!(files[1].template, "echo {{ not a template }}\n");
+    // Ordner außerhalb des Packs und dir zusammen mit template sind Fehler.
+    for bad in ["dir = \"../x\"", "dir = \"tool\"\ntemplate = \"x\""] {
+        std::fs::write(
+            dir.join("pack.toml"),
+            format!("{header}\n[[backend.files]]\npath = \"p\"\n{bad}\n"),
+        )
+        .unwrap();
+        assert!(Pack::load(&dir).is_err(), "{bad}");
+    }
+    std::fs::remove_dir_all(dir).ok();
+}

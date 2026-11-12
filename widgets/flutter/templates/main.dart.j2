@@ -2,6 +2,7 @@
 // Entry point of the Flutter app – your code. Freya TDE creates this file
 // once and never changes it; the forms are built in `freya/<form>.g.dart`.
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
@@ -14,16 +15,20 @@ import 'src/rust/frb_generated.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // Die Rust-Bibliothek: beim Entwickeln aus ../target/debug (cargo build),
-  // im fertigen Programm mitgeliefert.
+  // sonst die von rust_builder (cargokit) ins Programm gepackte.
   await RustLib.init(
     externalLibrary: await loadExternalLibrary(
-      const ExternalLibraryLoaderConfig(
+      ExternalLibraryLoaderConfig(
         stem: {{ project.lib | dart_str }},
-        ioDirectory: '../target/debug/',
+        ioDirectory: kReleaseMode ? null : '../target/debug/',
         webPrefix: 'pkg/',
       ),
     ),
   );
+{%- if ui %}
+  // Fenster wie im Designer (Titel, Größe, Position, Startzustand).
+  await {{ ui[0].struct }}View.setupWindow();
+{%- endif %}
   // App::init und `started` in src/lib.rs.
   freyaStart();
   runApp(const App());

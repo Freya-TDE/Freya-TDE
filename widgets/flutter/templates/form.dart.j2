@@ -251,6 +251,7 @@ import 'dart:async';
 import 'dart:ui' show AppExitResponse;
 
 import 'package:flutter/material.dart';
+import 'package:window_manager/window_manager.dart';
 
 import '../src/rust/api.dart';
 import 'freya.g.dart';
@@ -265,6 +266,40 @@ class {{ view }} extends StatefulWidget {
 
   /// Theme of the form (designer: `theme`).
   static const themeMode = ThemeMode.{% if root.props.theme == "Dark" %}dark{% elif root.props.theme == "Light" %}light{% else %}system{% endif %};
+
+  /// The window as set in the designer (title, size, limits, position,
+  /// start state); call before `runApp`. Uses window_manager.
+  static Future<void> setupWindow() async {
+    {%- set wp = root.props %}
+    await windowManager.ensureInitialized();
+    const options = WindowOptions(
+      title: {{ wp.title | dart_str }},
+      size: Size({{ wp.size.width }}, {{ wp.size.height }}),
+    {%- if wp.min_size.width > 0 or wp.min_size.height > 0 %}
+      minimumSize: Size({{ wp.min_size.width }}, {{ wp.min_size.height }}),
+    {%- endif %}
+    {%- if wp.max_size.width > 0 or wp.max_size.height > 0 %}
+      maximumSize: Size({{ wp.max_size.width if wp.max_size.width > 0 else 100000 }}, {{ wp.max_size.height if wp.max_size.height > 0 else 100000 }}),
+    {%- endif %}
+      center: {{ "true" if wp.position == "Center" else "false" }},
+    {%- if wp.start_state == "Fullscreen" %}
+      fullScreen: true,
+    {%- endif %}
+    );
+    await windowManager.waitUntilReadyToShow(options, () async {
+    {%- if not wp.resizable %}
+      await windowManager.setResizable(false);
+    {%- endif %}
+    {%- if wp.position == "Manual" %}
+      await windowManager.setPosition(const Offset({{ wp.location.x }}, {{ wp.location.y }}));
+    {%- endif %}
+    {%- if wp.start_state == "Maximized" %}
+      await windowManager.maximize();
+    {%- endif %}
+      await windowManager.show();
+      await windowManager.focus();
+    });
+  }
 
   @override
   State<{{ view }}> createState() => _{{ view }}State();

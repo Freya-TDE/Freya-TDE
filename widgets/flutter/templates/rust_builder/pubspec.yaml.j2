@@ -1,0 +1,26 @@
+# Builds the Rust library of {{ project.name }} with `flutter build` and bundles
+# it (cargokit, MIT). Created once by Freya TDE; the plugin has the name of the
+# library so that flutter_rust_bridge finds it in the finished program.
+name: {{ project.lib }}
+description: "Builds and bundles the Rust library ../../ (cargokit)"
+version: 0.0.1
+publish_to: none
+
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+  flutter: '>=3.3.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  plugin_platform_interface: ^2.0.2
+
+flutter:
+  plugin:
+    platforms:
+      linux:
+        ffiPlugin: true
+      macos:
+        ffiPlugin: true
+      windows:
+        ffiPlugin: true

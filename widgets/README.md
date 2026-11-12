@@ -171,17 +171,29 @@ Bibliothek aus `../target/debug/`); Ausgabe im Kanal „Programm“ (`freya_tde:
 - `MainMenu` wird eine `MenuBar` (Pfade, `-`, Untermenüs); Kürzel werden angezeigt, aber nicht gebunden.
 - `on_close` über `AppLifecycleListener` (wenn die App beendet werden soll).
 - Gezeigt wird das erste Formular; weitere gibt es als `<Form>View` für `Navigator.push`.
-- Nicht unterstützt: Fenstertitel, -größe, -position, Mindest-/Höchstgröße und Startzustand (setzt der native
-  Runner in `flutter/<system>/runner/`; der Titel ist der App-Name), Hintergrundbild von Containern.
-- Kein Debugger: F9 startet ohne Debugger. Zum Weitergeben muss die Bibliothek mit ins Paket (z. B. cargokit
-  über `flutter_rust_bridge_codegen integrate`); das erledigt Freya TDE noch nicht.
+- Fenster: Titel, Größe, Mindest-/Höchstgröße, Position (Mitte, System, `location`), `resizable` und
+  Startzustand setzt `<Form>View.setupWindow()` beim Start über das Dart-Paket window_manager (0.5, MIT). Der
+  native Runner zeigt das Fenster kurz in seiner eigenen Größe, bevor die Einstellungen greifen (vermeidbar
+  durch „hidden at launch“ im Runner, siehe window_manager). Nicht unterstützt: Hintergrundbild von Containern.
+- Fertiges Programm: `flutter/rust_builder/` (cargokit, MIT, Stand flutter_rust_bridge 2.13.0) baut die
+  Rust-Bibliothek bei jedem `flutter build` selbst mit `cargo` und packt sie ins Programm (Linux `bundle/lib/`,
+  Windows neben die `.exe`, macOS als Framework; dafür ist `crate-type` zusätzlich `staticlib`). Braucht
+  `rustup`. Das Plugin heißt wie die Bibliothek (so findet flutter_rust_bridge sie unter macOS), die App
+  deshalb `<bibliothek>_app`. Beim Entwickeln lädt die App weiter `../target/debug/`; im Release-Build
+  (`kReleaseMode`) die mitgelieferte. Ältere Projekte: in `flutter/pubspec.yaml` den Namen auf
+  `<bibliothek>_app` ändern und `<bibliothek>: {path: rust_builder}` sowie `window_manager: ^0.5.2` ergänzen.
+  Später (Entscheidung 12.11.2026): Dart Build-Hooks statt cargokit, sobald flutter_rust_bridge sie stabil
+  unterstützt.
+- Kein Debugger: F9 startet ohne Debugger. Der erste `flutter build` baut die Bibliothek ein zweites Mal
+  (cargokit hat ein eigenes Zielverzeichnis), danach geht es schnell.
 - `flutter create` legt `test/widget_test.dart` für eine Beispiel-App an; vor `flutter test` anpassen.
 - Getestet unter Linux; Windows und macOS sind vorgesehen, aber ungetestet.
 - Test: `xvfb-run -a cargo test -p tdr-core --test backend_flutter` (braucht `flutter` und `xdotool`) erzeugt ein
   Projekt mit allen Widgets, baut Bibliothek und App, prüft `flutter analyze`, startet und klickt.
 
-*Limits: no window title/size/position settings (the native runner owns them), no container background
-pictures, menu shortcuts not bound, no debugger, the library is not bundled for release yet; tested on Linux.*
+*Window settings via window_manager (`<Form>View.setupWindow()`); the Rust library is built and bundled by
+cargokit (`flutter/rust_builder/`) on every `flutter build`. Limits: no container background pictures, menu
+shortcuts not bound, no debugger; tested on Linux.*
 
 ## WebView
 
@@ -323,6 +335,11 @@ template-file = "templates/form.dart.j2"            # oder template
 each = "form"                   # "project" (Standard) oder "form" (je Formular mit Widgets)
 owner = "generator"             # oder "user" (einmal angelegt, dann Nutzerdatei)
 raw = false                     # true = unverändert kopieren (z. B. erzeugte Bindungen)
+
+[[backend.files]]               # einen ganzen Ordner des Packs unverändert kopieren
+path = "flutter/rust_builder/cargokit"
+dir = "cargokit"                # alle Dateien darunter, sortiert, landen in path/…
+owner = "user"
 ```
 
 Bei `event-loop = "host"` treibt ein anderes Programm die Oberfläche: kein `main.rs`, `run()` erzeugt die

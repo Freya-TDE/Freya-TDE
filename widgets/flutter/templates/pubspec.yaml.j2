@@ -1,5 +1,7 @@
 # Flutter side of {{ project.name }} (Freya TDE). Your file: created once.
-name: {{ project.lib }}
+# The Rust library's plugin (rust_builder/) carries the library name, so the
+# app is named <library>_app.
+name: {{ project.lib }}_app
 description: Flutter UI of {{ project.name }}; the logic is the Rust library in ../
 publish_to: none
 version: 0.1.0
@@ -12,6 +14,11 @@ dependencies:
     sdk: flutter
   # Dieselbe Version wie flutter_rust_bridge in ../Cargo.toml.
   flutter_rust_bridge: 2.13.0
+  # Baut die Rust-Bibliothek bei `flutter build` und packt sie ins Programm (cargokit).
+  {{ project.lib }}:
+    path: rust_builder
+  # Fenstertitel, -größe, -position und Startzustand aus dem Designer.
+  window_manager: ^0.5.2
 
 flutter:
   uses-material-design: true

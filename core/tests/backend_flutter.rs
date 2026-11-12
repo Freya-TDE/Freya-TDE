@@ -374,7 +374,10 @@ fn generated_project_has_rust_library_and_flutter_app() {
     // Rust: Bibliothek statt Programm.
     assert!(generation.file("src/main.rs").is_none());
     let cargo = file(&generation, "Cargo.toml");
-    assert!(cargo.contains("crate-type = [\"cdylib\"]"), "{cargo}");
+    assert!(
+        cargo.contains("crate-type = [\"cdylib\", \"staticlib\"]"),
+        "{cargo}"
+    );
     assert!(
         cargo.contains("flutter_rust_bridge = \"=2.13.0\""),
         "{cargo}"
@@ -400,11 +403,14 @@ fn generated_project_has_rust_library_and_flutter_app() {
 
     // Flutter: App, Formular, Brücke.
     let pubspec = file(&generation, "flutter/pubspec.yaml");
-    assert!(pubspec.contains("name: flutter_demo"), "{pubspec}");
+    assert!(pubspec.contains("name: flutter_demo_app"), "{pubspec}");
+    assert!(pubspec.contains("path: rust_builder"), "{pubspec}");
+    assert!(pubspec.contains("window_manager:"), "{pubspec}");
     assert!(pubspec.contains("flutter_rust_bridge: 2.13.0"), "{pubspec}");
     let main = file(&generation, "flutter/lib/main.dart");
     assert!(main.contains("stem: 'flutter_demo'"), "{main}");
     assert!(main.contains("home: const MainFormView()"), "{main}");
+    assert!(main.contains("await MainFormView.setupWindow();"), "{main}");
     let view = file(&generation, "flutter/lib/freya/main_form.g.dart");
     assert!(view.starts_with(codegen::GENERATED_MARK), "{view}");
     assert!(
@@ -412,6 +418,8 @@ fn generated_project_has_rust_library_and_flutter_app() {
         "{view}"
     );
     assert!(view.contains("hintText: 'Name (\\$)'"), "{view}");
+    assert!(view.contains("title: 'Flutter-Test'"), "{view}");
+    assert!(view.contains("center: true"), "{view}");
     assert!(view.contains("freyaMenuBar(_get('menu')"), "{view}");
     assert!(
         view.contains("Timer.periodic"),
@@ -427,9 +435,25 @@ fn generated_project_has_rust_library_and_flutter_app() {
         "flutter/lib/src/rust/api.dart",
         "flutter/lib/src/rust/frb_generated.dart",
         "flutter/README.md",
+        // cargokit: baut und packt die Bibliothek bei `flutter build`.
+        "flutter/rust_builder/cargokit/cmake/cargokit.cmake",
+        "flutter/rust_builder/cargokit/run_build_tool.sh",
+        "flutter/rust_builder/cargokit/LICENSE",
     ] {
         file(&generation, path);
     }
+    let builder = file(&generation, "flutter/rust_builder/pubspec.yaml");
+    assert!(builder.contains("name: flutter_demo\n"), "{builder}");
+    let cmake = file(&generation, "flutter/rust_builder/linux/CMakeLists.txt");
+    assert!(
+        cmake.contains("apply_cargokit(${PROJECT_NAME} ../../.. flutter_demo \"\")"),
+        "{cmake}"
+    );
+    assert!(cmake.contains("flutter_demo_bundled_libraries"), "{cmake}");
+    file(
+        &generation,
+        "flutter/rust_builder/macos/flutter_demo.podspec",
+    );
 }
 
 #[test]

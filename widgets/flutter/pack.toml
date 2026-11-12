@@ -29,7 +29,10 @@ generated-code-license = "MIT OR Apache-2.0"
 event-loop = "host"
 absolute-positioning = true
 platforms = ["linux", "windows", "macos"]
-crate-type = ["cdylib"]
+# cdylib: Linux, Windows (und beim Entwickeln); staticlib: macOS linkt die
+# Bibliothek über cargokit in ein Framework.
+# cdylib for Linux/Windows (and development), staticlib for macOS (cargokit).
+crate-type = ["cdylib", "staticlib"]
 cargo = [
     # Genau diese Version: Rust- und Dart-Seite der Brücke müssen zusammenpassen.
     # Exactly this version: both sides of the bridge must match.
@@ -409,3 +412,57 @@ selected = "self.{{ name }}.value.selected"
 [component.codegen]
 type = "crate::app::Control<crate::app::Table>"
 init = "crate::app::Control::new(crate::app::Table::default()).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+# --- Rust-Bibliothek im fertigen Programm / Rust library in the finished program ----------
+# cargokit (MIT, irondash/cargokit, Stand flutter_rust_bridge 2.13.0) baut die Bibliothek bei
+# `flutter build` und packt sie ins Programm. Einmal angelegt, danach Nutzerdateien.
+# cargokit builds and bundles the library with `flutter build`; created once.
+
+[[backend.files]]
+path = "flutter/rust_builder/cargokit"
+dir = "cargokit"
+owner = "user"
+
+[[backend.files]]
+path = "flutter/rust_builder/pubspec.yaml"
+owner = "user"
+template-file = "templates/rust_builder/pubspec.yaml.j2"
+
+[[backend.files]]
+path = "flutter/rust_builder/linux/CMakeLists.txt"
+owner = "user"
+template-file = "templates/rust_builder/linux.cmake.j2"
+
+[[backend.files]]
+path = "flutter/rust_builder/windows/CMakeLists.txt"
+owner = "user"
+template-file = "templates/rust_builder/windows.cmake.j2"
+
+[[backend.files]]
+path = "flutter/rust_builder/windows/.gitignore"
+owner = "user"
+raw = true
+template-file = "templates/rust_builder/windows.gitignore"
+
+[[backend.files]]
+path = "flutter/rust_builder/macos/{{ project.lib }}.podspec"
+owner = "user"
+template-file = "templates/rust_builder/macos.podspec.j2"
+
+[[backend.files]]
+path = "flutter/rust_builder/macos/Classes/dummy_file.c"
+owner = "user"
+raw = true
+template-file = "templates/rust_builder/dummy_file.c"
+
+[[backend.files]]
+path = "flutter/rust_builder/.gitignore"
+owner = "user"
+raw = true
+template-file = "templates/rust_builder/gitignore"
+
+[[backend.files]]
+path = "flutter/rust_builder/README.md"
+owner = "user"
+raw = true
+template-file = "templates/rust_builder/README.md"
