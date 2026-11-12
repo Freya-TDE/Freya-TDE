@@ -2077,6 +2077,14 @@ impl Ide {
 
     // --- Code, build, run ----------------------------------------------------------
 
+    /// Saves every changed file of the code editor (automation: before
+    /// actions that would otherwise ask about unsaved changes).
+    pub fn save_all_code(&self) -> Result<Vec<PathBuf>, String> {
+        let saved = self.code.save_all()?;
+        self.lsp_saved(&saved);
+        Ok(saved)
+    }
+
     /// Saves (asking for a folder the first time) and writes the generated
     /// code. Code generation findings go to the problems.
     pub fn generate_code(&self) -> Option<tdr_core::codegen::Generation> {

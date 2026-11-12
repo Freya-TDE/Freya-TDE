@@ -776,6 +776,9 @@ fn main() {
             &freya_tde::debug::DebugStore::default_path().unwrap(),
         );
         assert_eq!(store.get(&demo).breakpoints.len(), 1);
+        // Der Editor gilt nach set_code_text als geändert; ohne Speichern
+        // fragte das nächste neue Projekt (unsichtbar unter Xvfb) nach.
+        ide.save_all_code().unwrap();
         println!("test debugger ... ok");
         passed += 1;
     } else {
