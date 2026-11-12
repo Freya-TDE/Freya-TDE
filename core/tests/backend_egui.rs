@@ -422,17 +422,26 @@ fn generated_project_builds_runs_and_reacts_to_clicks() {
         // Unter Xvfb testen, nicht auf dem Wayland-Bildschirm des Nutzers.
         .env_remove("WAYLAND_DISPLAY")
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    // Auf das Fenster warten.
+    // Auf das Fenster warten; ohne Fenster die Fehlerausgabe des Programms zeigen.
     let start = Instant::now();
     let window = loop {
         let found = xdotool(&["search", "--name", "egui-Test"]);
         if let Some(id) = found.lines().next() {
             break id.to_owned();
         }
-        assert!(start.elapsed() < Duration::from_secs(20), "kein Fenster");
+        if start.elapsed() > Duration::from_secs(40) || child.try_wait().unwrap().is_some() {
+            let _ = child.kill();
+            let output = child.wait_with_output().unwrap();
+            panic!(
+                "kein Fenster ({}):\n{}\n{}",
+                output.status,
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
         std::thread::sleep(Duration::from_millis(200));
     };
     std::thread::sleep(Duration::from_millis(1500));
