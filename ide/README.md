@@ -89,7 +89,8 @@ cargo run -p freya-tde -- --commands cmds.json  # Designer-Befehle (JSON) anwend
 cargo run -p freya-tde -- --generate --show-code # Code erzeugen und im Editor öffnen
 cargo run -p freya-tde -- --screenshots shots   # alle Fenster als PNG, dann beenden
 cargo run -p freya-tde -- --no-splash           # ohne Startbildschirm
-xvfb-run -a cargo test -p freya-tde             # Tests (Linux ohne Bildschirm)
+env -u WAYLAND_DISPLAY xvfb-run -a -s "-screen 0 1920x1080x24" \
+    cargo test -p freya-tde                     # Tests (Linux ohne Bildschirm; Standard 640×480 ist zu klein)
 ```
 
 Die Logik hinter den Fenstern liegt ohne Oberfläche in `session` (Auswahl, Platzieren,

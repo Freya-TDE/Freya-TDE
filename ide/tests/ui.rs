@@ -1116,7 +1116,8 @@ fn main() {
                 let now = ide.wizard_notice_size();
                 now.0 > before.0 + 200 && now.1 > before.1 + 150
             }),
-            "Hinweis wächst mit dem Fenster: {before:?} → {:?}",
+            "Hinweis wächst mit dem Fenster: {before:?} → {:?} (Bildschirm zu klein? \
+             xvfb-run -s \"-screen 0 1920x1080x24\")",
             ide.wizard_notice_size()
         );
         if let Some(dir) = &shots {
