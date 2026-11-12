@@ -31,6 +31,9 @@ fn description(id: &str) -> &'static str {
         }
         "file.open" => "Öffnet eine Projektdatei (.ptdr).",
         "file.save" => "Speichert Projekt und Formulare.",
+        "code.codetools" => {
+            "Legt an, was an der Cursorstelle fehlt: Methodenrumpf, eigenes Formular-Feld oder fehlende Trait-Methoden (wie die Lazarus CodeTools)."
+        }
         "file.settings" => {
             "Einstellungen: Arbeitsverzeichnis, Sprache, Darstellung und KI-Profile."
         }

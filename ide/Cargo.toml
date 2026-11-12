@@ -32,6 +32,9 @@ vt100 = "0.18.1"
 # AI API keys in the system keyring.
 keyring = "4.2.0"
 thiserror.workspace = true
+# Code-Vervollständigung: Zeilen der Methoden im impl-Block (span-locations).
+syn.workspace = true
+proc-macro2 = { version = "1.0.107", features = ["span-locations"] }
 
 [[test]]
 name = "ui"

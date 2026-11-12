@@ -82,6 +82,12 @@ pub enum LspEvent {
         request: u64,
         locations: Vec<Location>,
     },
+    /// Code actions at a position (with their changes), see
+    /// [`crate::codetools`].
+    CodeActions {
+        request: u64,
+        actions: Vec<crate::codetools::Action>,
+    },
     /// A request failed.
     Error {
         request: Option<u64>,
@@ -283,6 +289,11 @@ impl LspClient {
                             "publishDiagnostics": {},
                             "completion": {"completionItem": {"snippetSupport": false}},
                             "definition": {},
+                            // Aktionen mit fertigen Änderungen (ohne codeAction/resolve).
+                            "codeAction": {"codeActionLiteralSupport": {"codeActionKind": {
+                                "valueSet": ["", "quickfix", "refactor", "refactor.extract",
+                                    "refactor.inline", "refactor.rewrite", "source"],
+                            }}},
                         },
                         "experimental": {"serverStatusNotification": true},
                     },
@@ -411,6 +422,18 @@ impl LspClient {
         self.request("textDocument/completion", params)
     }
 
+    /// Asks for the code actions at a position (for the code completion);
+    /// [`LspEvent::CodeActions`].
+    pub fn code_actions(&self, path: &Path, line: usize, column: usize) -> u64 {
+        let position = self.position(path, line, column);
+        let params = json!({
+            "textDocument": position["textDocument"],
+            "range": {"start": position["position"], "end": position["position"]},
+            "context": {"diagnostics": []},
+        });
+        self.request("textDocument/codeAction", params)
+    }
+
     /// Asks where the symbol at a position is defined;
     /// [`LspEvent::Definition`].
     pub fn definition(&self, path: &Path, line: usize, column: usize) -> u64 {
@@ -497,6 +520,62 @@ fn location(value: &Value, shared: &Shared) -> Option<Location> {
     })
 }
 
+/// A code action with its changes (`edit.documentChanges` or
+/// `edit.changes`); commands without changes are skipped.
+fn code_action(value: &Value, shared: &Shared) -> Option<crate::codetools::Action> {
+    let title = value["title"].as_str()?.to_owned();
+    let edit = &value["edit"];
+    let mut groups: Vec<(&str, &Value)> = Vec::new();
+    if let Some(changes) = edit["documentChanges"].as_array() {
+        for change in changes {
+            if let Some(uri) = change["textDocument"]["uri"].as_str() {
+                groups.push((uri, &change["edits"]));
+            }
+        }
+    }
+    if let Some(changes) = edit["changes"].as_object() {
+        for (uri, edits) in changes {
+            groups.push((uri.as_str(), edits));
+        }
+    }
+    let mut edits = Vec::new();
+    for (uri, list) in groups {
+        let path = uri_to_path(uri)?;
+        let text = shared
+            .documents
+            .get(&path)
+            .map(|(t, _)| t.clone())
+            .or_else(|| std::fs::read_to_string(&path).ok())
+            .unwrap_or_default();
+        let column = |line: usize, units: u64| {
+            let line_text = text.lines().nth(line.saturating_sub(1)).unwrap_or("");
+            shared.encoding().column(line_text, units as usize)
+        };
+        for e in list.as_array()? {
+            let start = &e["range"]["start"];
+            let end = &e["range"]["end"];
+            let line = start["line"].as_u64()? as usize + 1;
+            let end_line = end["line"].as_u64()? as usize + 1;
+            edits.push(crate::codetools::TextEdit {
+                path: path.clone(),
+                line,
+                column: column(line, start["character"].as_u64()?),
+                end_line,
+                end_column: column(end_line, end["character"].as_u64()?),
+                new_text: e["newText"].as_str()?.to_owned(),
+            });
+        }
+    }
+    if edits.is_empty() {
+        return None;
+    }
+    Some(crate::codetools::Action {
+        title,
+        kind: value["kind"].as_str().map(str::to_owned),
+        edits,
+    })
+}
+
 fn handle(
     message: &Value,
     shared: &Mutex<Shared>,
@@ -563,6 +642,22 @@ fn handle(
                     })
                     .unwrap_or_default();
                 on_event(LspEvent::Completion { request: id, items });
+            }
+            Some("textDocument/codeAction") => {
+                let shared = shared.lock().expect("lock");
+                let actions = result
+                    .as_array()
+                    .map(|list| {
+                        list.iter()
+                            .filter_map(|a| code_action(a, &shared))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                drop(shared);
+                on_event(LspEvent::CodeActions {
+                    request: id,
+                    actions,
+                });
             }
             Some("textDocument/definition") => {
                 let shared = shared.lock().expect("lock");

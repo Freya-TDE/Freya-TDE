@@ -264,6 +264,12 @@ pub enum CodegenIssue {
     /// A library project has a form with widgets; libraries have data
     /// modules only (the form's UI code is left out).
     LibraryWithUi(ComponentName),
+    /// The own fields of a form (`state`) are wrong (syntax, a name used
+    /// twice or by a component); they are left out.
+    FormState {
+        form: ComponentName,
+        message: String,
+    },
     /// The project pins another version than a used type asks for; the
     /// project's version is kept.
     CargoVersionDiffers {
@@ -324,6 +330,9 @@ impl fmt::Display for CodegenIssue {
             },
             CodegenIssue::InvalidRust { part, message } => {
                 write!(f, "{part} is not valid Rust: {message}")
+            }
+            CodegenIssue::FormState { form, message } => {
+                write!(f, "own fields (state) of form {form}: {message}")
             }
             CodegenIssue::LibraryWithUi(form) => write!(
                 f,
@@ -1369,6 +1378,7 @@ pub fn generate(
         start(backend, &generated, &mut out)
     };
     let bindings = data_bindings(forms, &generated, registry, &env, &start, &mut out);
+    let states = form_states(forms, &generated, &mut out);
     let mut cargo = analysis.cargo.clone();
     if let Some(backend) = backend {
         merge_cargo(&mut cargo, &backend.cargo);
@@ -1385,15 +1395,18 @@ pub fn generate(
         files.push(main_file(start.started_is_async(), source, &mut out));
     }
     files.push(app_file(
-        forms, &generated, &bindings, &start, registry, backend, host, &env, source, &mut out,
+        forms, &generated, &bindings, &states, &start, registry, backend, host, &env, source,
+        &mut out,
     ));
     for form in forms {
         let form_bindings = bindings.get(&form.name).map_or(&[][..], Vec::as_slice);
         let runtime = form_runtime(&env, forms, form, &generated, registry, &mut out);
+        let form_state = states.get(&form.name).map_or(&[][..], Vec::as_slice);
         files.push(form_gen_file(
             form,
             &generated,
             form_bindings,
+            form_state,
             &runtime,
             registry,
             backend,
@@ -1838,6 +1851,7 @@ fn app_file(
     forms: &[Form],
     generated: &[Generated],
     bindings: &HashMap<ComponentName, Vec<Binding>>,
+    states: &HashMap<ComponentName, Vec<crate::state::StateField>>,
     start: &Start,
     registry: &TypeRegistry,
     backend: Option<&BackendDescriptor>,
@@ -1901,6 +1915,10 @@ fn app_file(
         }
         for b in bindings.get(&form.name).into_iter().flatten() {
             code.push_str(&b.init(form.name.as_str()));
+        }
+        for field in states.get(&form.name).into_iter().flatten() {
+            let init = field.init.as_deref().unwrap_or("Default::default()");
+            let _ = write!(code, "{}: {init},", field.name);
         }
         if is_live(form, generated) {
             code.push_str("freya_queue: Default::default(),");
@@ -2366,6 +2384,7 @@ fn form_gen_file(
     form: &Form,
     generated: &[Generated],
     bindings: &[Binding],
+    state: &[crate::state::StateField],
     runtime: &FormRuntime,
     registry: &TypeRegistry,
     backend: Option<&BackendDescriptor>,
@@ -2396,6 +2415,13 @@ fn form_gen_file(
     }
     for b in bindings {
         code.push_str(&b.fields());
+    }
+    for field in state {
+        let _ = writeln!(
+            code,
+            "/// Own field (designer: `state`).\npub {}: {},",
+            field.name, field.rust_type
+        );
     }
     let live = is_live(form, generated);
     if live {
@@ -2754,6 +2780,57 @@ impl Binding {
             BindingKind::List { .. } => None,
         }
     }
+}
+
+/// The own fields (`state`) of each form, checked: syntax, names not used
+/// by components or other generated fields.
+fn form_states(
+    forms: &[Form],
+    generated: &[Generated],
+    out: &mut Diagnostics,
+) -> HashMap<ComponentName, Vec<crate::state::StateField>> {
+    let mut all = HashMap::new();
+    for form in forms {
+        let Some(root) = &form.root else { continue };
+        let items = crate::data::texts(root.component.get(crate::state::STATE).map(|v| &v.value));
+        let fields = match crate::state::parse_state(&items) {
+            Ok(fields) => fields,
+            Err(message) => {
+                out.error(
+                    Some(ComponentPath::on(
+                        form.name.clone(),
+                        root.component.name.clone(),
+                    )),
+                    CodegenIssue::FormState {
+                        form: form.name.clone(),
+                        message,
+                    },
+                );
+                continue;
+            }
+        };
+        let taken: Vec<String> = form_components(form, generated)
+            .iter()
+            .map(|g| g.path.name.to_string())
+            .collect();
+        if let Some(clash) = fields.iter().find(|f| {
+            taken.contains(&f.name) || f.name.starts_with("freya_") || f.name.contains("__")
+        }) {
+            out.error(
+                Some(ComponentPath::on(
+                    form.name.clone(),
+                    root.component.name.clone(),
+                )),
+                CodegenIssue::FormState {
+                    form: form.name.clone(),
+                    message: format!("`{}` is already a component or a reserved name", clash.name),
+                },
+            );
+            continue;
+        }
+        all.insert(form.name.clone(), fields);
+    }
+    all
 }
 
 /// The data bindings of all forms, checked.

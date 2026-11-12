@@ -270,6 +270,9 @@ pub struct Settings {
     /// For Freya TDE and the CT-Editor.
     #[serde(default)]
     pub theme: Theme,
+    /// Where the code completion puts new methods.
+    #[serde(default)]
+    pub method_order: crate::codetools::MethodOrder,
     #[serde(default)]
     pub ai: AiSettings,
 }

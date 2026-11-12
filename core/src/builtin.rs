@@ -208,6 +208,18 @@ pub fn types() -> Vec<ComponentType> {
                     ),
             )
             .with_properties(background_image())
+            .with_property(
+                PropertyDef::new(
+                    crate::state::STATE,
+                    PropertyType::List(Box::new(PropertyType::Text)),
+                    Value::List(Vec::new()),
+                )
+                .with_category("Code")
+                .with_description(
+                    "Own fields of the form: `name: Type` or `name: Type = start value` \
+                     (otherwise Default::default())",
+                ),
+            )
             .with_event(EventDef::new("on_create").with_description("After the form was built"))
             .with_event(
                 EventDef::new("on_close")

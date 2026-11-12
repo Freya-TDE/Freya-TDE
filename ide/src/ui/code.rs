@@ -136,6 +136,11 @@ pub(super) fn menu_bar() -> MenuBar {
             Menu::new()
                 .item("code.complete", "Vervollständigen", Some("Ctrl+Space"))
                 .item("code.definition", "Gehe zu Definition", Some("Ctrl+F12"))
+                .item(
+                    "code.codetools",
+                    "Code vervollständigen (Methode, Feld, Trait)",
+                    Some("Ctrl+Shift+C"),
+                )
                 .separator()
                 .item("code.fold_all", "Alles falten", None)
                 .item("code.unfold_all", "Alles aufklappen", None),
@@ -739,6 +744,10 @@ pub fn connect(ide: &Rc<Ide>) {
             }
             "code.definition" => {
                 ide.goto_definition();
+                Ok(())
+            }
+            "code.codetools" => {
+                ide.complete_code();
                 Ok(())
             }
             "code.fold_all" | "code.unfold_all" => {

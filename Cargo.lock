@@ -755,10 +755,12 @@ version = "0.1.0"
 dependencies = [
  "keyring",
  "portable-pty",
+ "proc-macro2",
  "rncl",
  "ruf",
  "serde",
  "serde_json",
+ "syn 3.0.9",
  "tdr-core",
  "tdr-designer",
  "thiserror 2.0.21",

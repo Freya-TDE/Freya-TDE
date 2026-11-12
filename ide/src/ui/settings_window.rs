@@ -12,6 +12,7 @@ use rncl::prelude::*;
 use ruf::{Application, ColorScheme, dialog};
 
 use super::{Ide, with, with0};
+use crate::codetools::MethodOrder;
 use crate::settings::{
     AiProfile, AiProvider, Language, SecretStore, Settings, SettingsEdit, SettingsError, Theme,
     codes,
@@ -38,6 +39,7 @@ pub struct SettingsWindow {
     language: RnclComboBox,
     language_hint: RnclLabel,
     theme: RnclComboBox,
+    method_order: RnclComboBox,
     general_labels: Vec<RnclLabel>,
     // KI
     profiles: RnclListBox,
@@ -87,6 +89,7 @@ impl SettingsWindow {
             label(p, "Arbeitsverzeichnis"),
             label(p, "Sprache"),
             label(p, "Darstellung"),
+            label(p, "Neue Methoden"),
         ];
         let base_dir = RnclTextField::new(p);
         base_dir.set_placeholder("leer = Home-Ordner, z. B. ~/DevArea/RUST");
@@ -106,6 +109,12 @@ impl SettingsWindow {
             Theme::System => "System (Standard)",
             other => other.label(),
         }));
+
+        let method_order = RnclComboBox::new(p);
+        method_order.set_items(&MethodOrder::ALL.map(MethodOrder::label));
+        method_order
+            .widget()
+            .set_tool_tip("Wohin „Code vervollständigen“ (Strg+Umschalt+C) neue Methoden setzt");
 
         // KI
         let p = &ai;
@@ -151,6 +160,7 @@ impl SettingsWindow {
             language,
             language_hint,
             theme,
+            method_order,
             general_labels,
             profiles,
             add,
@@ -214,7 +224,7 @@ impl SettingsWindow {
         let line = |i: i32| p + i * (ROW + GAP);
 
         // Allgemein
-        for (l, i) in self.general_labels.iter().zip([0, 2, 4]) {
+        for (l, i) in self.general_labels.iter().zip([0, 2, 4, 5]) {
             l.set_geometry(p, line(i), LABEL_W, ROW);
         }
         self.base_dir.set_geometry(fx, line(0), fw - 34 - GAP, ROW);
@@ -223,6 +233,7 @@ impl SettingsWindow {
         self.language.set_geometry(fx, line(2), fw, ROW);
         self.language_hint.set_geometry(fx, line(3), fw, ROW);
         self.theme.set_geometry(fx, line(4), fw, ROW);
+        self.method_order.set_geometry(fx, line(5), fw, ROW);
 
         // KI: links die Profile, rechts das gewählte Profil.
         let list_h = 5 * (ROW + GAP) - GAP;
@@ -294,6 +305,9 @@ impl SettingsWindow {
             .set_current_index(language.unwrap_or(0) as i32);
         let theme = Theme::ALL.iter().position(|x| *x == s.theme);
         self.theme.set_current_index(theme.unwrap_or(0) as i32);
+        let order = MethodOrder::ALL.iter().position(|x| *x == s.method_order);
+        self.method_order
+            .set_current_index(order.unwrap_or(0) as i32);
 
         let names: Vec<String> = s.ai.profiles.iter().map(|p| p.name.clone()).collect();
         self.profiles.set_items(&names);
@@ -614,6 +628,18 @@ pub fn connect(ide: &Rc<Ide>) {
             w.edit.borrow_mut().settings.theme = *t;
         }
     }));
+    w.method_order
+        .on_current_index_changed(with(ide, |ide, i: i32| {
+            let w = &ide.settings_window;
+            if let (false, Some(order)) = (
+                w.filling.get(),
+                usize::try_from(i)
+                    .ok()
+                    .and_then(|i| MethodOrder::ALL.get(i)),
+            ) {
+                w.edit.borrow_mut().settings.method_order = *order;
+            }
+        }));
     w.profiles
         .on_current_index_changed(with(ide, |ide, i: i32| {
             let w = &ide.settings_window;

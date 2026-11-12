@@ -1148,6 +1148,18 @@ fn main() {
         assert_eq!(forms, ["main_form", "services"]);
         assert!(home.join("werkstatt/.git").is_dir());
         assert!(home.join("werkstatt/src/main.rs").is_file());
+        // Code vervollständigen: ein eigenes Feld kommt ins Formular (state) und ins Struct.
+        let form_rs = home.join("werkstatt/src/main_form.rs");
+        ide.add_state_field(&form_rs, "zaehler: i32").unwrap();
+        let gen_rs = std::fs::read_to_string(home.join("werkstatt/src/main_form.gen.rs")).unwrap();
+        assert!(gen_rs.contains("pub zaehler: i32"), "{gen_rs}");
+        assert_eq!(
+            ide.add_state_field(&form_rs, "zaehler: u8")
+                .unwrap_err()
+                .code,
+            "form_state",
+            "derselbe Name zweimal"
+        );
         ide.wizard_window().hide();
         println!("test wizard ... ok");
         passed += 1;

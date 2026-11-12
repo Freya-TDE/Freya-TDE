@@ -231,6 +231,8 @@ pub struct Ide {
     /// Open requests; only the latest answer counts.
     completion_request: Cell<Option<u64>>,
     definition_request: Cell<Option<u64>>,
+    /// Code completion (Ctrl+Shift+C): request, file and cursor.
+    codetools_request: RefCell<Option<(u64, PathBuf, usize, usize)>>,
 }
 
 /// A callback that runs `f` with the IDE while it exists.
@@ -322,6 +324,7 @@ impl Ide {
             lsp_events: RefCell::new(None),
             completion_request: Cell::new(None),
             definition_request: Cell::new(None),
+            codetools_request: RefCell::new(None),
         });
         let weak = Rc::downgrade(&ide);
         *ide.build_results.borrow_mut() = Some(GuiSender::new(move |report| {
@@ -2586,6 +2589,108 @@ impl Ide {
         }
     }
 
+    /// Completes the code at the cursor like the Lazarus CodeTools
+    /// (Ctrl+Shift+C): method body, own form field or trait members, see
+    /// [`crate::codetools`].
+    pub fn complete_code(&self) {
+        self.code.flush_change(self);
+        let Some((path, _, (line, column))) = self.code.current_state() else {
+            return;
+        };
+        if !code::is_rust(&path) {
+            return;
+        }
+        match self.with_lsp(|lsp| lsp.code_actions(&path, line, column)) {
+            Some(id) => *self.codetools_request.borrow_mut() = Some((id, path, line, column)),
+            None => self.main.set_status(&format!(
+                "Code vervollständigen: rust-analyzer ist (noch) nicht bereit ({}).",
+                crate::codetools::codes::ANALYZER_MISSING
+            )),
+        }
+    }
+
+    /// Carries out a planned completion: methods and trait members go into
+    /// the editor (unsaved, undoable there), a field into the form's
+    /// `state`. Returns the status text.
+    pub fn apply_completion(
+        &self,
+        path: &Path,
+        completion: &crate::codetools::Completion,
+    ) -> Result<String, crate::codetools::CodetoolsIssue> {
+        use crate::codetools::{Completion, apply};
+        match completion {
+            Completion::Method { name, edit } => {
+                let text = self.code_text(path).unwrap_or_default();
+                self.set_code_text(path, &apply(&text, std::slice::from_ref(edit)));
+                // Cursor auf die Zeile mit `fn` der neuen Methode.
+                let line = edit.line + edit.new_text.chars().take_while(|c| *c == '\n').count();
+                self.code.set_cursor(path, line, 0);
+                Ok(format!("Methode {name} angelegt."))
+            }
+            Completion::TraitMembers { edits } => {
+                let text = self.code_text(path).unwrap_or_default();
+                self.set_code_text(path, &apply(&text, edits));
+                Ok("Fehlende Trait-Methoden angelegt.".to_owned())
+            }
+            Completion::Field { name, rust_type } => {
+                self.add_state_field(path, &format!("{name}: {rust_type}"))?;
+                Ok(format!("Feld {name}: {rust_type} im Formular angelegt."))
+            }
+        }
+    }
+
+    /// Adds an own field (`name: Type` or `name: Type = value`) to the
+    /// `state` of the form whose source is `path` (undoable), then writes
+    /// the code.
+    pub fn add_state_field(
+        &self,
+        path: &Path,
+        entry: &str,
+    ) -> Result<(), crate::codetools::CodetoolsIssue> {
+        use crate::codetools::{CodetoolsIssue, codes};
+        let fail = |code, detail: String| CodetoolsIssue { code, detail };
+        let stem = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or_default();
+        let (form, root, mut items) = {
+            let session = self.session();
+            let form = session
+                .document()
+                .forms()
+                .iter()
+                .find(|f| f.name.as_str() == stem && f.root.is_some())
+                .ok_or_else(|| {
+                    fail(
+                        codes::NO_FORM,
+                        format!("kein Formular zu {}", path.display()),
+                    )
+                })?;
+            let root = form.root.as_ref().expect("root").component.clone();
+            let items = tdr_core::data::texts(root.get(tdr_core::state::STATE).map(|v| &v.value));
+            (form.name.clone(), root.name, items)
+        };
+        items.push(entry.trim().to_owned());
+        if let Err(message) = tdr_core::state::parse_state(&items) {
+            return Err(fail("form_state", message));
+        }
+        let value = tdr_core::Value::List(items.into_iter().map(tdr_core::Value::Text).collect());
+        let result = self.session.borrow_mut().apply(Command::SetProperty {
+            form,
+            element: root,
+            property: tdr_core::state::STATE.into(),
+            value: Some(tdr_core::PropertyValue::new(value)),
+        });
+        match result {
+            Ok(changes) => {
+                self.refresh(changes);
+                self.generate_code();
+                Ok(())
+            }
+            Err(e) => Err(fail("command_failed", e.to_string())),
+        }
+    }
+
     /// Jumps to the definition of the symbol at the cursor (Ctrl+Click,
     /// Ctrl+F12).
     pub fn goto_definition(&self) {
@@ -2685,6 +2790,39 @@ impl Ide {
                     })
                     .collect();
                 self.code.show_completions(&items);
+            }
+            LspEvent::CodeActions { request, actions } => {
+                let pending = self.codetools_request.borrow().clone();
+                let Some((_, path, line, column)) = pending.filter(|p| p.0 == request) else {
+                    return;
+                };
+                *self.codetools_request.borrow_mut() = None;
+                let text = self.code_text(&path).unwrap_or_default();
+                let order = self.settings.borrow().method_order;
+                let planned = crate::codetools::plan(&path, &text, line, column, &actions, order);
+                let status = match planned {
+                    Ok(crate::codetools::Completion::Field { name, rust_type }) => {
+                        // Den Typ bestätigen lassen (Vorschlag aus der Verwendung).
+                        let Some(entry) = dialog::input(
+                            Some(self.code.window.widget()),
+                            "Feld anlegen",
+                            "Eigenes Feld des Formulars (Name: Typ, optional = Startwert):",
+                            &format!("{name}: {rust_type}"),
+                        ) else {
+                            return;
+                        };
+                        match self.add_state_field(&path, &entry) {
+                            Ok(()) => format!("Feld {} im Formular angelegt.", entry.trim()),
+                            Err(e) => format!("Feld nicht angelegt: {} ({})", e.detail, e.code),
+                        }
+                    }
+                    Ok(completion) => match self.apply_completion(&path, &completion) {
+                        Ok(status) => status,
+                        Err(e) => format!("{} ({})", e.detail, e.code),
+                    },
+                    Err(e) => format!("Code vervollständigen: {} ({})", e.detail, e.code),
+                };
+                self.main.set_status(&status);
             }
             LspEvent::Definition { request, locations } => {
                 if self.definition_request.get() != Some(request) {
