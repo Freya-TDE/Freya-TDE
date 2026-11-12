@@ -625,7 +625,8 @@ fn generated_project_builds_runs_and_reacts_to_clicks() {
         .unwrap();
     let start = Instant::now();
     let window = loop {
-        let found = xdotool(&["search", "--onlyvisible", "--name", "flutter_demo"]);
+        // Den Titel setzt window_manager aus dem Designer (`title`).
+        let found = xdotool(&["search", "--onlyvisible", "--name", "Flutter-Test"]);
         if let Some(id) = found.lines().next() {
             break id.to_owned();
         }
