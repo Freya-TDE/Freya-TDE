@@ -394,6 +394,9 @@ Auswahl, wenn die Zeilen neu gezeigt werden. Die Templates sehen die Eigenschaft
 |---|---|---|---|---|---|
 | `EditableLabel` je Zelle (Doppelklick/Enter bearbeitet), Aktionen `freya.edit`/`freya.cancel` am Grid | Doppelklick: Textfeld in der Zelle | Klick auf eine Zelle der gewählten Zeile: `text_input`; **Esc nicht gebunden** (`<name>_cancel()` per Knopf) | `StandardTableView` kann nicht bearbeiten: darunter ein Feld je Spalte für die gewählte Zeile (Esc über `FocusScope`) | gewählte Zeile als `TextField`s in der `DataTable` | Doppelklick: `<input>` in der Zelle |
 
+Test gegen echte Datenbanken: `cargo test -p tdr-core --test write_back` (egui-Projekt ohne Fenster: ändern, neu,
+löschen, dann die Tabelle lesen); SQLite immer, PostgreSQL/MySQL mit `FREYA_TDE_TEST_POSTGRES`/`FREYA_TDE_TEST_MYSQL`.
+
 *Editing: with `editable`, cells can be changed; a row is posted when another row is chosen or Enter is pressed,
 Esc discards it. The core generates `<name>_edit_cell/_post/_cancel/_insert/_delete/_row_changed` and the events
 `on_post`, `on_delete`, `on_post_error`; with a writable source (`update`/`insert`/`delete`, SQLx `Query`) and
