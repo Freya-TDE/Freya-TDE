@@ -232,7 +232,7 @@ impl SettingsWindow {
         let y = line(0) + list_h - ROW;
         self.add.set_geometry(p, y, half, ROW);
         self.remove.set_geometry(p + half + GAP, y, half, ROW);
-        let rx = p + LIST_W + 2 * GAP;
+        let rx = p + LIST_W + 3 * GAP;
         let rlw = 90;
         let rfx = rx + rlw + GAP;
         let rfw = p + inner - rfx;
