@@ -606,7 +606,7 @@ fn generated_project_builds_runs_and_reacts_to_clicks() {
         String::from_utf8_lossy(&analyze.stdout)
     );
     run(&app, "flutter", &["build", "linux", "--debug"]);
-    let bundle = app.join("build/linux/x64/debug/bundle/flutter_demo");
+    let bundle = app.join("build/linux/x64/debug/bundle/flutter_demo_app");
     assert!(bundle.exists(), "{}", bundle.display());
 
     let mut child = Command::new(&bundle)
