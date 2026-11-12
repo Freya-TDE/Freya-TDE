@@ -108,9 +108,15 @@ iced::widget::pick_list(self.{{ c.name }}.items.as_slice(), self.{{ c.name }}.it
         .padding(2)
 }
 {%- elif t == "backend:iced/DataGrid" -%}
+{%- set editable = c.props.editable and c.props.data_source %}
 {
     let selected = self.{{ c.name }}.value.selected;
     let enabled = self.{{ c.name }}.enabled;
+    {%- if editable %}
+    // Bearbeitbar: ein Klick auf eine Zelle der gewählten Zeile bearbeitet sie,
+    // Enter speichert die Zeile.
+    let editing = self.{{ c.name }}.value.editing.clone();
+    {%- endif %}
     let columns: Vec<_> = self
         .{{ c.name }}
         .value
@@ -118,9 +124,32 @@ iced::widget::pick_list(self.{{ c.name }}.items.as_slice(), self.{{ c.name }}.it
         .iter()
         .enumerate()
         .map(|(column, header)| {
+            {%- if editable %}
+            let editing = editing.clone();
+            {%- endif %}
             iced::widget::table::column(
                 iced::widget::text(header.as_str()),
-                move |(index, row): (usize, &Vec<String>)| {
+                move |(index, row): (usize, &Vec<String>)| -> iced::Element<'_, Message> {
+                    {%- if editable %}
+                    if let Some((r, k, text)) = &editing
+                        && *r == index
+                        && *k == column
+                    {
+                        return iced::widget::text_input("", text)
+                            .id("{{ form.name }}.{{ c.name }}.edit")
+                            .on_input(Message::{{ c.name }}_edit_input)
+                            .on_submit(Message::{{ c.name }}_edit_submit)
+                            .padding(2)
+                            .into();
+                    }
+                    let press = if selected == Some(index) {
+                        Message::{{ c.name }}_edit_start(index, column)
+                    } else {
+                        Message::{{ c.name }}_select(index)
+                    };
+                    {%- else %}
+                    let press = Message::{{ c.name }}_select(index);
+                    {%- endif %}
                     let style: fn(&iced::Theme, iced::widget::button::Status) -> iced::widget::button::Style =
                         if selected == Some(index) {
                             iced::widget::button::primary
@@ -130,7 +159,8 @@ iced::widget::pick_list(self.{{ c.name }}.items.as_slice(), self.{{ c.name }}.it
                     iced::widget::button(iced::widget::text(row.get(column).map(String::as_str).unwrap_or("")))
                         .style(style)
                         .padding(2)
-                        .on_press_maybe(enabled.then_some(Message::{{ c.name }}_select(index)))
+                        .on_press_maybe(enabled.then_some(press))
+                        .into()
                 },
             )
         })
@@ -205,6 +235,11 @@ pub enum Message {
     {{ c.name }}_select(String),
 {%- elif t in ["backend:iced/ListBox", "backend:iced/DataGrid"] %}
     {{ c.name }}_select(usize),
+{%- if t == "backend:iced/DataGrid" and c.props.editable and c.props.data_source %}
+    {{ c.name }}_edit_start(usize, usize),
+    {{ c.name }}_edit_input(String),
+    {{ c.name }}_edit_submit,
+{%- endif %}
 {%- elif t == "backend:iced/TextEditor" %}
     {{ c.name }}_edit(text_editor::Action),
 {%- elif t == "backend:iced/Tabs" %}
@@ -359,12 +394,53 @@ impl {{ form.struct }} {
             {%- endif %}
             }
         {%- elif t == "backend:iced/DataGrid" %}
+        {%- set editable = c.props.editable and c.props.data_source %}
             Message::{{ c.name }}_select(index) => {
+            {%- if editable %}
+                // Eine bearbeitete Zelle übernehmen, dann speichert der Zeilenwechsel.
+                if let Some((row, column, text)) = self.{{ c.name }}.value.editing.take() {
+                    let _ = self.{{ c.name }}_edit_cell(row, column, &text);
+                }
+            {%- endif %}
                 self.{{ c.name }}.value.selected = Some(index);
+            {%- if editable %}
+                self.{{ c.name }}_row_changed(Some(index));
+            {%- endif %}
             {%- if e.on_select %}
                 self.{{ e.on_select }}(index as i32);
             {%- endif %}
             }
+        {%- if editable %}
+            Message::{{ c.name }}_edit_start(index, column) => {
+                if let Some((row, column, text)) = self.{{ c.name }}.value.editing.take() {
+                    let _ = self.{{ c.name }}_edit_cell(row, column, &text);
+                }
+                let text = self
+                    .{{ c.name }}
+                    .value
+                    .rows
+                    .get(index)
+                    .and_then(|r| r.get(column))
+                    .cloned()
+                    .unwrap_or_default();
+                self.{{ c.name }}.value.editing = Some((index, column, text));
+                return iced::widget::operation::focus("{{ form.name }}.{{ c.name }}.edit");
+            }
+            Message::{{ c.name }}_edit_input(text) => {
+                if let Some(cell) = self.{{ c.name }}.value.editing.as_mut() {
+                    cell.2 = text;
+                }
+            }
+            Message::{{ c.name }}_edit_submit => {
+                if let Some((row, column, text)) = self.{{ c.name }}.value.editing.take() {
+                    if let Some(cell) = self.{{ c.name }}.value.rows.get_mut(row).and_then(|r| r.get_mut(column)) {
+                        *cell = text.clone();
+                    }
+                    let _ = self.{{ c.name }}_edit_cell(row, column, &text);
+                }
+                self.{{ c.name }}_post();
+            }
+        {%- endif %}
         {%- elif t == "backend:iced/TextEditor" %}
             Message::{{ c.name }}_edit(action) => {
                 let edit = action.is_edit();

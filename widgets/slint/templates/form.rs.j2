@@ -401,6 +401,44 @@ StandardListView {
     current_item_changed(index) => { root.{{ cb(c, "on_select") }}(index); }
     {%- endif %}
 }
+{%- elif t == "backend:slint/DataGrid" and c.props.editable and c.props.data_source %}
+// Bearbeitbar: unter der Tabelle ein Feld je Spalte für die gewählte Zeile;
+// Enter speichert die Zeile, Esc verwirft sie, ein Zeilenwechsel speichert.
+VerticalLayout {
+    spacing: 4px;
+    visible: root.{{ c.name }}_visible;
+    StandardTableView {
+        columns <=> root.{{ c.name }}_columns;
+        rows: root.{{ c.name }}_rows;
+        current_row <=> root.{{ c.name }}_current;
+        min_height: 160px;
+        enabled: root.{{ c.name }}_enabled;
+        current_row_changed(index) => {
+            root.{{ c.name }}_row_selected(index);
+            {%- if e.on_select %}
+            root.{{ cb(c, "on_select") }}(index);
+            {%- endif %}
+        }
+    }
+    FocusScope {
+        key_pressed(event) => {
+            if (event.text == Key.Escape) {
+                root.{{ c.name }}_cancelled();
+                return accept;
+            }
+            return reject;
+        }
+        HorizontalLayout {
+            spacing: 4px;
+            for text[column] in root.{{ c.name }}_edit: LineEdit {
+                text: text;
+                enabled: root.{{ c.name }}_enabled;
+                edited(value) => { root.{{ c.name }}_cell_edited(column, value); }
+                accepted(value) => { root.{{ c.name }}_cell_accepted(column, value); }
+            }
+        }
+    }
+}
 {%- elif t == "backend:slint/DataGrid" %}
 StandardTableView {
     columns <=> root.{{ c.name }}_columns;
@@ -512,6 +550,13 @@ in_out property <int> {{ c.name }}_selected: {{ c.props.selected }};
 in_out property <[TableColumn]> {{ c.name }}_columns;
 in_out property <[[StandardListViewItem]]> {{ c.name }}_rows;
 in_out property <int> {{ c.name }}_current: -1;
+{%- if c.props.editable and c.props.data_source %}
+in_out property <[string]> {{ c.name }}_edit;
+callback {{ c.name }}_row_selected(int);
+callback {{ c.name }}_cell_edited(int, string);
+callback {{ c.name }}_cell_accepted(int, string);
+callback {{ c.name }}_cancelled();
+{%- endif %}
 {%- elif t == "backend:slint/ListView" %}
 in_out property <[StandardListViewItem]> {{ c.name }}_items: [{% for i in c.props["items"] %}{ text: {{ i | rust_str }} }{% if not loop.last %}, {% endif %}{% endfor %}];
 in_out property <int> {{ c.name }}_selected: {{ c.props.selected }};
@@ -579,7 +624,7 @@ slint::slint! {
         {{ properties(c) | indent(8) }}
         {%- endfor %}
         {%- for c in widgets %}
-        {%- for event, handler in c.events | items if handler and c.type != "core/Form" %}
+        {%- for event, handler in c.events | items if handler and c.type != "core/Form" and event not in ["on_post", "on_delete", "on_post_error"] %}
         {%- set def = event %}
         callback {{ cb(c, event) }}(
             {%- if c.type in ["core/Edit", "backend:slint/TextEdit"] and event == "on_change" %}string
@@ -619,6 +664,20 @@ impl {{ form.struct }} {
     pub fn show(&self) -> Result<(), slint::PlatformError> {
         self.{{ root.name }}.show()
     }
+    {%- for g in widgets if g.type == "backend:slint/DataGrid" and g.props.editable and g.props.data_source %}
+
+    /// Puts the texts of the selected row of `{{ g.name }}` into its edit fields.
+    #[allow(dead_code)]
+    fn freya_fill_{{ g.name }}(&self) {
+        use slint::Model as _;
+        let cells: Vec<slint::SharedString> = usize::try_from(self.{{ root.name }}.get_{{ g.name }}_current())
+            .ok()
+            .and_then(|index| self.{{ root.name }}.get_{{ g.name }}_rows().row_data(index))
+            .map(|row| row.iter().map(|item| item.text).collect())
+            .unwrap_or_default();
+        self.{{ root.name }}.set_{{ g.name }}_edit(slint::ModelRc::new(slint::VecModel::from(cells)));
+    }
+    {%- endfor %}
 
     /// Calls `f` with the form, unless it is gone or busy (a handler that
     /// changes a property can trigger another callback of the same form).
@@ -641,7 +700,7 @@ impl {{ form.struct }} {
         let form = this.borrow();
         let weak = std::rc::Rc::downgrade(this);
     {%- for c in widgets %}
-    {%- for event, handler in c.events | items if handler and c.type != "core/Form" %}
+    {%- for event, handler in c.events | items if handler and c.type != "core/Form" and event not in ["on_post", "on_delete", "on_post_error"] %}
         {
             let weak = weak.clone();
             form.{{ root.name }}.on_{{ cb(c, event) }}(move |
@@ -657,6 +716,51 @@ impl {{ form.struct }} {
             });
         }
     {%- endfor %}
+    {%- endfor %}
+    {%- for g in widgets if g.type == "backend:slint/DataGrid" and g.props.editable and g.props.data_source %}
+        // Bearbeitbares DataGrid `{{ g.name }}` an die Datenbindung.
+        {
+            let weak = weak.clone();
+            form.{{ root.name }}.on_{{ g.name }}_row_selected(move |index| {
+                Self::freya_call(&weak, |f| {
+                    f.{{ g.name }}_row_changed(usize::try_from(index).ok());
+                    f.freya_fill_{{ g.name }}();
+                });
+            });
+        }
+        {
+            let weak = weak.clone();
+            form.{{ root.name }}.on_{{ g.name }}_cell_edited(move |column, text| {
+                Self::freya_call(&weak, |f| {
+                    if let (Ok(row), Ok(column)) = (
+                        usize::try_from(f.{{ root.name }}.get_{{ g.name }}_current()),
+                        usize::try_from(column),
+                    ) {
+                        let _ = f.{{ g.name }}_edit_cell(row, column, &text);
+                    }
+                });
+            });
+        }
+        {
+            let weak = weak.clone();
+            form.{{ root.name }}.on_{{ g.name }}_cell_accepted(move |column, text| {
+                Self::freya_call(&weak, |f| {
+                    if let (Ok(row), Ok(column)) = (
+                        usize::try_from(f.{{ root.name }}.get_{{ g.name }}_current()),
+                        usize::try_from(column),
+                    ) {
+                        let _ = f.{{ g.name }}_edit_cell(row, column, &text);
+                        f.{{ g.name }}_post();
+                    }
+                });
+            });
+        }
+        {
+            let weak = weak.clone();
+            form.{{ root.name }}.on_{{ g.name }}_cancelled(move || {
+                Self::freya_call(&weak, |f| f.{{ g.name }}_cancel());
+            });
+        }
     {%- endfor %}
     {%- for m in menus if m.events.on_select %}
         {

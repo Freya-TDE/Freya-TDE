@@ -395,9 +395,10 @@ params = [{ name = "index", type = "i32" }]
 description = "Selected row changed (-1 = none); the row: `self.<name>_selected_row()`"
 [component.table]
 set-rows = """
-self.{{ name }}.value = crate::app::Table { headers, rows, selected: None };
+self.{{ name }}.value = crate::app::Table { headers, rows, ..Default::default() };
 """
 selected = "self.{{ name }}.value.selected"
+select = "self.{{ name }}.value.selected = index;"
 [component.codegen]
 type = "crate::app::Control<crate::app::Table>"
 init = "crate::app::Control::new(crate::app::Table::default()).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"

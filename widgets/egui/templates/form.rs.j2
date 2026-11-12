@@ -125,6 +125,56 @@ egui::Slider::new(&mut self.{{ c.name }}.value, {{ c.rust.minimum }}..={{ c.rust
                                 ui.strong(header.as_str());
                             }
                             ui.end_row();
+                        {%- if c.props.editable and c.props.data_source %}
+                            // Bearbeitbar: Doppelklick bearbeitet die Zelle, Enter speichert
+                            // die Zeile, Esc verwirft sie.
+                            for index in 0..control.value.rows.len() {
+                                let selected = control.value.selected == Some(index);
+                                for column in 0..control.value.rows[index].len() {
+                                    let editing = control
+                                        .value
+                                        .editing
+                                        .as_ref()
+                                        .is_some_and(|e| e.0 == index && e.1 == column);
+                                    if editing {
+                                        let focus = std::mem::take(&mut control.value.focus);
+                                        let Some(cell) = control.value.editing.as_mut() else { continue };
+                                        let edit = ui.add(egui::TextEdit::singleline(&mut cell.2).desired_width(120.0));
+                                        if focus {
+                                            edit.request_focus();
+                                        }
+                                        if edit.lost_focus() {
+                                            let (enter, escape) = ui.input(|i| {
+                                                (i.key_pressed(egui::Key::Enter), i.key_pressed(egui::Key::Escape))
+                                            });
+                                            if let Some((row, column, text)) = control.value.editing.take() {
+                                                if escape {
+                                                    control.value.cancel = true;
+                                                } else {
+                                                    let changed = control.value.rows[row][column] != text;
+                                                    if changed || enter {
+                                                        control.value.rows[row][column] = text.clone();
+                                                        control.value.commits.push((row, column, text, enter));
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        continue;
+                                    }
+                                    let text = control.value.rows[index][column].clone();
+                                    let cell = ui.selectable_label(selected, text.as_str());
+                                    if cell.clicked() {
+                                        clicked = Some(index);
+                                    }
+                                    if cell.double_clicked() {
+                                        clicked = Some(index);
+                                        control.value.editing = Some((index, column, text));
+                                        control.value.focus = true;
+                                    }
+                                }
+                                ui.end_row();
+                            }
+                        {%- else %}
                             for (index, row) in control.value.rows.iter().enumerate() {
                                 let selected = control.value.selected == Some(index);
                                 for cell in row {
@@ -134,13 +184,16 @@ egui::Slider::new(&mut self.{{ c.name }}.value, {{ c.rust.minimum }}..={{ c.rust
                                 }
                                 ui.end_row();
                             }
+                        {%- endif %}
                         });
                 });
         })
         .response;
     if let Some(index) = clicked {
-        control.value.selected = Some(index);
-        response.mark_changed();
+        if control.value.selected != Some(index) {
+            control.value.selected = Some(index);
+            response.mark_changed();
+        }
     }
     response
 }
@@ -193,6 +246,22 @@ if response.clicked() {
     {%- if c.events.on_toggle %}
     self.{{ c.events.on_toggle }}(true);
     {%- endif %}
+}
+{%- endif %}
+{%- if t == "backend:egui/DataGrid" and c.props.editable and c.props.data_source %}
+// Bearbeitete Zellen, Esc und Zeilenwechsel an die Datenbindung.
+for (row, column, text, post) in std::mem::take(&mut self.{{ c.name }}.value.commits) {
+    let _ = self.{{ c.name }}_edit_cell(row, column, &text);
+    if post {
+        self.{{ c.name }}_post();
+    }
+}
+if std::mem::take(&mut self.{{ c.name }}.value.cancel) {
+    self.{{ c.name }}_cancel();
+}
+if response.changed() {
+    let index = self.{{ c.name }}.value.selected;
+    self.{{ c.name }}_row_changed(index);
 }
 {%- endif %}
 {%- for event, handler in c.events | items if handler %}

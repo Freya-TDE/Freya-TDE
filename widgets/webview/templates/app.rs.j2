@@ -367,8 +367,42 @@ pub const FREYA_JS: &str = r####"
         case "grid":
           el.tBodies[0].addEventListener("click", (e) => {
             const row = e.target.closest("tr");
-            if (row) send(name, "on_select", { index: row.sectionRowIndex });
+            if (row && !e.target.closest("input")) send(name, "on_select", { index: row.sectionRowIndex });
           });
+          // Bearbeitbar: Doppelklick bearbeitet die Zelle, Enter speichert die Zeile,
+          // Esc verwirft sie, Verlassen des Felds übernimmt die Zelle.
+          if (el.dataset.editable) {
+            el.tBodies[0].addEventListener("dblclick", (e) => {
+              const td = e.target.closest("td");
+              if (!td || td.querySelector("input")) return;
+              const index = td.parentElement.sectionRowIndex;
+              const column = td.cellIndex;
+              const old = td.textContent;
+              const input = document.createElement("input");
+              input.value = old;
+              let done = false;
+              const finish = (post) => {
+                if (done) return;
+                done = true;
+                td.textContent = input.value;
+                if (input.value !== old || post) {
+                  send(name, "edit_cell", { index, number: column, text: input.value, checked: post });
+                }
+              };
+              input.addEventListener("keydown", (k) => {
+                if (k.key === "Enter") finish(true);
+                if (k.key === "Escape") {
+                  done = true;
+                  td.textContent = old;
+                  send(name, "cancel");
+                }
+              });
+              input.addEventListener("blur", () => finish(false));
+              td.replaceChildren(input);
+              input.focus();
+              input.select();
+            });
+          }
           break;
         case "menubar":
           el.addEventListener("click", (e) => {
@@ -400,6 +434,7 @@ body > [data-kind="form"] { min-height: 100%; }
 [data-kind="grid"] { border-collapse: collapse; width: 100%; }
 [data-kind="grid"] th, [data-kind="grid"] td { text-align: left; padding: 4px 8px; }
 [data-kind="grid"] tr.freya-selected td { background: Highlight; color: HighlightText; }
+[data-kind="grid"] td > input { width: 100%; margin: 0; padding: 2px 4px; }
 [data-kind="menubar"] { display: flex; gap: 2px; padding: 2px 6px; border-bottom: 1px solid color-mix(in srgb, currentColor 20%, transparent); }
 [data-kind="menubar"] details { position: relative; margin: 0; }
 [data-kind="menubar"] summary { list-style: none; padding: 4px 10px; cursor: default; }

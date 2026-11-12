@@ -342,4 +342,10 @@ self.{{ root }}.set_{{ name }}_rows(slint::ModelRc::new(slint::VecModel::from(ro
 self.{{ root }}.set_{{ name }}_current(-1);
 """
 selected = "usize::try_from(self.{{ root }}.get_{{ name }}_current()).ok()"
+select = """
+self.{{ root }}.set_{{ name }}_current(index.map_or(-1, |i| i as i32));
+{%- if props.editable %}
+self.freya_fill_{{ name }}();
+{%- endif %}
+"""
 

@@ -14,6 +14,8 @@ use tdr_core::*;
 
 #[path = "support/data.rs"]
 mod data;
+#[path = "support/edit.rs"]
+mod edit;
 #[path = "support/style.rs"]
 mod style;
 
@@ -281,14 +283,11 @@ fn form() -> Form {
     form.add_widget(
         &name("window"),
         Widget::from_component(
-            data::bind_grid(Component::new(
+            // Bearbeitbar: Zelle ändern, speichern, neue Zeile, löschen.
+            edit::editable(data::bind_grid(Component::new(
                 name("grid"),
                 TypeRef::backend("gtk4", "DataGrid"),
-            ))
-            // Bearbeitbar: Zelle ändern, speichern, neue Zeile, löschen.
-            .with(tdr_core::data::EDITABLE, true)
-            .on(tdr_core::data::ON_POST, handler("grid_saving"))
-            .on(tdr_core::data::ON_DELETE, handler("grid_deleting")),
+            ))),
         ),
     )
     .unwrap();
@@ -340,6 +339,10 @@ fn started(app: &mut app::App) -> Result<(), app::Error> {
 const FORM_RS: &str = r#"
 include!("main_form.gen.rs");
 
+fn println_str(text: &str) {
+    println!("{text}");
+}
+
 impl MainForm {
     pub fn created(&mut self) {
         println!("created");
@@ -363,29 +366,9 @@ impl MainForm {
         }
         println!("grid_rows={} grid_columns={}", self.grid_rows.len(), self.grid.columns().n_items());
         println!("grid={:?} grid_value={:?}", self.grid_selected_row().map(|r| r.name.clone()), self.grid_selected_value());
-        // Bearbeiten: Zeile 2, Spalte „Frucht“; eine Zahl, die keine ist, wird abgelehnt.
-        println!("edit_bad={}", self.grid_edit_cell(1, 0, "zwei").is_err());
-        let _ = self.grid_edit_cell(1, 0, "2");
-        let _ = self.grid_edit_cell(1, 1, "Birnen");
-        println!("posted={}", self.grid_post());
-        println!("edited={:?}", self.grid_rows.get(1).map(|r| r.name.clone()));
-        self.grid_insert();
-        println!("inserted_rows={}", self.grid_rows.len());
-        self.grid_cancel();
-        println!("cancelled_rows={}", self.grid_rows.len());
-        if let Some(model) = self.grid.model().and_downcast::<gtk4::SingleSelection>() {
-            model.set_selected(1);
-        }
-        println!("deleted={} rows={}", self.grid_delete(), self.grid_rows.len());
+        /*EDIT_CALLS*/
     }
-    pub fn grid_saving(&mut self, row: &GridRow, inserted: bool) -> bool {
-        println!("saving={} inserted={inserted}", row.name);
-        true
-    }
-    pub fn grid_deleting(&mut self, row: &GridRow) -> bool {
-        println!("deleting={}", row.name);
-        true
-    }
+    /*EDIT_HANDLERS*/
     pub fn agree_toggled(&mut self, _checked: bool) {}
     pub fn blue_toggled(&mut self, checked: bool) {
         println!("blue={checked}");
@@ -449,7 +432,11 @@ fn generated_project_builds_and_runs() {
     style::picture(&dir);
     // Nutzercode wie nach dem Ausfüllen der Handler.
     std::fs::write(dir.join("src/main.rs"), MAIN_RS).unwrap();
-    std::fs::write(dir.join("src/main_form.rs"), FORM_RS).unwrap();
+    let select = "if let Some(model) = self.grid.model().and_downcast::<gtk4::SingleSelection>() { model.set_selected(1); }";
+    let form_rs = FORM_RS
+        .replace("/*EDIT_CALLS*/", &edit::calls("println_str", select))
+        .replace("/*EDIT_HANDLERS*/", &edit::handlers("println_str"));
+    std::fs::write(dir.join("src/main_form.rs"), form_rs).unwrap();
     // Ein zweiter Lauf ändert die Nutzerdateien nicht (alle Handler da).
     let again = generate(&project, &forms, &registry, &dir);
     for file in &again.files {
@@ -495,16 +482,7 @@ fn generated_project_builds_and_runs() {
         stdout.contains("grid=Some(\"Birne\") grid_value=Some(2)"),
         "{stdout}"
     );
-    for line in [
-        "edit_bad=true",
-        "saving=Birnen inserted=false",
-        "posted=true",
-        "edited=Some(\"Birnen\")",
-        "inserted_rows=4",
-        "cancelled_rows=3",
-        "deleting=Birnen",
-        "deleted=true rows=2",
-    ] {
+    for line in edit::EXPECTED {
         assert!(stdout.contains(line), "{line}: {stdout}");
     }
     assert!(stdout.contains("blue=true"), "{stdout}");

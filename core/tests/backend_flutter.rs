@@ -20,6 +20,8 @@ use tdr_core::*;
 
 #[path = "support/data.rs"]
 mod data;
+#[path = "support/edit.rs"]
+mod edit;
 #[path = "support/style.rs"]
 mod style;
 
@@ -249,10 +251,10 @@ fn form() -> Form {
     add(
         &mut form,
         "window",
-        Widget::from_component(data::bind_grid(Component::new(
+        Widget::from_component(edit::editable(data::bind_grid(Component::new(
             name("grid"),
             flutter("DataGrid"),
-        ))),
+        )))),
     );
     form.add_component(
         widget("menu", flutter("MainMenu"))
@@ -297,7 +299,9 @@ impl MainForm {
         self.greeting.value = format!("Hallo {}", *self.name_edit);
         self.window.caption = "geklickt".into();
         say(&format!("label={}", self.greeting.value));
+        /*EDIT_CALLS*/
     }
+    /*EDIT_HANDLERS*/
     pub fn name_changed(&mut self, _text: &str) {}
     pub fn name_submitted(&mut self) {}
     pub fn agree_toggled(&mut self, _checked: bool) {}
@@ -466,7 +470,9 @@ fn generated_project_builds_runs_and_reacts_to_clicks() {
         issues.iter().all(|i| i.severity != Severity::Error),
         "{issues:#?}"
     );
-    if !gui_available() {
+    // FREYA_TDE_BUILD_ONLY=1: nur die Rust-Bibliothek bauen (ohne Flutter und Bildschirm).
+    let build_only = std::env::var_os("FREYA_TDE_BUILD_ONLY").is_some();
+    if !build_only && !gui_available() {
         eprintln!("Bildschirm, xdotool oder flutter fehlt – Bauen und Starten übersprungen");
         return;
     }
@@ -483,7 +489,13 @@ fn generated_project_builds_runs_and_reacts_to_clicks() {
     assert!(!generation.has_errors(), "{:#?}", generation.diagnostics);
     write(&dir, &generation).unwrap();
     style::picture(&dir);
-    std::fs::write(dir.join("src/main_form.rs"), FORM_RS).unwrap();
+    let form_rs = FORM_RS
+        .replace(
+            "/*EDIT_CALLS*/",
+            &edit::calls("say", "self.grid.value.selected = Some(1);"),
+        )
+        .replace("/*EDIT_HANDLERS*/", &edit::handlers("say"));
+    std::fs::write(dir.join("src/main_form.rs"), form_rs).unwrap();
 
     // Rust-Bibliothek.
     let report = preview::build(&dir, Some(&generation)).unwrap();
@@ -585,6 +597,10 @@ fn generated_project_builds_runs_and_reacts_to_clicks() {
     );
     let _ = std::fs::remove_dir_all(&web_dir);
     let _ = std::fs::remove_dir_all(&plain_dir);
+    if build_only {
+        eprintln!("FREYA_TDE_BUILD_ONLY: Rust-Bibliotheken gebaut, Flutter übersprungen");
+        return;
+    }
 
     // Flutter-App: Plattform-Ordner anlegen, prüfen, bauen.
     let app = dir.join("flutter");
@@ -672,6 +688,9 @@ fn generated_project_builds_runs_and_reacts_to_clicks() {
     assert!(stdout.contains("bound_items=3"), "{stdout}");
     assert!(stdout.contains("bound=Some(2)"), "{stdout}");
     assert!(stdout.contains("grid_rows=3 grid_columns=2"), "{stdout}");
+    for line in edit::EXPECTED {
+        assert!(stdout.contains(line), "{line}: {stdout}");
+    }
     assert!(
         stdout.contains("grid=Some(\"Birne\") grid_value=Some(2)"),
         "{stdout}"

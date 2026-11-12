@@ -392,7 +392,7 @@ Auswahl, wenn die Zeilen neu gezeigt werden. Die Templates sehen die Eigenschaft
 
 | GTK 4 | egui | iced | Slint | Flutter | WebView |
 |---|---|---|---|---|---|
-| `EditableLabel` je Zelle (Doppelklick/Enter bearbeitet), Aktionen `freya.edit`/`freya.cancel` am Grid | folgt | folgt | folgt | folgt | folgt |
+| `EditableLabel` je Zelle (Doppelklick/Enter bearbeitet), Aktionen `freya.edit`/`freya.cancel` am Grid | Doppelklick: Textfeld in der Zelle | Klick auf eine Zelle der gewählten Zeile: `text_input`; **Esc nicht gebunden** (`<name>_cancel()` per Knopf) | `StandardTableView` kann nicht bearbeiten: darunter ein Feld je Spalte für die gewählte Zeile (Esc über `FocusScope`) | gewählte Zeile als `TextField`s in der `DataTable` | Doppelklick: `<input>` in der Zelle |
 
 *Editing: with `editable`, cells can be changed; a row is posted when another row is chosen or Enter is pressed,
 Esc discards it. The core generates `<name>_edit_cell/_post/_cancel/_insert/_delete/_row_changed` and the events

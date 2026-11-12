@@ -361,6 +361,7 @@ set-rows = """
 self.{{ name }}.value = crate::app::Table { headers, rows, selected: None };
 """
 selected = "self.{{ name }}.value.selected"
+select = "self.{{ name }}.value.selected = index;"
 [component.codegen]
 type = "crate::app::Control<crate::app::Table>"
 init = "crate::app::Control::new(crate::app::Table::default()).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"

@@ -89,4 +89,6 @@ pub struct Table {
     pub headers: Vec<String>,
     pub rows: Vec<Vec<String>>,
     pub selected: Option<usize>,
+    /// Editable grids: the cell being edited (row, column, text).
+    pub editing: Option<(usize, usize, String)>,
 }

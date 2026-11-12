@@ -17,6 +17,8 @@ use tdr_core::*;
 
 #[path = "support/data.rs"]
 mod data;
+#[path = "support/edit.rs"]
+mod edit;
 #[path = "support/style.rs"]
 mod style;
 
@@ -242,10 +244,10 @@ fn form() -> Form {
     .unwrap();
     form.add_widget(
         &name("window"),
-        Widget::from_component(data::bind_grid(Component::new(
+        Widget::from_component(edit::editable(data::bind_grid(Component::new(
             name("grid"),
             TypeRef::backend("slint", "DataGrid"),
-        ))),
+        )))),
     )
     .unwrap();
     form
@@ -280,7 +282,9 @@ impl MainForm {
         self.window.set_greeting_text(format!("Hallo {name}").into());
         self.window.set_window_title("geklickt".into());
         say(&format!("label={}", self.window.get_greeting_text()));
+        /*EDIT_CALLS*/
     }
+    /*EDIT_HANDLERS*/
     pub fn name_changed(&mut self, _text: &str) {}
     pub fn name_submitted(&mut self) {}
     pub fn agree_toggled(&mut self, _checked: bool) {}
@@ -348,7 +352,13 @@ fn generated_project_builds_runs_and_reacts_to_clicks() {
     assert!(!generation.has_errors(), "{:#?}", generation.diagnostics);
     write(&dir, &generation).unwrap();
     style::picture(&dir);
-    std::fs::write(dir.join("src/main_form.rs"), FORM_RS).unwrap();
+    let form_rs = FORM_RS
+        .replace(
+            "/*EDIT_CALLS*/",
+            &edit::calls("say", "self.window.set_grid_current(1);"),
+        )
+        .replace("/*EDIT_HANDLERS*/", &edit::handlers("say"));
+    std::fs::write(dir.join("src/main_form.rs"), form_rs).unwrap();
     // Ein Bild für das Image-Widget.
     std::fs::write(
         dir.join("logo.png"),
@@ -429,6 +439,9 @@ fn generated_project_builds_runs_and_reacts_to_clicks() {
     assert!(stdout.contains("bound_items=3"), "{stdout}");
     assert!(stdout.contains("bound=Some(2)"), "{stdout}");
     assert!(stdout.contains("grid_rows=3 grid_columns=2"), "{stdout}");
+    for line in edit::EXPECTED {
+        assert!(stdout.contains(line), "{line}: {stdout}");
+    }
     assert!(
         stdout.contains("grid=Some(\"Birne\") grid_value=Some(2)"),
         "{stdout}"

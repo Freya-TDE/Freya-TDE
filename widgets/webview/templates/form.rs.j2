@@ -116,7 +116,7 @@ align-self:{{ css_align }};
 <hr id="{{ c.name }}" data-kind="separator" style="{{ st }}">
 {%- endif -%}
 {%- elif t == "backend:webview/DataGrid" -%}
-<table id="{{ c.name }}" data-kind="grid" style="{{ st }}"><thead></thead><tbody></tbody></table>
+<table id="{{ c.name }}" data-kind="grid"{% if c.props.editable and c.props.data_source %} data-editable="1"{% endif %} style="{{ st }}"><thead></thead><tbody></tbody></table>
 {%- else -%}
 <div id="{{ c.name }}" data-kind="container" style="{{ st }}"></div>
 {%- endif -%}
@@ -181,6 +181,26 @@ impl {{ form.struct }} {
                     self.{{ o.name }}.value = false;
                 {%- endfor %}
                 {%- endif %}{% endfor %}
+                }
+            {%- endif %}
+            {%- if t == "backend:webview/DataGrid" and c.props.editable and c.props.data_source %}
+                // Bearbeitbar: Zellen, Esc und Zeilenwechsel an die Datenbindung.
+                match event {
+                    "on_select" => {
+                        let index = self.{{ c.name }}.value.selected;
+                        self.{{ c.name }}_row_changed(index);
+                    }
+                    "edit_cell" => {
+                        if let (Some(row), Some(column)) = (input.index, input.number) {
+                            let text = input.text.clone().unwrap_or_default();
+                            let _ = self.{{ c.name }}_edit_cell(row.max(0) as usize, column.max(0.0) as usize, &text);
+                            if input.checked == Some(true) {
+                                self.{{ c.name }}_post();
+                            }
+                        }
+                    }
+                    "cancel" => self.{{ c.name }}_cancel(),
+                    _ => {}
                 }
             {%- endif %}
                 match event {

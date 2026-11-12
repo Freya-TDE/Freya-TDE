@@ -144,7 +144,31 @@ SizedBox(
                     onSelectChanged: c.enabled ? (_) => _send({{ n }}, 'on_select', freyaInput(index: i)) : null,
                     cells: [
                       for (var k = 0; k < c.items.length; k++)
+                      {%- if c.props.editable and c.props.data_source %}
+                        // Bearbeitbar: die gewählte Zeile als Eingabefelder; Enter
+                        // speichert die Zeile, Esc verwirft sie.
+                        DataCell(c.index == i
+                            ? CallbackShortcuts(
+                                bindings: {
+                                  const SingleActivator(LogicalKeyboardKey.escape): () {
+                                    _dropCells((key) => key.startsWith('{{ c.name }}:'));
+                                    _send({{ n }}, 'cancel');
+                                  },
+                                },
+                                child: TextField(
+                                  controller: _cell({{ n }}, i, k, k < c.rows[i].length ? c.rows[i][k] : ''),
+                                  enabled: c.enabled,
+                                  decoration: const InputDecoration(isDense: true),
+                                  onChanged: (text) => _send({{ n }}, 'edit_cell',
+                                      freyaInput(index: i, number: k.toDouble(), text: text, checked: false)),
+                                  onSubmitted: (text) => _send({{ n }}, 'edit_cell',
+                                      freyaInput(index: i, number: k.toDouble(), text: text, checked: true)),
+                                ),
+                              )
+                            : Text(k < c.rows[i].length ? c.rows[i][k] : '')),
+                      {%- else %}
                         DataCell(Text(k < c.rows[i].length ? c.rows[i][k] : '')),
+                      {%- endif %}
                     ],
                   ),
               ],
@@ -251,6 +275,9 @@ import 'dart:async';
 import 'dart:ui' show AppExitResponse;
 
 import 'package:flutter/material.dart';
+{%- if widgets | selectattr("type", "eq", "backend:flutter/DataGrid") | selectattr("props.editable") | selectattr("props.data_source") | list %}
+import 'package:flutter/services.dart';
+{%- endif %}
 import 'package:window_manager/window_manager.dart';
 
 import '../src/rust/api.dart';
@@ -308,6 +335,7 @@ class {{ view }} extends StatefulWidget {
 class _{{ view }}State extends State<{{ view }}> {
   Map<String, FreyaControl> _controls = {};
   final Map<String, TextEditingController> _edits = {};
+  final Map<String, TextEditingController> _cells = {};
   Timer? _poll;
   AppLifecycleListener? _lifecycle;
 
@@ -332,14 +360,22 @@ class _{{ view }}State extends State<{{ view }}> {
   void dispose() {
     _poll?.cancel();
     _lifecycle?.dispose();
-    for (final edit in _edits.values) {
+    for (final edit in [..._edits.values, ..._cells.values]) {
       edit.dispose();
     }
     super.dispose();
   }
 
   void _apply(List<FreyaControl> state) {
+    final old = _controls;
     _controls = {for (final c in state) c.name: c};
+    // Eingabefelder bearbeitbarer Tabellen: neu, wenn eine andere Zeile gewählt ist.
+    _dropCells((key) {
+      final name = key.split(':').first;
+      final before = old[name];
+      final now = _controls[name];
+      return before == null || now == null || before.index != now.index || before.rows.length != now.rows.length;
+    });
     // Texte, die ein Handler geändert hat, in die Eingabefelder übernehmen.
     _edits.forEach((name, edit) {
       final text = _controls[name]?.text;
@@ -359,6 +395,17 @@ class _{{ view }}State extends State<{{ view }}> {
 
   TextEditingController _edit(String name) =>
       _edits.putIfAbsent(name, () => TextEditingController(text: _get(name).text));
+
+  /// Drops (and frees) the cell fields whose key matches `test`.
+  void _dropCells(bool Function(String key) test) {
+    for (final key in _cells.keys.where(test).toList()) {
+      _cells.remove(key)?.dispose();
+    }
+  }
+
+  /// The text field of a cell of an editable table (`<widget>:<row>:<column>`).
+  TextEditingController _cell(String name, int row, int column, String text) =>
+      _cells.putIfAbsent('$name:$row:$column', () => TextEditingController(text: text));
 
   @override
   Widget build(BuildContext context) {

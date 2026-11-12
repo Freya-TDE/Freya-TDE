@@ -190,6 +190,14 @@ pub struct Table {
     pub headers: Vec<String>,
     pub rows: Vec<Vec<String>>,
     pub selected: Option<usize>,
+    /// Editable grids: the cell being edited (row, column, text) …
+    pub editing: Option<(usize, usize, String)>,
+    /// … whether its text field still has to take the focus,
+    pub focus: bool,
+    /// finished cells (row, column, text, Enter = save the row) and Esc,
+    /// taken over by the form after drawing.
+    pub commits: Vec<(usize, usize, String, bool)>,
+    pub cancel: bool,
 }
 
 /// `widget` with its own colours and font size (a style scope).

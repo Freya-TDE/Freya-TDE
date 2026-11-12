@@ -50,6 +50,26 @@ impl {{ form.struct }} {
                 {%- endif %}{% endfor %}
                 }
             {%- endif %}
+            {%- if t == "backend:flutter/DataGrid" and c.props.editable and c.props.data_source %}
+                // Bearbeitbar: Zellen, Esc und Zeilenwechsel an die Datenbindung.
+                match event {
+                    "on_select" => {
+                        let index = self.{{ c.name }}.value.selected;
+                        self.{{ c.name }}_row_changed(index);
+                    }
+                    "edit_cell" => {
+                        if let (Some(row), Some(column)) = (input.index, input.number) {
+                            let text = input.text.clone().unwrap_or_default();
+                            let _ = self.{{ c.name }}_edit_cell(row.max(0) as usize, column.max(0.0) as usize, &text);
+                            if input.checked == Some(true) {
+                                self.{{ c.name }}_post();
+                            }
+                        }
+                    }
+                    "cancel" => self.{{ c.name }}_cancel(),
+                    _ => {}
+                }
+            {%- endif %}
                 match event {
                 {%- for event, handler in c.events | items if handler %}
                 {%- set key = t ~ "." ~ event %}
