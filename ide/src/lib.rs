@@ -19,7 +19,9 @@ pub mod problems;
 pub mod projects;
 pub mod session;
 pub mod settings;
+pub mod snippets;
 pub mod terminal;
+pub mod tools;
 pub mod ui;
 pub mod wizard;
 

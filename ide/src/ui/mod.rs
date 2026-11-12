@@ -18,8 +18,10 @@ mod project;
 mod project_manager;
 mod settings_window;
 pub mod shortcuts;
+mod snippet_window;
 mod structure;
 mod terminal_view;
+mod toolbar;
 pub mod wizard_window;
 
 use std::cell::{Cell, RefCell};
@@ -231,6 +233,13 @@ pub struct Ide {
     /// Open requests; only the latest answer counts.
     completion_request: Cell<Option<u64>>,
     definition_request: Cell<Option<u64>>,
+    /// Code snippets (palette tab "Snippets") and their file.
+    snippets: RefCell<crate::snippets::SnippetStore>,
+    snippets_file: Option<PathBuf>,
+    snippet_window: snippet_window::SnippetWindow,
+    /// A tool of the tool bar is running; its result.
+    tool_busy: Cell<bool>,
+    tool_results: RefCell<Option<GuiSender<toolbar::ToolDone>>>,
     /// Code completion (Ctrl+Shift+C): request, file and cursor.
     codetools_request: RefCell<Option<(u64, PathBuf, usize, usize)>>,
 }
@@ -325,11 +334,26 @@ impl Ide {
             completion_request: Cell::new(None),
             definition_request: Cell::new(None),
             codetools_request: RefCell::new(None),
+            snippets: RefCell::new(
+                toolbar::snippets_file()
+                    .map(|f| crate::snippets::SnippetStore::load_from(&f))
+                    .unwrap_or_default(),
+            ),
+            snippets_file: toolbar::snippets_file(),
+            snippet_window: snippet_window::SnippetWindow::build(),
+            tool_busy: Cell::new(false),
+            tool_results: RefCell::new(None),
         });
         let weak = Rc::downgrade(&ide);
         *ide.build_results.borrow_mut() = Some(GuiSender::new(move |report| {
             if let Some(ide) = weak.upgrade() {
                 ide.build_finished(report);
+            }
+        }));
+        let weak = Rc::downgrade(&ide);
+        *ide.tool_results.borrow_mut() = Some(GuiSender::new(move |done| {
+            if let Some(ide) = weak.upgrade() {
+                ide.tool_finished(done);
             }
         }));
         let weak = Rc::downgrade(&ide);
@@ -377,6 +401,7 @@ impl Ide {
         database_window::connect(&ide);
         wizard_window::connect(&ide);
         settings_window::connect(&ide);
+        snippet_window::connect(&ide);
         ide.apply_settings();
         // Wie bei Delphi: Strg+G, F9, Strg+Umschalt+G … aus jedem Fenster.
         for (name, window) in ide.windows() {
@@ -1454,6 +1479,26 @@ impl Ide {
     }
 
     /// Compiler messages of a build (`dir` makes file names absolute).
+    /// Error and warning marks of Cargo's messages in the code editor.
+    fn set_build_marks(&self, report: &tdr_core::preview::BuildReport, dir: Option<&Path>) {
+        let mut marks: std::collections::BTreeMap<PathBuf, Vec<LineMark>> = Default::default();
+        if let Some(dir) = dir {
+            for m in &report.messages {
+                if let (Some(file), Some(line)) = (&m.file, m.line) {
+                    let kind = match m.severity {
+                        tdr_core::Severity::Error => MarkKind::Error,
+                        tdr_core::Severity::Warning => MarkKind::Warning,
+                    };
+                    marks
+                        .entry(dir.join(file))
+                        .or_default()
+                        .push(LineMark::new(line, kind, &m.message));
+                }
+            }
+        }
+        self.code.set_build_marks(marks);
+    }
+
     fn set_build_problems(&self, report: &tdr_core::preview::BuildReport, dir: Option<&Path>) {
         *self.build_problems.borrow_mut() = report
             .messages
@@ -2213,22 +2258,7 @@ impl Ide {
                 "Build fehlgeschlagen."
             },
         );
-        let mut marks: std::collections::BTreeMap<PathBuf, Vec<LineMark>> = Default::default();
-        if let Some(dir) = &dir {
-            for m in &report.messages {
-                if let (Some(file), Some(line)) = (&m.file, m.line) {
-                    let kind = match m.severity {
-                        tdr_core::Severity::Error => MarkKind::Error,
-                        tdr_core::Severity::Warning => MarkKind::Warning,
-                    };
-                    marks
-                        .entry(dir.join(file))
-                        .or_default()
-                        .push(LineMark::new(line, kind, &m.message));
-                }
-            }
-        }
-        self.code.set_build_marks(marks);
+        self.set_build_marks(&report, dir.as_deref());
         let errors = report.errors().count();
         if report.success {
             *self.executable.borrow_mut() = report.executable.clone();

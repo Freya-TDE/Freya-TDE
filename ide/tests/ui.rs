@@ -1160,6 +1160,26 @@ fn main() {
             "form_state",
             "derselbe Name zweimal"
         );
+        // Snippets: anlegen, auf dem Reiter ablegen, am Cursor einfügen (use-Zeile oben).
+        ide.put_snippet(
+            None,
+            freya_tde::snippets::Snippet::new("Gruss", "Sagt Hallo", "use std::fmt::Write;", "// Hallo"),
+        )
+        .unwrap();
+        ide.toggle_snippet_pinned("Gruss");
+        assert_eq!(ide.snippets().pinned, ["Gruss"]);
+        let lines = std::fs::read_to_string(&form_rs).unwrap().lines().count();
+        ide.open_source(&form_rs, lines);
+        ide.insert_snippet("Gruss").unwrap();
+        let text = ide.code_text(&form_rs).unwrap();
+        assert!(text.contains("use std::fmt::Write;") && text.contains("// Hallo"), "{text}");
+        // Werkzeug: formatieren im Hintergrund (generierte Dateien bleiben).
+        ide.run_tool(freya_tde::tools::Tool::Fmt);
+        assert!(pump_until(60, || !ide.tool_running()), "rustfmt läuft noch");
+        if let Some(dir) = std::env::var_os("FREYA_TDE_SHOT").map(std::path::PathBuf::from) {
+            pump_until(1, || false);
+            ide.screenshots(&dir.join("tools"));
+        }
         ide.wizard_window().hide();
         println!("test wizard ... ok");
         passed += 1;

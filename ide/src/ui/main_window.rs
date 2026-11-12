@@ -15,10 +15,26 @@ const MARGIN: i32 = 6;
 const ROW: i32 = 34;
 const STATUS: i32 = 24;
 const BRANCH: i32 = 200;
+const TOOL_W: i32 = 78;
+const TOOL_H: i32 = 28;
+
+/// The palette tab "Snippets": drop-down with all snippets, buttons, and the
+/// snippets the user put on the tab.
+struct SnippetTab {
+    combo: RnclComboBox,
+    insert: RnclButton,
+    pin: RnclButton,
+    edit: RnclButton,
+    /// Names in the order of the drop-down.
+    names: Vec<String>,
+}
 
 pub struct MainWindow {
     pub window: RnclWindow,
     pointer: RnclButton,
+    /// Rust tools (check, clippy …), always visible above the tabs.
+    tools: Vec<(RnclButton, crate::tools::Tool)>,
+    snippet_tab: RefCell<Option<SnippetTab>>,
     tabs: RnclTabView,
     status: RnclLabel,
     /// Git branch (right of the status line).
@@ -130,12 +146,22 @@ impl MainWindow {
             .widget()
             .set_tool_tip("Auswählen statt platzieren (Esc)");
         pointer.widget().set_image(icons::icon("pointer").as_ref());
+        let tools = crate::tools::Tool::ALL
+            .iter()
+            .map(|tool| {
+                let button = RnclButton::new(&window, tool.label());
+                button.widget().set_tool_tip(tool.description());
+                (button, *tool)
+            })
+            .collect();
         let tabs = RnclTabView::new(&window);
         let status = RnclLabel::new(&window, "");
         let branch = RnclLabel::new(&window, "");
         Self {
             window,
             pointer,
+            tools,
+            snippet_tab: RefCell::new(None),
             tabs,
             status,
             branch,
@@ -145,12 +171,19 @@ impl MainWindow {
     }
 
     fn layout(&self, width: i32, height: i32) {
-        self.pointer.set_geometry(MARGIN, MARGIN + 22, 96, ROW);
+        // Werkzeuge in einer Zeile über den Reitern, immer sichtbar.
+        let mut x = MARGIN + 102;
+        for (button, _) in &self.tools {
+            button.set_geometry(x, MARGIN, TOOL_W, TOOL_H);
+            x += TOOL_W + 4;
+        }
+        let top = MARGIN + TOOL_H + 4;
+        self.pointer.set_geometry(MARGIN, top + 22, 96, ROW);
         self.tabs.set_geometry(
             MARGIN + 102,
-            MARGIN,
+            top,
             width - 2 * MARGIN - 102,
-            height - 2 * MARGIN - STATUS,
+            height - top - MARGIN - STATUS,
         );
         self.status.set_geometry(
             MARGIN,
@@ -262,6 +295,136 @@ impl MainWindow {
         }
         *self.buttons.borrow_mut() = buttons;
         *self.built_for.borrow_mut() = types;
+        self.snippet_tab.replace(None);
+        self.build_snippets(ide);
+    }
+
+    /// (Re)builds the tab "Snippets" at the end of the palette.
+    pub(super) fn build_snippets(&self, ide: &Rc<Ide>) {
+        const TITLE: &str = "Snippets";
+        if let Some(index) = self.tabs.tab_titles().iter().position(|t| t == TITLE) {
+            let current = self.tabs.current_index();
+            self.tabs.remove_tab(index as i32);
+            let page = self.tabs.add_tab(TITLE);
+            self.fill_snippets(ide, &page);
+            if current == index as i32 {
+                self.tabs.set_current_index(self.tabs.tab_count() - 1);
+            }
+        } else {
+            let page = self.tabs.add_tab(TITLE);
+            self.fill_snippets(ide, &page);
+        }
+    }
+
+    fn fill_snippets(&self, ide: &Rc<Ide>, page: &RnclPanel) {
+        let store = ide.snippets.borrow().clone();
+        let names: Vec<String> = store.snippets.iter().map(|s| s.name.clone()).collect();
+        let tips: Vec<String> = store
+            .snippets
+            .iter()
+            .map(|s| s.description.clone())
+            .collect();
+        let y = 6;
+        let combo = RnclComboBox::new(page);
+        combo.set_items(&names);
+        combo.set_item_tooltips(&tips);
+        combo.set_current_index(if names.is_empty() { -1 } else { 0 });
+        combo.set_geometry(4, y, 200, ROW);
+        let mut x = 210;
+        let small = |text: &str, tip: &str, width: i32, x: &mut i32| {
+            let button = RnclButton::new(page, text);
+            button.widget().set_tool_tip(tip);
+            button.set_geometry(*x, y, width, ROW);
+            *x += width + 4;
+            button
+        };
+        let insert = small(
+            "Einfügen",
+            "Am Cursor im Code einfügen (use-Zeile an den use-Block)",
+            80,
+            &mut x,
+        );
+        let pin = small("Ablegen", "Auf diesem Reiter als Knopf ablegen", 80, &mut x);
+        let new = small("+", "Neues Snippet …", ROW, &mut x);
+        let edit = small("✎", "Snippet bearbeiten …", ROW, &mut x);
+        let delete = small("✕", "Snippet löschen", ROW, &mut x);
+        x += 12;
+        for snippet in store.pinned_snippets() {
+            let button = RnclButton::new(page, &snippet.name);
+            button.widget().adjust_size();
+            let width = button.size().width.max(60) + 8;
+            button.set_geometry(x, y, width, ROW);
+            x += width + 4;
+            if !snippet.description.is_empty() {
+                button.widget().set_tool_tip(&snippet.description);
+            }
+            let name = snippet.name.clone();
+            button.on_clicked(with0(ide, move |ide| ide.insert_snippet_reported(&name)));
+        }
+        let selected = |ide: &Ide| -> Option<String> {
+            let tab = ide.main.snippet_tab.borrow();
+            let tab = tab.as_ref()?;
+            usize::try_from(tab.combo.current_index())
+                .ok()
+                .and_then(|i| tab.names.get(i).cloned())
+        };
+        insert.on_clicked(with0(ide, move |ide| {
+            if let Some(name) = selected(ide) {
+                ide.insert_snippet_reported(&name);
+            }
+        }));
+        pin.on_clicked(with0(ide, move |ide| {
+            if let Some(name) = selected(ide) {
+                ide.toggle_snippet_pinned(&name);
+            }
+        }));
+        new.on_clicked(with0(ide, |ide| ide.show_snippet_editor(None)));
+        edit.on_clicked(with0(ide, move |ide| {
+            if let Some(name) = selected(ide) {
+                ide.show_snippet_editor(Some(&name));
+            }
+        }));
+        delete.on_clicked(with0(ide, move |ide| {
+            if let Some(name) = selected(ide)
+                && ruf::dialog::confirm(
+                    Some(ide.main.window.widget()),
+                    "Snippet löschen",
+                    &format!("Snippet „{name}“ löschen?"),
+                )
+            {
+                ide.remove_snippet(&name);
+            }
+        }));
+        combo.on_current_index_changed(with(ide, |ide, _: i32| {
+            ide.main.update_snippet_buttons(ide)
+        }));
+        *self.snippet_tab.borrow_mut() = Some(SnippetTab {
+            combo,
+            insert,
+            pin,
+            edit,
+            names,
+        });
+        self.update_snippet_buttons(ide);
+    }
+
+    /// "Ablegen"/"Lösen" and what is enabled, for the selected snippet.
+    fn update_snippet_buttons(&self, ide: &Ide) {
+        let tab = self.snippet_tab.borrow();
+        let Some(tab) = tab.as_ref() else { return };
+        let name = usize::try_from(tab.combo.current_index())
+            .ok()
+            .and_then(|i| tab.names.get(i));
+        let pinned = name.is_some_and(|n| ide.snippets.borrow().pinned.contains(n));
+        tab.pin.set_text(if pinned { "Lösen" } else { "Ablegen" });
+        tab.pin.widget().set_tool_tip(if pinned {
+            "Vom Reiter entfernen (bleibt in der Liste)"
+        } else {
+            "Auf diesem Reiter als Knopf ablegen"
+        });
+        for button in [&tab.insert, &tab.pin, &tab.edit] {
+            button.widget().set_enabled(name.is_some());
+        }
     }
 
     pub fn refresh(&self, ide: &Ide) {
@@ -292,6 +455,10 @@ impl MainWindow {
 pub fn connect(ide: &Rc<Ide>) {
     let main = &ide.main;
     main.build_palette(ide);
+    for (button, tool) in &main.tools {
+        let tool = *tool;
+        button.on_clicked(with0(ide, move |ide| ide.run_tool(tool)));
+    }
     main.pointer.on_clicked(with0(ide, |ide| {
         ide.arm(None);
         ide.main.set_status("");
