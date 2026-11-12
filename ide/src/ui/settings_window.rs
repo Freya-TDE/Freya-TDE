@@ -29,6 +29,8 @@ const LIST_W: i32 = 180;
 pub struct SettingsWindow {
     pub window: RnclWindow,
     tabs: RnclTabView,
+    general: RnclPanel,
+    ai: RnclPanel,
     // Allgemein
     base_dir: RnclTextField,
     browse: RnclButton,
@@ -97,7 +99,7 @@ impl SettingsWindow {
         language.set_items(&Language::ALL.map(Language::label));
         let language_hint = label(
             p,
-            "Freya TDE selbst ist vorerst deutsch; der CT-Editor startet schon in dieser Sprache.",
+            "Gilt vorerst für den CT-Editor; Freya TDE selbst ist noch deutsch.",
         );
         let theme = RnclComboBox::new(p);
         theme.set_items(&Theme::ALL.map(|t| match t {
@@ -141,6 +143,8 @@ impl SettingsWindow {
         let w = Self {
             window,
             tabs,
+            general,
+            ai,
             base_dir,
             browse,
             base_hint,
@@ -172,6 +176,7 @@ impl SettingsWindow {
             filling: Cell::new(false),
         };
         w.place();
+        w.layout_pages(W - 2 * M, H - BAR - M - 40);
         w
     }
 
@@ -185,126 +190,6 @@ impl SettingsWindow {
         };
         let tabs_h = H - BAR - M;
         put(&self.tabs, M, M, W - 2 * M, tabs_h, A::ALL);
-        // Seiteninhalt (ungefähre Innenmaße der Registerkarte).
-        let inner = W - 2 * M - 2 * 12;
-        let page_h = tabs_h - 48;
-        let fx = LABEL_W + GAP;
-        let fw = inner - fx;
-        let line = |i: i32| 12 + i * (ROW + GAP);
-
-        // Allgemein
-        for (i, l) in self.general_labels.iter().enumerate() {
-            let y = line([0, 2, 4][i]);
-            put(l, 12, y, LABEL_W, ROW, A::TOP_LEFT);
-        }
-        put(
-            &self.base_dir,
-            12 + fx,
-            line(0),
-            fw - 40,
-            ROW,
-            A::TOP_STRETCH,
-        );
-        put(
-            &self.browse,
-            12 + inner - 34,
-            line(0),
-            34,
-            ROW,
-            A::TOP_RIGHT,
-        );
-        put(&self.base_hint, 12 + fx, line(1), fw, ROW, A::TOP_STRETCH);
-        put(&self.language, 12 + fx, line(2), fw, ROW, A::TOP_STRETCH);
-        put(
-            &self.language_hint,
-            12 + fx,
-            line(3),
-            fw,
-            ROW,
-            A::TOP_STRETCH,
-        );
-        put(&self.theme, 12 + fx, line(4), fw, ROW, A::TOP_STRETCH);
-
-        // KI: links die Profile, rechts das gewählte Profil.
-        let list_h = 5 * (ROW + GAP) - GAP;
-        put(
-            &self.profiles,
-            12,
-            line(0),
-            LIST_W,
-            list_h - ROW - GAP,
-            A::TOP_LEFT,
-        );
-        let half = (LIST_W - GAP) / 2;
-        put(
-            &self.add,
-            12,
-            line(0) + list_h - ROW,
-            half,
-            ROW,
-            A::TOP_LEFT,
-        );
-        put(
-            &self.remove,
-            12 + half + GAP,
-            line(0) + list_h - ROW,
-            half,
-            ROW,
-            A::TOP_LEFT,
-        );
-        let rx = 12 + LIST_W + 2 * GAP;
-        let rlw = 90;
-        let rfx = rx + rlw + GAP;
-        let rfw = 12 + inner - rfx;
-        for (i, l) in self.ai_labels.iter().take(5).enumerate() {
-            put(l, rx, line(i as i32), rlw, ROW, A::TOP_LEFT);
-        }
-        put(&self.name, rfx, line(0), rfw, ROW, A::TOP_STRETCH);
-        put(&self.provider, rfx, line(1), rfw, ROW, A::TOP_STRETCH);
-        put(&self.model, rfx, line(2), rfw, ROW, A::TOP_STRETCH);
-        put(&self.endpoint, rfx, line(3), rfw, ROW, A::TOP_STRETCH);
-        let kw = rfw - 130 - GAP;
-        put(&self.key, rfx, line(4), kw, ROW, A::TOP_STRETCH);
-        put(
-            &self.remove_key,
-            rfx + kw + GAP,
-            line(4),
-            130,
-            ROW,
-            A::TOP_RIGHT,
-        );
-        put(&self.key_state, rfx, line(5), rfw, ROW, A::TOP_STRETCH);
-        for (i, l) in self.ai_labels.iter().skip(5).enumerate() {
-            put(l, 12, line(6 + i as i32), LABEL_W, ROW, A::TOP_LEFT);
-        }
-        put(
-            &self.default_profile,
-            12 + fx,
-            line(6),
-            fw,
-            ROW,
-            A::TOP_STRETCH,
-        );
-        put(
-            &self.project_profile,
-            12 + fx,
-            line(7),
-            fw,
-            ROW,
-            A::TOP_STRETCH,
-        );
-        put(&self.show_on_new, 12, line(8), inner, ROW, A::TOP_STRETCH);
-        put(
-            &self.show_always,
-            12,
-            line(8) + ROW,
-            inner,
-            ROW,
-            A::TOP_STRETCH,
-        );
-        let y = line(8) + 2 * ROW + GAP;
-        put(&self.ai_hint, 12, y, inner, (page_h - y).max(ROW), A::ALL);
-
         // Leiste
         let y = H - BAR + 8;
         put(
@@ -316,6 +201,63 @@ impl SettingsWindow {
             A::BOTTOM_RIGHT,
         );
         put(&self.ok, W - M - 110, y, 110, ROW, A::BOTTOM_RIGHT);
+    }
+
+    /// Lays out both tab pages for their real size (the tab view sizes its
+    /// pages only after they are filled, so anchors would measure from the
+    /// wrong size).
+    fn layout_pages(&self, width: i32, height: i32) {
+        let p = 12;
+        let inner = (width - 2 * p).max(300);
+        let fx = p + LABEL_W + GAP;
+        let fw = p + inner - fx;
+        let line = |i: i32| p + i * (ROW + GAP);
+
+        // Allgemein
+        for (l, i) in self.general_labels.iter().zip([0, 2, 4]) {
+            l.set_geometry(p, line(i), LABEL_W, ROW);
+        }
+        self.base_dir.set_geometry(fx, line(0), fw - 34 - GAP, ROW);
+        self.browse.set_geometry(p + inner - 34, line(0), 34, ROW);
+        self.base_hint.set_geometry(fx, line(1), fw, ROW);
+        self.language.set_geometry(fx, line(2), fw, ROW);
+        self.language_hint.set_geometry(fx, line(3), fw, ROW);
+        self.theme.set_geometry(fx, line(4), fw, ROW);
+
+        // KI: links die Profile, rechts das gewählte Profil.
+        let list_h = 5 * (ROW + GAP) - GAP;
+        self.profiles
+            .set_geometry(p, line(0), LIST_W, list_h - ROW - GAP);
+        let half = (LIST_W - GAP) / 2;
+        let y = line(0) + list_h - ROW;
+        self.add.set_geometry(p, y, half, ROW);
+        self.remove.set_geometry(p + half + GAP, y, half, ROW);
+        let rx = p + LIST_W + 2 * GAP;
+        let rlw = 90;
+        let rfx = rx + rlw + GAP;
+        let rfw = p + inner - rfx;
+        for (i, l) in self.ai_labels.iter().take(5).enumerate() {
+            l.set_geometry(rx, line(i as i32), rlw, ROW);
+        }
+        self.name.set_geometry(rfx, line(0), rfw, ROW);
+        self.provider.set_geometry(rfx, line(1), rfw, ROW);
+        self.model.set_geometry(rfx, line(2), rfw, ROW);
+        self.endpoint.set_geometry(rfx, line(3), rfw, ROW);
+        let kw = rfw - 130 - GAP;
+        self.key.set_geometry(rfx, line(4), kw, ROW);
+        self.remove_key
+            .set_geometry(rfx + kw + GAP, line(4), 130, ROW);
+        self.key_state.set_geometry(rfx, line(5), rfw, ROW);
+        for (i, l) in self.ai_labels.iter().skip(5).enumerate() {
+            l.set_geometry(p, line(6 + i as i32), LABEL_W, ROW);
+        }
+        self.default_profile.set_geometry(fx, line(6), fw, ROW);
+        self.project_profile.set_geometry(fx, line(7), fw, ROW);
+        self.show_on_new.set_geometry(p, line(8), inner, ROW);
+        self.show_always.set_geometry(p, line(8) + ROW, inner, ROW);
+        let y = line(8) + 2 * ROW + GAP;
+        self.ai_hint
+            .set_geometry(p, y, inner, (height - y - p).max(ROW));
     }
 
     /// The selected profile in the edit.
@@ -440,12 +382,12 @@ impl SettingsWindow {
             None => String::new(),
             Some(p) => match edit.keys.get(&p.name) {
                 Some(Some(k)) if !k.trim().is_empty() => {
-                    "Neuer Key, wird bei OK im Schlüsselbund gespeichert.".to_owned()
+                    "Neuer Key – wird mit OK gespeichert.".to_owned()
                 }
                 Some(_) => "Key wird bei OK entfernt.".to_owned(),
-                None if p.key_in_keyring => "Key im Schlüsselbund des Systems.".to_owned(),
+                None if p.key_in_keyring => "Key im Schlüsselbund.".to_owned(),
                 None if p.key.is_some() => {
-                    "Key in der Einstellungsdatei (Schlüsselbund nicht verfügbar).".to_owned()
+                    "Key in der Einstellungsdatei (kein Schlüsselbund).".to_owned()
                 }
                 None if !p.provider.needs_key() => "Kein Key nötig.".to_owned(),
                 None => "Noch kein Key.".to_owned(),
@@ -627,6 +569,14 @@ impl Ide {
 
 pub fn connect(ide: &Rc<Ide>) {
     let w = &ide.settings_window;
+    for page in [&w.general, &w.ai] {
+        let weak = Rc::downgrade(ide);
+        page.widget().on_resized(move |width, height| {
+            if let Some(ide) = weak.upgrade() {
+                ide.settings_window.layout_pages(width, height);
+            }
+        });
+    }
     w.cancel
         .on_clicked(with0(ide, |ide| ide.settings_window.window.hide()));
     w.ok.on_clicked(with0(ide, |ide| ide.settings_ok()));
