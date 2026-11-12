@@ -549,6 +549,7 @@ fn environment() -> Environment<'static> {
     env.set_auto_escape_callback(|_| AutoEscape::None);
     // Text als Rust-Stringliteral (auch für Einträge einer Liste).
     env.add_filter("rust_str", |text: String| format!("{text:?}"));
+    env.add_filter("pascal", |text: String| pascal_case(&text));
     env.add_filter("dart_str", |text: String| dart_string(&text));
     // Basis-URL und Pfad: `{{ base | url_join(url) }}`; eine absolute URL
     // (mit `://`) oder eine leere Basis lässt `url` stehen.
@@ -2658,7 +2659,30 @@ enum BindingKind {
         shown: Vec<(String, String, String)>,
         /// Key column: name, type.
         value: Option<(String, String)>,
+        /// Set when the table is `editable`.
+        edit: Option<Edit>,
     },
+}
+
+/// Editing of a table widget (`editable`).
+struct Edit {
+    /// Rendered `update`/`insert`/`delete` of the source (automatic
+    /// writing), all or none.
+    writes: Option<Writes>,
+    /// Handlers of `on_post`, `on_delete`, `on_post_error`.
+    on_post: Option<String>,
+    on_delete: Option<String>,
+    on_post_error: Option<String>,
+    /// Rendered `select` of the widget (statements, `index: Option<usize>`).
+    select: Option<String>,
+}
+
+struct Writes {
+    update: String,
+    insert: String,
+    delete: String,
+    /// The database assigns the key: load again after an insert.
+    generated_key: bool,
 }
 
 impl Binding {
@@ -2690,20 +2714,45 @@ impl Binding {
         format!(
             "/// Data source of `{w}`.\npub {w}_source: {source},\n\
              /// What `{w}` shows (values of its entries / its rows).\npub {store}: {store_type},\n\
-             /// Rows of `{w}` loaded in the background.\npub {w}_pending: crate::app::Pending<Vec<{entry}>>,\n",
+             /// Rows of `{w}` loaded in the background.\npub {w}_pending: crate::app::Pending<Vec<{entry}>>,\n{edit}",
             w = self.widget,
             source = self.source_type,
             entry = self.entry_type(),
+            edit = match (&self.kind, self.edit()) {
+                (BindingKind::Table { row_struct, .. }, Some(_)) => format!(
+                    "/// The row of `{w}` being edited (saved by `{w}_post`).\n\
+                     pub {w}_editing: Option<crate::app::Editing<{row_struct}>>,\n\
+                     /// Results of writing rows of `{w}` in the background.\n\
+                     pub {w}_saved: crate::app::Results<crate::app::Saved>,\n",
+                    w = self.widget
+                ),
+                _ => String::new(),
+            },
         )
     }
 
     /// The fields in `App::init`'s struct literal.
     fn init(&self, form: &str) -> String {
-        format!(
+        let mut init = format!(
             "{w}_source: {form}__{w}__source, {store}: Vec::new(), {w}_pending: crate::app::Pending::default(),",
             w = self.widget,
             store = self.store().0,
-        )
+        );
+        if self.edit().is_some() {
+            let _ = write!(
+                init,
+                " {w}_editing: None, {w}_saved: crate::app::Results::default(),",
+                w = self.widget
+            );
+        }
+        init
+    }
+
+    fn edit(&self) -> Option<&Edit> {
+        match &self.kind {
+            BindingKind::Table { edit, .. } => edit.as_ref(),
+            BindingKind::List { .. } => None,
+        }
     }
 }
 
@@ -2717,8 +2766,8 @@ fn data_bindings(
     out: &mut Diagnostics,
 ) -> HashMap<ComponentName, Vec<Binding>> {
     use crate::data::{
-        COLUMNS, DATA_SOURCE, DISPLAY_FIELD, FIELDS, HEADERS, LOAD, VALUE_FIELD, parse_columns,
-        texts,
+        COLUMNS, DATA_SOURCE, DISPLAY_FIELD, EDITABLE, FIELDS, GENERATED_KEY, HEADERS, KEY, LOAD,
+        ON_DELETE, ON_POST, ON_POST_ERROR, TABLE, VALUE_FIELD, parse_columns, texts,
     };
     let mut all: HashMap<ComponentName, Vec<Binding>> = HashMap::new();
     for form in forms {
@@ -2823,7 +2872,7 @@ fn data_bindings(
                 env,
                 "fetch",
                 &data.fetch,
-                &minijinja::context! { source => "source", props => props, rust => rust },
+                &minijinja::context! { source => "source", props => props.clone(), rust => rust.clone() },
                 &mut issues,
             );
             let get = |column: &crate::data::Column, var: &str, issues: &mut Vec<CodegenIssue>| {
@@ -2839,6 +2888,7 @@ fn data_bindings(
                 name => widget.component.name.as_str(),
                 root => root_name.clone(),
                 form => form_data(form, generated),
+                props => props_data(form, widget, ty, registry),
             };
             let show_part = if is_table { "set-rows" } else { "set-items" };
             let show = render(env, show_part, show_template, &widget_context, &mut issues);
@@ -2885,11 +2935,108 @@ fn data_bindings(
                         (n.clone(), rust_type, header)
                     })
                     .collect();
+                let editable = matches!(
+                    widget.component.get(EDITABLE).map(|v| &v.value),
+                    Some(Value::Bool(true))
+                );
+                let edit = if editable {
+                    let handler = |event: &str| {
+                        widget
+                            .component
+                            .events
+                            .get(event)
+                            .map(|h| h.as_str().to_owned())
+                    };
+                    let source_text =
+                        |name: &str| match element.component().get(name).map(|v| &v.value) {
+                            Some(Value::Text(t)) => t.trim().to_owned(),
+                            _ => String::new(),
+                        };
+                    let table = source_text(TABLE);
+                    let keys: Vec<String> = source_text(KEY)
+                        .split(',')
+                        .map(|k| k.trim().to_owned())
+                        .filter(|k| !k.is_empty())
+                        .collect();
+                    let generated_key = !matches!(
+                        element.component().get(GENERATED_KEY).map(|v| &v.value),
+                        Some(Value::Bool(false))
+                    );
+                    let writes = match (&data.update, &data.insert, &data.delete) {
+                        (Some(update), Some(insert), Some(delete)) if !table.is_empty() => {
+                            if keys.is_empty() {
+                                fail(format!("{target} has `table` but no `key`"));
+                                continue;
+                            }
+                            if let Some(missing) = keys.iter().find(|k| column(k).is_none()) {
+                                fail(format!(
+                                    "{target}: key column `{missing}` is not in `columns` ({})",
+                                    names()
+                                ));
+                                continue;
+                            }
+                            let others: Vec<String> = columns
+                                .iter()
+                                .map(|c| c.name.clone())
+                                .filter(|n| !keys.contains(n))
+                                .collect();
+                            let all: Vec<String> = columns.iter().map(|c| c.name.clone()).collect();
+                            let refs = refs_data(forms, source_form, element, registry);
+                            let write =
+                                |part: &str,
+                                 text: &str,
+                                 cols: &[String],
+                                 issues: &mut Vec<CodegenIssue>| {
+                                    render(
+                                        env,
+                                        part,
+                                        text,
+                                        &minijinja::context! {
+                                            source => "source", props => props.clone(), rust => rust.clone(),
+                                            refs => refs.clone(), table => table.as_str(), keys => keys.clone(),
+                                            columns => cols.to_vec(), row => "row", old => "old",
+                                        },
+                                        issues,
+                                    )
+                                };
+                            let inserted = if generated_key { &others } else { &all };
+                            match (
+                                write("update", update, &others, &mut issues),
+                                write("insert", insert, inserted, &mut issues),
+                                write("delete", delete, &others, &mut issues),
+                            ) {
+                                (Some(update), Some(insert), Some(delete)) => Some(Writes {
+                                    update,
+                                    insert,
+                                    delete,
+                                    generated_key,
+                                }),
+                                _ => None,
+                            }
+                        }
+                        _ => None,
+                    };
+                    let select = ty
+                        .table
+                        .as_ref()
+                        .and_then(|t| t.select.as_ref())
+                        .and_then(|t| render(env, "select", t, &widget_context, &mut issues));
+                    Some(Edit {
+                        writes,
+                        on_post: handler(ON_POST),
+                        on_delete: handler(ON_DELETE),
+                        on_post_error: handler(ON_POST_ERROR),
+                        select,
+                    })
+                } else {
+                    None
+                };
                 BindingKind::Table {
                     row_struct: format!("{}Row", pascal_case(widget.component.name.as_str())),
                     columns: table_columns,
                     shown,
                     value: value.map(|c| (c.name.clone(), c.rust_type.clone())),
+                    edit,
                 }
             } else {
                 let display = text_prop(DISPLAY_FIELD);
@@ -2942,6 +3089,253 @@ fn data_bindings(
     all
 }
 
+/// Statements reporting `var` (a `String`) through `on_post_error`, or to stderr.
+fn report_error(w: &str, edit: &Edit, var: &str) -> String {
+    match &edit.on_post_error {
+        Some(handler) => format!("self.{handler}(&{var});\n"),
+        None => format!("eprintln!(\"{w}: {{{var}}}\");\n"),
+    }
+}
+
+/// An expression `Result<T, String>` reading `text` as a cell of type
+/// `rust_type`; `None` for types that cannot be edited (lists).
+fn parse_cell(name: &str, rust_type: &str) -> Option<String> {
+    let rust_type = rust_type.trim();
+    let (optional, inner) = match rust_type
+        .strip_prefix("Option<")
+        .and_then(|t| t.strip_suffix('>'))
+    {
+        Some(inner) => (true, inner.trim()),
+        None => (false, rust_type),
+    };
+    if inner.starts_with("Vec<") || inner.starts_with("std::vec::Vec<") {
+        return None;
+    }
+    let string = matches!(inner, "String" | "std::string::String");
+    let parse = if string {
+        "Ok::<String, String>(text.to_owned())".to_owned()
+    } else {
+        format!("text.trim().parse::<{inner}>().map_err(|e| format!(\"{name}: {{e}}\"))")
+    };
+    Some(if optional {
+        let empty = if string {
+            "text.is_empty()"
+        } else {
+            "text.trim().is_empty()"
+        };
+        format!("if {empty} {{ Ok(None) }} else {{ {parse}.map(Some) }}")
+    } else {
+        parse
+    })
+}
+
+/// Editing methods of an editable table widget (see [`crate::data`]).
+fn edit_methods(
+    b: &Binding,
+    row_struct: &str,
+    shown: &[(String, String, String)],
+    edit: &Edit,
+) -> String {
+    let w = &b.widget;
+    let selected = &b.selected;
+    let show = &b.show;
+    let headers: Vec<String> = shown
+        .iter()
+        .map(|(_, _, h)| format!("{h:?}.to_string()"))
+        .collect();
+    let cells: Vec<String> = shown
+        .iter()
+        .map(|(name, rust_type, _)| cell_text(&format!("row.{name}"), rust_type))
+        .collect();
+    let select = |index: &str| match &edit.select {
+        Some(select) => format!("{{\nlet index: Option<usize> = {index};\n{select}\n}}\n"),
+        None => format!("let _ = {index};\n"),
+    };
+    let mut arms = String::new();
+    for (i, (name, rust_type, _)) in shown.iter().enumerate() {
+        match parse_cell(name, rust_type) {
+            Some(parse) => {
+                let _ = writeln!(
+                    arms,
+                    "{i} => ({parse}).map(|value| editing.row.{name} = value),"
+                );
+            }
+            None => {
+                let _ = writeln!(
+                    arms,
+                    "{i} => Err(\"{name}: this column cannot be edited\".to_string()),"
+                );
+            }
+        }
+    }
+    let report = report_error(w, edit, "error");
+    let on_post = match &edit.on_post {
+        Some(h) => format!(
+            "if !self.{h}(&editing.row, editing.inserted) {{\n\
+             self.{w}_editing = Some(editing);\n\
+             return false;\n\
+             }}\n"
+        ),
+        None => String::new(),
+    };
+    let on_delete = match &edit.on_delete {
+        Some(h) => format!("if !self.{h}(&old) {{\nreturn false;\n}}\n"),
+        None => String::new(),
+    };
+    let (post_write, delete_write) = match &edit.writes {
+        Some(writes) => (
+            format!(
+                "let source = self.{w}_source.clone();\n\
+                 let row = editing.row.clone();\n\
+                 if editing.inserted {{\n\
+                 crate::app::freya_spawn_write(self.{w}_saved.clone(), async move {{\n\
+                 let _ = {insert};\n\
+                 Ok(crate::app::Saved::Inserted)\n\
+                 }});\n\
+                 }} else if let Some(old) = self.{w}_rows.get(editing.index).cloned() {{\n\
+                 crate::app::freya_spawn_write(self.{w}_saved.clone(), async move {{\n\
+                 let _ = {update};\n\
+                 Ok(crate::app::Saved::Updated)\n\
+                 }});\n\
+                 }}\n",
+                insert = writes.insert,
+                update = writes.update,
+            ),
+            format!(
+                "let source = self.{w}_source.clone();\n\
+                 let old = old.clone();\n\
+                 crate::app::freya_spawn_write(self.{w}_saved.clone(), async move {{\n\
+                 let _ = {delete};\n\
+                 Ok(crate::app::Saved::Deleted)\n\
+                 }});\n",
+                delete = writes.delete,
+            ),
+        ),
+        None => (String::new(), String::new()),
+    };
+    format!(
+        "/// Shows the rows of `{w}` again (with the row being edited), keeping the selection.\n\
+         fn {w}_show(&mut self) {{\n\
+         let index: Option<usize> = {selected};\n\
+         let headers: Vec<String> = vec![{headers}];\n\
+         let rows: Vec<Vec<String>> = self.{w}_rows.iter().enumerate().map(|(i, row)| {{\n\
+         let row = match &self.{w}_editing {{\n\
+         Some(e) if e.index == i => &e.row,\n\
+         _ => row,\n\
+         }};\n\
+         vec![{cells}]\n\
+         }}).collect();\n\
+         {show}\n\
+         {select_kept}\
+         }}\n\
+         /// Changes cell `column` (counted among the shown columns) of row `index` of `{w}` to\n\
+         /// `text` and edits the row (a different row being edited is saved first).\n\
+         /// `Err`: the text does not fit the column (the row cannot be saved like this).\n\
+         pub fn {w}_edit_cell(&mut self, index: usize, column: usize, text: &str) -> Result<(), String> {{\n\
+         if self.{w}_editing.as_ref().is_some_and(|e| e.index != index) && !self.{w}_post() {{\n\
+         return Err(\"the row being edited could not be saved\".to_string());\n\
+         }}\n\
+         if self.{w}_editing.is_none() {{\n\
+         let Some(row) = self.{w}_rows.get(index).cloned() else {{\n\
+         return Err(format!(\"no row {{index}}\"));\n\
+         }};\n\
+         self.{w}_editing = Some(crate::app::Editing {{ index, row, inserted: false, invalid: None }});\n\
+         }}\n\
+         let Some(editing) = self.{w}_editing.as_mut() else {{\n\
+         return Ok(());\n\
+         }};\n\
+         let result: Result<(), String> = match column {{\n\
+         {arms}\
+         _ => Err(format!(\"no column {{column}}\")),\n\
+         }};\n\
+         editing.invalid = result.as_ref().err().cloned();\n\
+         result\n\
+         }}\n\
+         /// Saves the row of `{w}` being edited (`on_post` may refuse; with `table`/`key` it is\n\
+         /// also written in the background). `false`: the row stays in editing.\n\
+         pub fn {w}_post(&mut self) -> bool {{\n\
+         let Some(editing) = self.{w}_editing.take() else {{\n\
+         return true;\n\
+         }};\n\
+         if let Some(error) = editing.invalid.clone() {{\n\
+         self.{w}_editing = Some(editing);\n\
+         {report}\
+         return false;\n\
+         }}\n\
+         {on_post}\
+         {post_write}\
+         if let Some(slot) = self.{w}_rows.get_mut(editing.index) {{\n\
+         *slot = editing.row;\n\
+         }}\n\
+         self.{w}_show();\n\
+         true\n\
+         }}\n\
+         /// Discards the changes of the row of `{w}` being edited (a new row is removed).\n\
+         pub fn {w}_cancel(&mut self) {{\n\
+         if let Some(editing) = self.{w}_editing.take() {{\n\
+         if editing.inserted && editing.index < self.{w}_rows.len() {{\n\
+         self.{w}_rows.remove(editing.index);\n\
+         }}\n\
+         self.{w}_show();\n\
+         }}\n\
+         }}\n\
+         /// Adds an empty row at the end of `{w}` and edits it (saved like any edited row).\n\
+         pub fn {w}_insert(&mut self) -> bool {{\n\
+         if !self.{w}_post() {{\n\
+         return false;\n\
+         }}\n\
+         let row = {row_struct}::default();\n\
+         self.{w}_rows.push(row.clone());\n\
+         let index = self.{w}_rows.len() - 1;\n\
+         self.{w}_editing = Some(crate::app::Editing {{ index, row, inserted: true, invalid: None }});\n\
+         self.{w}_show();\n\
+         {select_new}\
+         true\n\
+         }}\n\
+         /// Deletes the selected row of `{w}` (`on_delete` may refuse; with `table`/`key` also in\n\
+         /// the database).\n\
+         pub fn {w}_delete(&mut self) -> bool {{\n\
+         let index: Option<usize> = {selected};\n\
+         let Some(index) = index.or(self.{w}_editing.as_ref().map(|e| e.index)) else {{\n\
+         return false;\n\
+         }};\n\
+         if self.{w}_editing.as_ref().is_some_and(|e| e.index == index && e.inserted) {{\n\
+         self.{w}_cancel();\n\
+         return true;\n\
+         }}\n\
+         let Some(old) = self.{w}_rows.get(index).cloned() else {{\n\
+         return false;\n\
+         }};\n\
+         let _ = &old;\n\
+         {on_delete}\
+         {delete_write}\
+         match self.{w}_editing.as_mut() {{\n\
+         Some(e) if e.index == index => self.{w}_editing = None,\n\
+         Some(e) if e.index > index => e.index -= 1,\n\
+         _ => {{}}\n\
+         }}\n\
+         self.{w}_rows.remove(index);\n\
+         self.{w}_show();\n\
+         true\n\
+         }}\n\
+         /// The backend calls this when the selection of `{w}` changes: leaving the row being\n\
+         /// edited saves it (if that is refused, the row is selected again).\n\
+         pub fn {w}_row_changed(&mut self, index: Option<usize>) {{\n\
+         let Some(back) = self.{w}_editing.as_ref().map(|e| e.index) else {{\n\
+         return;\n\
+         }};\n\
+         if index != Some(back) && !self.{w}_post() {{\n\
+         {select_back}\
+         }}\n\
+         }}\n",
+        headers = headers.join(", "),
+        cells = cells.join(", "),
+        select_kept = select("index"),
+        select_new = select("Some(index)"),
+        select_back = select("Some(back)"),
+    )
+}
+
 /// Loading and taking over the data of a form's list and table widgets
 /// (empty methods without bindings – the backends call them anyway).
 fn data_impl(form: &Form, bindings: &[Binding], runtime: &FormRuntime, live: bool) -> String {
@@ -2951,14 +3345,16 @@ fn data_impl(form: &Form, bindings: &[Binding], runtime: &FormRuntime, live: boo
         if let BindingKind::Table {
             row_struct,
             columns,
+            edit,
             ..
         } = &b.kind
         {
             let _ = write!(
                 code,
                 "/// A row of `{}` (all columns of its data source).\n\
-                 #[allow(dead_code)]\n#[derive(Debug, Clone)]\npub struct {row_struct} {{\n",
-                b.widget
+                 #[allow(dead_code)]\n#[derive(Debug, Clone{})]\npub struct {row_struct} {{\n",
+                b.widget,
+                if edit.is_some() { ", Default" } else { "" }
             );
             for (name, ty, _) in columns {
                 let _ = writeln!(code, "pub {name}: {ty},");
@@ -3014,7 +3410,11 @@ fn data_impl(form: &Form, bindings: &[Binding], runtime: &FormRuntime, live: boo
                 columns,
                 shown,
                 value,
+                edit,
             } => {
+                if let Some(edit) = edit {
+                    code.push_str(&edit_methods(b, row_struct, shown, edit));
+                }
                 let mut body = String::new();
                 for (name, ty, get) in columns {
                     let _ = writeln!(body, "let col_{name}: {ty} = {get};");
@@ -3096,7 +3496,10 @@ fn data_impl(form: &Form, bindings: &[Binding], runtime: &FormRuntime, live: boo
                 b.show
             ),
             BindingKind::Table {
-                row_struct, shown, ..
+                row_struct,
+                shown,
+                edit,
+                ..
             } => {
                 let headers: Vec<String> = shown
                     .iter()
@@ -3104,13 +3507,42 @@ fn data_impl(form: &Form, bindings: &[Binding], runtime: &FormRuntime, live: boo
                     .collect();
                 format!(
                     "let (records, rows): (Vec<{row_struct}>, Vec<Vec<String>>) = entries.into_iter().unzip();\n\
-                     self.{w}_rows = records;\n\
+                     self.{w}_rows = records;\n{}\
                      let headers: Vec<String> = vec![{}];\n{}\n",
+                    if edit.is_some() {
+                        format!("self.{w}_editing = None;\n")
+                    } else {
+                        String::new()
+                    },
                     headers.join(", "),
                     b.show
                 )
             }
         };
+        if let Some(edit) = b.edit() {
+            let report = report_error(w, edit, "error");
+            let inserted = match &edit.writes {
+                Some(writes) if writes.generated_key => {
+                    format!("Ok(crate::app::Saved::Inserted) => self.{w}_reload(),\n")
+                }
+                _ => String::new(),
+            };
+            let _ = write!(
+                code,
+                "for result in self.{w}_saved.take_all() {{\n\
+                 changed = true;\n\
+                 match result {{\n\
+                 {inserted}\
+                 Ok(_) => {{}}\n\
+                 Err(error) => {{\n\
+                 let error = error.to_string();\n\
+                 {report}\
+                 self.{w}_reload();\n\
+                 }}\n\
+                 }}\n\
+                 }}\n"
+            );
+        }
         let _ = write!(
             code,
             "if let Some(result) = self.{w}_pending.take() {{\n\
@@ -3182,6 +3614,73 @@ impl<T> Pending<T> {
             *slot = Some(result);
         }
     }
+}
+
+/// The row of a data grid being edited (`<grid>_edit_cell` … `<grid>_post`).
+#[allow(dead_code)]
+#[derive(Debug, Clone)]
+pub struct Editing<R> {
+    /// Index in the grid's rows.
+    pub index: usize,
+    pub row: R,
+    /// A new row (`<grid>_insert`), not in the database yet.
+    pub inserted: bool,
+    /// Why the row cannot be saved (a cell text that does not fit).
+    pub invalid: Option<String>,
+}
+
+/// What writing a row of a data grid did.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Saved {
+    Updated,
+    Inserted,
+    Deleted,
+}
+
+/// Results of background writes, taken over by their form in order.
+#[allow(dead_code)]
+pub struct Results<T>(std::sync::Arc<std::sync::Mutex<Vec<Result<T, Error>>>>);
+
+impl<T> Default for Results<T> {
+    fn default() -> Self {
+        Self(Default::default())
+    }
+}
+
+impl<T> Clone for Results<T> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
+
+#[allow(dead_code)]
+impl<T> Results<T> {
+    /// All results that arrived since the last call.
+    pub fn take_all(&self) -> Vec<Result<T, Error>> {
+        self.0
+            .lock()
+            .map(|mut results| std::mem::take(&mut *results))
+            .unwrap_or_default()
+    }
+
+    fn push(&self, result: Result<T, Error>) {
+        if let Ok(mut results) = self.0.lock() {
+            results.push(result);
+        }
+    }
+}
+
+/// Runs `write` on the Tokio runtime and adds its result to `results`.
+#[allow(dead_code)]
+pub fn freya_spawn_write<T: Send + 'static>(
+    results: Results<T>,
+    write: impl std::future::Future<Output = Result<T, Error>> + Send + 'static,
+) {
+    tokio::runtime::Handle::current().spawn(async move {
+        results.push(write.await);
+        freya_wake();
+    });
 }
 
 /// Called when a background load is done (set by the UI backend).

@@ -15,6 +15,19 @@
 //! | `fields`, `headers` | tables: columns shown (empty = all) and their titles |
 //! | `value_field` | column with the key (empty = the text) |
 //! | `load` | `Start` (load when the form opens) or `Manual` |
+//! | `editable` | tables: cells can be edited, rows added and deleted |
+//!
+//! **Editing** (like Delphi's `TDataSet`): an editable table keeps the row
+//! being edited in a buffer; it is saved (posted) when another row is chosen
+//! or Enter is pressed, Esc discards it. The generator writes
+//! `<widget>_edit_cell`, `<widget>_post`, `<widget>_cancel`,
+//! `<widget>_insert` and `<widget>_delete`, and calls the events `on_post`
+//! (`row`, `inserted`; `false` keeps the row in editing), `on_delete`
+//! (`false` keeps the row) and `on_post_error`. If the data source can write
+//! (its pack gives `update`/`insert`/`delete`) and has `table` and `key`
+//! (key columns, comma-separated), the rows are also written automatically;
+//! with `generated_key` the key columns are left out of `INSERT` (the
+//! database assigns them) and the table is loaded again.
 //!
 //! The generator writes, per bound widget, `<widget>_reload()` (loads in
 //! the background on Tokio) and `<widget>_selected_value()`; for a table also
@@ -49,6 +62,16 @@ pub const LOAD: &str = "load";
 /// Properties of a table widget (besides `data_source`, `value_field`, `load`).
 pub const FIELDS: &str = "fields";
 pub const HEADERS: &str = "headers";
+/// Table widgets: cells can be edited, rows added and deleted.
+pub const EDITABLE: &str = "editable";
+/// Events of an editable table widget.
+pub const ON_POST: &str = "on_post";
+pub const ON_DELETE: &str = "on_delete";
+pub const ON_POST_ERROR: &str = "on_post_error";
+/// Properties of a data source that can write rows back.
+pub const TABLE: &str = "table";
+pub const KEY: &str = "key";
+pub const GENERATED_KEY: &str = "generated_key";
 
 /// One column of a data source.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -120,6 +143,34 @@ pub fn complete(ty: &mut ComponentType) {
             .with_category("Data")
             .with_description("Columns of a row: `name: Type`, e.g. `id: i64`, `name: String`"),
         );
+        if ty
+            .data
+            .as_ref()
+            .is_some_and(crate::component_type::DataSpec::writable)
+        {
+            add(
+                ty,
+                PropertyDef::new(TABLE, PropertyType::Text, "")
+                    .with_category("Data")
+                    .with_description(
+                        "Table edited rows are written to (empty = only the events of the grid)",
+                    ),
+            );
+            add(
+                ty,
+                PropertyDef::new(KEY, PropertyType::Text, "")
+                    .with_category("Data")
+                    .with_description("Key columns of `table`, comma-separated (e.g. `id`)"),
+            );
+            add(
+                ty,
+                PropertyDef::new(GENERATED_KEY, PropertyType::Bool, true)
+                    .with_category("Data")
+                    .with_description(
+                        "The database assigns the key: INSERT leaves the key columns out",
+                    ),
+            );
+        }
         if !ty.provides.iter().any(|p| p.capability.as_str() == ROWS) {
             ty.provides.push(crate::capability::Provide {
                 capability: rows_capability(),
@@ -172,6 +223,37 @@ pub fn complete(ty: &mut ComponentType) {
                 "Column titles, one per shown column (missing ones: the column name)",
             ),
         );
+        add(
+            ty,
+            PropertyDef::new(EDITABLE, PropertyType::Bool, false)
+                .with_category("Data")
+                .with_description(
+                    "Cells can be edited (Enter or another row saves, Esc discards); \
+                     `<name>_insert()`/`<name>_delete()` add and delete rows",
+                ),
+        );
+        let row = "&{{ name | pascal }}Row";
+        let events = [
+            crate::event::EventDef::new(ON_POST)
+                .with_param("row", row)
+                .with_param("inserted", "bool")
+                .returning("bool")
+                .with_description(
+                    "Before an edited or new row is saved; `false` keeps it in editing",
+                ),
+            crate::event::EventDef::new(ON_DELETE)
+                .with_param("row", row)
+                .returning("bool")
+                .with_description("Before a row is deleted; `false` keeps it"),
+            crate::event::EventDef::new(ON_POST_ERROR)
+                .with_param("error", "&str")
+                .with_description("Writing to the database failed (the rows are loaded again)"),
+        ];
+        for event in events {
+            if !ty.events.iter().any(|e| e.name == event.name) {
+                ty.events.push(event);
+            }
+        }
     }
     if list || table {
         add(

@@ -376,6 +376,29 @@ der Quelle (typisiert nach `columns`), `<name>_selected_row()` und `<name>_selec
 GTK: `ColumnView`, egui: gestreiftes Grid, iced: `table`, Slint: `StandardTableView`, Flutter: `DataTable`.
 *Data grids declare `set-rows`/`selected`; the core generates a typed row struct and `<name>_selected_row()`.*
 
+Bearbeiten (12.11.2026, wie Delphis `TDataSet`): Mit `editable` lassen sich Zellen ändern; die Zeile wird
+gespeichert, wenn eine andere Zeile gewählt oder Enter gedrückt wird, Esc verwirft sie. Der Kern erzeugt
+`<name>_edit_cell(zeile, spalte, text)` (Text wird nach dem Spaltentyp gelesen; `Option<…>`: leer = `None`;
+Listen-Spalten sind nicht bearbeitbar), `<name>_post()`, `<name>_cancel()`, `<name>_insert()`, `<name>_delete()`
+und `<name>_row_changed(index)` (ruft das Backend beim Zeilenwechsel) und die Ereignisse `on_post(row, inserted) ->
+bool` (`false` = weiter bearbeiten), `on_delete(row) -> bool` und `on_post_error(error)`. Kann die Datenquelle
+schreiben (`[component.data]` mit `update`, `insert`, `delete`; SQLx-`Query`) und hat sie `table` und `key`
+(Schlüsselspalten, durch Komma getrennt), schreibt der Kern die Zeilen zusätzlich im Hintergrund zurück
+(`generated_key`: INSERT ohne Schlüsselspalten, danach wird neu geladen; Fehler → `on_post_error` und neu laden).
+Ohne `table` bleibt es bei den Ereignissen, der Entwickler schreibt selbst. Backend-Pflicht: bearbeitbare Zellen
+zeichnen, beim Ende einer Zellbearbeitung `<name>_edit_cell`, bei Enter `<name>_post`, bei Esc `<name>_cancel`, beim
+Zeilenwechsel `<name>_row_changed`; `[component.table] select` (Anweisungen mit `index: Option<usize>`) hält die
+Auswahl, wenn die Zeilen neu gezeigt werden. Die Templates sehen die Eigenschaften des Widgets als `props`.
+
+| GTK 4 | egui | iced | Slint | Flutter | WebView |
+|---|---|---|---|---|---|
+| `EditableLabel` je Zelle (Doppelklick/Enter bearbeitet), Aktionen `freya.edit`/`freya.cancel` am Grid | folgt | folgt | folgt | folgt | folgt |
+
+*Editing: with `editable`, cells can be changed; a row is posted when another row is chosen or Enter is pressed,
+Esc discards it. The core generates `<name>_edit_cell/_post/_cancel/_insert/_delete/_row_changed` and the events
+`on_post`, `on_delete`, `on_post_error`; with a writable source (`update`/`insert`/`delete`, SQLx `Query`) and
+`table`/`key` set, rows are written back in the background.*
+
 Listen-Widgets mit Daten: `[component.list]` mit `set-items` (Anweisungen, die `items: Vec<String>` ins Widget
 setzen) und `selected` (Ausdruck `Option<usize>`); Kontext `name`, `root`, `form`. Solche Widgets bekommen
 `data_source`, `display_field`, `value_field` und `load`; der Kern erzeugt `<name>_reload()`,

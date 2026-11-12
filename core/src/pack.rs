@@ -65,6 +65,9 @@
 //! fetch = "sqlx::query(…).fetch_all(…).await?"   # rows, in an async block; `source` = the component's value
 //! get = "sqlx::Row::try_get::<{{ type }}, _>({{ row }}, {{ column | rust_str }})?"
 //! columns = "field: String; value: String"   # optional: columns the source always has (template over props)
+//! update = "…"                          # optional (all three or none): write an edited row back,
+//! insert = "…"                          #   see DataSpec; context `row`, `old`, `table`, `keys`,
+//! delete = "…"                          #   `columns`; the source then has `table` and `key`
 //!
 //! [component.list]                      # optional, backend widgets: can be filled from a data source
 //! set-items = "…"                       # statements putting `items: Vec<String>` into the widget
@@ -73,6 +76,7 @@
 //! [component.table]                     # optional, backend widgets: a data grid filled from a data source
 //! set-rows = "…"                        # statements using `headers: Vec<String>`, `rows: Vec<Vec<String>>`
 //! selected = "…"                        # expression: Option<usize>
+//! select = "…"                          # optional: statements selecting `index: Option<usize>`
 //!
 //! [[extend]]                            # backend packs only: add properties to existing types
 //! type = "core/Button"
@@ -267,6 +271,7 @@ struct RawComponent {
 struct RawTable {
     set_rows: String,
     selected: String,
+    select: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -275,6 +280,9 @@ struct RawData {
     fetch: String,
     get: String,
     columns: Option<String>,
+    update: Option<String>,
+    insert: Option<String>,
+    delete: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -988,13 +996,30 @@ impl Checker<'_> {
                 &format!("{location}, data"),
                 &[("fetch", &data.fetch), ("get", &data.get)],
             );
-            if let Some(columns) = &data.columns {
-                self.check_templates(&format!("{location}, data"), &[("columns", columns)]);
+            for (part, text) in [
+                ("columns", &data.columns),
+                ("update", &data.update),
+                ("insert", &data.insert),
+                ("delete", &data.delete),
+            ] {
+                if let Some(text) = text {
+                    self.check_templates(&format!("{location}, data"), &[(part, text)]);
+                }
+            }
+            let writes = [&data.update, &data.insert, &data.delete];
+            if writes.iter().any(|w| w.is_some()) && !writes.iter().all(|w| w.is_some()) {
+                self.problem(
+                    &format!("{location}, data"),
+                    "give all of `update`, `insert` and `delete` (or none)",
+                );
             }
             ty.data = Some(crate::component_type::DataSpec {
                 fetch: data.fetch.clone(),
                 get: data.get.clone(),
                 columns: data.columns.clone(),
+                update: data.update.clone(),
+                insert: data.insert.clone(),
+                delete: data.delete.clone(),
             });
         }
         if let Some(list) = &raw.list {
@@ -1024,9 +1049,13 @@ impl Checker<'_> {
                 &format!("{location}, table"),
                 &[("set-rows", &table.set_rows), ("selected", &table.selected)],
             );
+            if let Some(select) = &table.select {
+                self.check_templates(&format!("{location}, table"), &[("select", select)]);
+            }
             ty.table = Some(crate::component_type::TableSpec {
                 set_rows: table.set_rows.clone(),
                 selected: table.selected.clone(),
+                select: table.select.clone(),
             });
         }
         crate::data::complete(&mut ty);

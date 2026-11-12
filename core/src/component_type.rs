@@ -265,6 +265,10 @@ pub struct ComponentType {
 pub struct TableSpec {
     pub set_rows: String,
     pub selected: String,
+    /// Statements selecting row `index: Option<usize>` (kept after the rows
+    /// are shown again while editing).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub select: Option<String>,
 }
 
 /// How a data source delivers rows – MiniJinja templates of its pack.
@@ -277,12 +281,33 @@ pub struct TableSpec {
 /// renders the columns the source always has (`field: String; value:
 /// String`, separated by `;`) from `props` – used when the `columns`
 /// property is empty.
+///
+/// The optional `update`, `insert` and `delete` write an edited row back
+/// (data grids with `editable`): expressions inside an `async` block
+/// returning `Result<_, crate::app::Error>`; context: `source`, `props`,
+/// `rust`, `table`, `keys` (key columns), `columns` (the other columns,
+/// for `insert` without generated keys: all), `row` (the new row, a
+/// variable) and `old` (the row as loaded, for `update`/`delete`). The
+/// source must then have `table` and `key` set (see [`crate::data`]).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DataSpec {
     pub fetch: String,
     pub get: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub columns: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub update: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub insert: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delete: Option<String>,
+}
+
+impl DataSpec {
+    /// Can the source write rows back (all three templates given)?
+    pub fn writable(&self) -> bool {
+        self.update.is_some() && self.insert.is_some() && self.delete.is_some()
+    }
 }
 
 /// How a list widget shows entries and reports its selection – MiniJinja
@@ -290,7 +315,8 @@ pub struct DataSpec {
 ///
 /// `set_items` are statements putting `items: Vec<String>` into the widget;
 /// `selected` is an expression of type `Option<usize>`. Context: `name`
-/// (the widget), `root` (the form's root widget), `form`.
+/// (the widget), `root` (the form's root widget), `form`, `props` (the
+/// widget's properties, e.g. `editable`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ListSpec {
     pub set_items: String,

@@ -260,7 +260,8 @@ impl {{ form.struct }} {
         }
     {%- endif %}
     {%- for w in widgets if w.field %}
-    {%- for event, handler in w.events | items if handler and w.type != "core/Form" %}
+    {#- on_post, on_delete, on_post_error ruft der Kern selbst auf (bearbeitbare Tabellen). #}
+    {%- for event, handler in w.events | items if handler and w.type != "core/Form" and event not in ["on_post", "on_delete", "on_post_error"] %}
     {%- set key = w.type ~ "." ~ event %}
         {
             let weak = weak.clone();
@@ -322,6 +323,62 @@ impl {{ form.struct }} {
         {%- endif %}
         }
     {%- endfor %}
+    {%- endfor %}
+    {%- for g in widgets if g.field and g.type == "backend:gtk4/DataGrid" and g.props.editable and g.props.data_source %}
+        // Bearbeitbares DataGrid `{{ g.name }}`: Zellen melden sich über die Aktionen
+        // `freya.edit`/`freya.cancel`, ein Zeilenwechsel speichert die bearbeitete Zeile.
+        // Später ausgeführt, damit das Neuzeichnen nicht mitten im Signal der Zelle passiert.
+        {
+            let group = gtk4::gio::SimpleActionGroup::new();
+            let edit = gtk4::gio::SimpleAction::new(
+                "edit",
+                Some(&<(u32, u32, String, bool, bool)>::static_variant_type()),
+            );
+            let target = weak.clone();
+            edit.connect_activate(move |_, value| {
+                let Some((row, column, text, changed, post)) =
+                    value.and_then(|v| v.get::<(u32, u32, String, bool, bool)>())
+                else {
+                    return;
+                };
+                let target = target.clone();
+                gtk4::glib::idle_add_local_once(move || {
+                    Self::freya_call(&target, |f| {
+                        if changed {
+                            let _ = f.{{ g.name }}_edit_cell(row as usize, column as usize, &text);
+                        }
+                        if post {
+                            f.{{ g.name }}_post();
+                        }
+                    });
+                });
+            });
+            group.add_action(&edit);
+            let cancel = gtk4::gio::SimpleAction::new("cancel", None);
+            let target = weak.clone();
+            cancel.connect_activate(move |_, _| {
+                let target = target.clone();
+                gtk4::glib::idle_add_local_once(move || {
+                    Self::freya_call(&target, |f| f.{{ g.name }}_cancel());
+                });
+            });
+            group.add_action(&cancel);
+            form.{{ g.name }}.insert_action_group("freya", Some(&group));
+            let target = weak.clone();
+            form.{{ g.name }}.connect_model_notify(move |grid| {
+                if let Some(model) = grid.model().and_downcast::<gtk4::SingleSelection>() {
+                    let target = target.clone();
+                    model.connect_selected_notify(move |model| {
+                        let selected = model.selected();
+                        let index = (selected != gtk4::INVALID_LIST_POSITION).then_some(selected as usize);
+                        let target = target.clone();
+                        gtk4::glib::idle_add_local_once(move || {
+                            Self::freya_call(&target, |f| f.{{ g.name }}_row_changed(index));
+                        });
+                    });
+                }
+            });
+        }
     {%- endfor %}
     {%- for m in menus %}
         // Hauptmenü: eine Aktion je Eintrag (`{{ m.name }}.item<n>`), Kürzel am Fenster.

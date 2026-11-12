@@ -350,3 +350,156 @@ fn data_grid_gets_a_typed_row() {
         "{errors:#?}"
     );
 }
+
+/// `services` with `customers` writable (`table`, `key`) and `main_form` with
+/// an editable grid on it; handlers for all three events.
+fn editable_forms(driver: &str) -> Vec<Form> {
+    let mut forms = forms(|c| c.with(DISPLAY_FIELD, "name"), true);
+    forms[0]
+        .component_mut(&name("db"))
+        .unwrap()
+        .set("driver", Value::Enum(driver.into()));
+    let customers = forms[0].component_mut(&name("customers")).unwrap();
+    customers.set(data::TABLE, "customers");
+    customers.set(data::KEY, "id");
+    customers.set(
+        "sql",
+        Value::Code("\"SELECT id, name, note FROM customers\"".into()),
+    );
+    customers.set("params", Value::List(Vec::new()));
+    let grid = Component::new(name("customer_grid"), TypeRef::backend("gtk4", "DataGrid"))
+        .with(
+            DATA_SOURCE,
+            Value::reference_on(name("services"), name("customers")),
+        )
+        .with(data::FIELDS, texts(&["name", "note"]))
+        .with(data::EDITABLE, true)
+        .on(data::ON_POST, HandlerName::new("customer_saving").unwrap())
+        .on(
+            data::ON_DELETE,
+            HandlerName::new("customer_deleting").unwrap(),
+        )
+        .on(
+            data::ON_POST_ERROR,
+            HandlerName::new("customer_failed").unwrap(),
+        );
+    forms[1]
+        .add_widget(&name("window"), Widget::from_component(grid))
+        .unwrap();
+    forms
+}
+
+#[test]
+fn editable_data_grid_writes_back() {
+    let generation = generation(&editable_forms("Postgres"));
+    assert!(!generation.has_errors(), "{:#?}", generation.diagnostics);
+    let form = file(&generation, "src/main_form.gen.rs");
+    for method in [
+        "pub fn customer_grid_edit_cell(&mut self, index: usize, column: usize, text: &str",
+        "pub fn customer_grid_post(&mut self) -> bool",
+        "pub fn customer_grid_cancel(&mut self)",
+        "pub fn customer_grid_insert(&mut self) -> bool",
+        "pub fn customer_grid_delete(&mut self) -> bool",
+        "pub fn customer_grid_row_changed(&mut self, index: Option<usize>)",
+    ] {
+        let flat: String = form.split_whitespace().collect();
+        let method: String = method.split_whitespace().collect();
+        assert!(flat.contains(&method), "{method}: {form}");
+    }
+    assert!(form.contains("#[derive(Debug, Clone, Default)]"), "{form}");
+    let flat: String = form.split_whitespace().collect();
+    for sql in [
+        r#""UPDATEcustomersSETname=$1,note=$2WHEREid=$3""#,
+        r#""INSERTINTOcustomers(name,note)VALUES($1,$2)""#,
+        r#""DELETEFROMcustomersWHEREid=$1""#,
+        "self.customer_saving(&editing.row,editing.inserted)",
+        "self.customer_deleting(&old)",
+        "self.customer_failed(&error)",
+        // Optional<String>: leer = None.
+        "1=>{(iftext.is_empty(){Ok(None)}else{Ok::<String,String>(text.to_owned()).map(Some)}).map(|value|editing.row.note=value)",
+    ] {
+        assert!(flat.contains(sql), "{sql}: {form}");
+    }
+    // Handler-Stubs mit dem Zeilentyp.
+    let user: String = file(&generation, "src/main_form.rs")
+        .split_whitespace()
+        .collect();
+    assert!(
+        user.contains("pubfncustomer_saving(&mutself,row:&CustomerGridRow,inserted:bool)->bool"),
+        "{user}"
+    );
+    assert!(
+        user.contains("pubfncustomer_deleting(&mutself,row:&CustomerGridRow)->bool"),
+        "{user}"
+    );
+
+    // MySQL/SQLite: `?`; ohne erzeugten Schlüssel kommt `id` ins INSERT.
+    let mut forms = editable_forms("Sqlite");
+    forms[0]
+        .component_mut(&name("customers"))
+        .unwrap()
+        .set(data::GENERATED_KEY, false);
+    let generation = self::generation(&forms);
+    let flat: String = file(&generation, "src/main_form.gen.rs")
+        .split_whitespace()
+        .collect();
+    assert!(
+        flat.contains(r#""INSERTINTOcustomers(id,name,note)VALUES(?,?,?)""#),
+        "{flat}"
+    );
+    assert!(
+        flat.contains(r#""UPDATEcustomersSETname=?,note=?WHEREid=?""#),
+        "{flat}"
+    );
+
+    // `table` ohne `key` bzw. mit unbekannter Schlüsselspalte.
+    let mut forms = editable_forms("Postgres");
+    forms[0]
+        .component_mut(&name("customers"))
+        .unwrap()
+        .set(data::KEY, "");
+    let errors = binding_errors(&self::generation(&forms));
+    assert!(errors.iter().any(|e| e.contains("no `key`")), "{errors:#?}");
+    forms[0]
+        .component_mut(&name("customers"))
+        .unwrap()
+        .set(data::KEY, "nr");
+    let errors = binding_errors(&self::generation(&forms));
+    assert!(
+        errors.iter().any(|e| e.contains("key column `nr`")),
+        "{errors:#?}"
+    );
+
+    // Kompiliert das (mit FREYA_TDE_CHECK_SQLX=1): je Treiber, GTK-Oberfläche.
+    if std::env::var_os("FREYA_TDE_CHECK_SQLX").is_some() {
+        for driver in ["Postgres", "Sqlite"] {
+            let dir = std::env::temp_dir()
+                .join(format!("freya-edit-check-{}-{driver}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&dir);
+            let generation = self::generation(&editable_forms(driver));
+            assert!(!generation.has_errors(), "{:#?}", generation.diagnostics);
+            write(&dir, &generation).unwrap();
+            let mut check = std::process::Command::new("cargo");
+            check.arg("check").current_dir(&dir).env(
+                "CARGO_TARGET_DIR",
+                PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("sqlx-check-target"),
+            );
+            if std::env::var_os("FREYA_TDE_CHECK_OFFLINE").is_some() {
+                check.arg("--offline");
+            }
+            let output = check.output().unwrap();
+            assert!(
+                output.status.success(),
+                "cargo check of the editable grid failed ({driver}):\n{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            // Erzeugter Code ohne Warnungen (leere Handler-Stubs dürfen warnen).
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            assert!(
+                !stderr.contains(".gen.rs"),
+                "warnings in generated code ({driver}):\n{stderr}"
+            );
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+    }
+}

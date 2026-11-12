@@ -699,6 +699,64 @@ while let Some(column) = columns.item(0).and_downcast::<gtk4::ColumnViewColumn>(
 }
 for (index, header) in headers.iter().enumerate() {
     let factory = gtk4::SignalListItemFactory::new();
+    {%- if props.editable %}
+    // Bearbeitbar: Doppelklick oder Enter bearbeitet die Zelle; das Ende meldet
+    // die Aktion `freya.edit` (Zeile, Spalte, Text, geändert, Enter) an das Formular,
+    // Esc die Aktion `freya.cancel`.
+    factory.connect_setup(move |_, item| {
+        let Some(item) = item.downcast_ref::<gtk4::ListItem>() else { return };
+        let label = gtk4::EditableLabel::new("");
+        item.set_child(Some(&label));
+        let enter = std::rc::Rc::new(std::cell::Cell::new(false));
+        let keys = gtk4::EventControllerKey::new();
+        keys.set_propagation_phase(gtk4::PropagationPhase::Capture);
+        {
+            let enter = enter.clone();
+            keys.connect_key_pressed(move |controller, key, _, _| {
+                match key {
+                    gtk4::gdk::Key::Return | gtk4::gdk::Key::KP_Enter => enter.set(true),
+                    gtk4::gdk::Key::Escape => {
+                        if let Some(widget) = controller.widget() {
+                            let _ = widget.activate_action("freya.cancel", None);
+                        }
+                    }
+                    _ => {}
+                }
+                gtk4::glib::Propagation::Proceed
+            });
+        }
+        label.add_controller(keys);
+        let item = item.downgrade();
+        label.connect_editing_notify(move |label| {
+            if label.is_editing() {
+                return;
+            }
+            let Some(item) = item.upgrade() else { return };
+            let old = item
+                .item()
+                .and_downcast::<gtk4::glib::BoxedAnyObject>()
+                .and_then(|row| row.borrow::<Vec<String>>().get(index).cloned())
+                .unwrap_or_default();
+            let text = label.text().to_string();
+            let changed = text != old;
+            let post = enter.replace(false);
+            if changed || post {
+                let value = (item.position(), index as u32, text, changed, post).to_variant();
+                let _ = label.activate_action("freya.edit", Some(&value));
+            }
+        });
+    });
+    factory.connect_bind(move |_, item| {
+        let Some(item) = item.downcast_ref::<gtk4::ListItem>() else { return };
+        if let (Some(label), Some(row)) = (
+            item.child().and_downcast::<gtk4::EditableLabel>(),
+            item.item().and_downcast::<gtk4::glib::BoxedAnyObject>(),
+        ) {
+            let cells = row.borrow::<Vec<String>>();
+            label.set_text(cells.get(index).map(String::as_str).unwrap_or(""));
+        }
+    });
+    {%- else %}
     factory.connect_setup(|_, item| {
         if let Some(item) = item.downcast_ref::<gtk4::ListItem>() {
             let label = gtk4::Label::new(None);
@@ -716,6 +774,7 @@ for (index, header) in headers.iter().enumerate() {
             label.set_text(cells.get(index).map(String::as_str).unwrap_or(""));
         }
     });
+    {%- endif %}
     let column = gtk4::ColumnViewColumn::new(Some(header), Some(factory));
     column.set_resizable(true);
     column.set_expand(true);
@@ -731,6 +790,11 @@ selection.set_selected(gtk4::INVALID_LIST_POSITION);
 self.{{ name }}.set_model(Some(&selection));
 """
 selected = """self.{{ name }}.model().and_downcast::<gtk4::SingleSelection>().map(|m| m.selected()).filter(|&i| i != gtk4::INVALID_LIST_POSITION).map(|i| i as usize)"""
+select = """
+if let Some(model) = self.{{ name }}.model().and_downcast::<gtk4::SingleSelection>() {
+    model.set_selected(index.map_or(gtk4::INVALID_LIST_POSITION, |i| i as u32));
+}
+"""
 [component.codegen]
 type = "gtk4::ColumnView"
 init = """{
