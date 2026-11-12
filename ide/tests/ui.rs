@@ -54,6 +54,9 @@ fn main() {
         }
     }
     let _app = Application::new();
+    // Unter Xvfb sind Dialoge unsichtbar und warteten ewig: automatisch mit
+    // „Ja“ beantworten (die Frage steht dann in stderr).
+    ruf::dialog::set_automatic(Some(true));
     let ide = freya_tde::Ide::start(None);
     let surface = ide.design_surface();
 
