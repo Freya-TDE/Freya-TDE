@@ -22,12 +22,10 @@ const TOOL_H: i32 = 28;
 /// snippets the user put on the tab.
 struct SnippetTab {
     combo: RnclComboBox,
-    insert: RnclButton,
-    pin: RnclButton,
-    edit: RnclButton,
-    /// Names in the order of the drop-down.
-    names: Vec<String>,
 }
+
+/// First entry of the snippet drop-down.
+const PICK: &str = "Snippet einfügen …";
 
 pub struct MainWindow {
     pub window: RnclWindow,
@@ -319,111 +317,138 @@ impl MainWindow {
     fn fill_snippets(&self, ide: &Rc<Ide>, page: &RnclPanel) {
         let store = ide.snippets.borrow().clone();
         let names: Vec<String> = store.snippets.iter().map(|s| s.name.clone()).collect();
-        let tips: Vec<String> = store
-            .snippets
-            .iter()
-            .map(|s| s.description.clone())
-            .collect();
+        // Erster Eintrag als Aufforderung: jede Wahl fügt ein, danach zurück.
+        let mut items = vec![PICK.to_owned()];
+        items.extend(names.iter().cloned());
+        let mut tips = vec![String::new()];
+        tips.extend(store.snippets.iter().map(|s| s.description.clone()));
         let y = 6;
         let combo = RnclComboBox::new(page);
-        combo.set_items(&names);
+        combo.set_items(&items);
         combo.set_item_tooltips(&tips);
-        combo.set_current_index(if names.is_empty() { -1 } else { 0 });
-        combo.set_geometry(4, y, 200, ROW);
-        let mut x = 210;
-        let small = |text: &str, tip: &str, width: i32, x: &mut i32| {
-            let button = RnclButton::new(page, text);
-            button.widget().set_tool_tip(tip);
-            button.set_geometry(*x, y, width, ROW);
-            *x += width + 4;
-            button
-        };
-        let insert = small(
-            "Einfügen",
-            "Am Cursor im Code einfügen (use-Zeile an den use-Block)",
-            80,
-            &mut x,
+        combo.set_current_index(0);
+        combo.set_geometry(4, y, 220, ROW);
+        combo.widget().set_tool_tip(
+            "Wählen fügt das Snippet am Cursor im Code ein; Rechtsklick: bearbeiten, löschen, ablegen",
         );
-        let pin = small("Ablegen", "Auf diesem Reiter als Knopf ablegen", 80, &mut x);
-        let new = small("+", "Neues Snippet …", ROW, &mut x);
-        let edit = small("✎", "Snippet bearbeiten …", ROW, &mut x);
-        let delete = small("✕", "Snippet löschen", ROW, &mut x);
-        x += 12;
-        for snippet in store.pinned_snippets() {
+        let mut x = 236;
+        for (index, snippet) in store.snippets.iter().enumerate() {
+            if !store.pinned.contains(&snippet.name) {
+                continue;
+            }
             let button = RnclButton::new(page, &snippet.name);
             button.widget().adjust_size();
             let width = button.size().width.max(60) + 8;
             button.set_geometry(x, y, width, ROW);
             x += width + 4;
-            if !snippet.description.is_empty() {
-                button.widget().set_tool_tip(&snippet.description);
-            }
+            let tip = if snippet.description.is_empty() {
+                "Rechtsklick: lösen, bearbeiten".to_owned()
+            } else {
+                format!("{} (Rechtsklick: lösen, bearbeiten)", snippet.description)
+            };
+            button.widget().set_tool_tip(&tip);
             let name = snippet.name.clone();
             button.on_clicked(with0(ide, move |ide| ide.insert_snippet_reported(&name)));
+            let widget = button.widget().clone();
+            button.widget().on_context_menu(move |x, y| {
+                let menu = Menu::new()
+                    .item(&format!("snip.unpin.{index}"), "Vom Reiter lösen", None)
+                    .item(&format!("snip.edit.{index}"), "Bearbeiten …", None);
+                widget.popup_menu(&menu, x, y);
+            });
         }
-        let selected = |ide: &Ide| -> Option<String> {
-            let tab = ide.main.snippet_tab.borrow();
-            let tab = tab.as_ref()?;
-            usize::try_from(tab.combo.current_index())
-                .ok()
-                .and_then(|i| tab.names.get(i).cloned())
-        };
-        insert.on_clicked(with0(ide, move |ide| {
-            if let Some(name) = selected(ide) {
+        combo.on_current_index_changed(with(ide, |ide, index: i32| {
+            if index <= 0 {
+                return;
+            }
+            let name = ide
+                .snippets
+                .borrow()
+                .snippets
+                .get(index as usize - 1)
+                .map(|s| s.name.clone());
+            if let Some(name) = name {
                 ide.insert_snippet_reported(&name);
             }
+            // Zurück auf die Aufforderung (später, nicht mitten im Signal).
+            let weak = Rc::downgrade(ide);
+            ruf::Timer::single_shot(0, move || {
+                if let Some(ide) = weak.upgrade()
+                    && let Some(tab) = ide.main.snippet_tab.borrow().as_ref()
+                {
+                    tab.combo.set_current_index(0);
+                }
+            });
         }));
-        pin.on_clicked(with0(ide, move |ide| {
-            if let Some(name) = selected(ide) {
-                ide.toggle_snippet_pinned(&name);
-            }
-        }));
-        new.on_clicked(with0(ide, |ide| ide.show_snippet_editor(None)));
-        edit.on_clicked(with0(ide, move |ide| {
-            if let Some(name) = selected(ide) {
-                ide.show_snippet_editor(Some(&name));
-            }
-        }));
-        delete.on_clicked(with0(ide, move |ide| {
-            if let Some(name) = selected(ide)
-                && ruf::dialog::confirm(
-                    Some(ide.main.window.widget()),
+        // Rechtsklick auf die Drop-Down: je Eintrag bearbeiten, löschen, ablegen.
+        let combo_widget = combo.widget().clone();
+        let entries: Vec<(usize, String, bool)> = store
+            .snippets
+            .iter()
+            .enumerate()
+            .map(|(i, s)| (i, s.name.clone(), store.pinned.contains(&s.name)))
+            .collect();
+        combo.widget().on_context_menu(move |x, y| {
+            let submenu = |what: &str, only_unpinned: bool| {
+                entries
+                    .iter()
+                    .filter(|(_, _, pinned)| !(only_unpinned && *pinned))
+                    .fold(Menu::new(), |menu, (i, name, _)| {
+                        menu.item(&format!("snip.{what}.{i}"), name, None)
+                    })
+            };
+            let menu = Menu::new()
+                .submenu("Bearbeiten", submenu("edit", false))
+                .submenu("Löschen", submenu("delete", false))
+                .submenu("Auf Reiter ablegen", submenu("pin", true))
+                .separator()
+                .item("snip.new", "Neues Snippet erstellen …", None);
+            combo_widget.popup_menu(&menu, x, y);
+        });
+        // Rechtsklick auf die freie Fläche des Reiters.
+        let page_widget = page.widget().clone();
+        page.widget().on_context_menu(move |x, y| {
+            let menu = Menu::new().item("snip.new", "Neues Snippet erstellen …", None);
+            page_widget.popup_menu(&menu, x, y);
+        });
+        *self.snippet_tab.borrow_mut() = Some(SnippetTab { combo });
+    }
+
+    /// A menu entry of the palette tab "Snippets" (`snip.<action>.<index>`).
+    pub(super) fn snippet_menu(&self, ide: &Rc<Ide>, id: &str) {
+        if id == "snip.new" {
+            ide.show_snippet_editor(None);
+            return;
+        }
+        let mut parts = id.splitn(3, '.').skip(1);
+        let (Some(action), Some(index)) = (
+            parts.next(),
+            parts.next().and_then(|i| i.parse::<usize>().ok()),
+        ) else {
+            return;
+        };
+        let Some(name) = ide
+            .snippets
+            .borrow()
+            .snippets
+            .get(index)
+            .map(|s| s.name.clone())
+        else {
+            return;
+        };
+        match action {
+            "edit" => ide.show_snippet_editor(Some(&name)),
+            "pin" | "unpin" => ide.toggle_snippet_pinned(&name),
+            "delete"
+                if ruf::dialog::confirm(
+                    Some(self.window.widget()),
                     "Snippet löschen",
                     &format!("Snippet „{name}“ löschen?"),
-                )
+                ) =>
             {
                 ide.remove_snippet(&name);
             }
-        }));
-        combo.on_current_index_changed(with(ide, |ide, _: i32| {
-            ide.main.update_snippet_buttons(ide)
-        }));
-        *self.snippet_tab.borrow_mut() = Some(SnippetTab {
-            combo,
-            insert,
-            pin,
-            edit,
-            names,
-        });
-        self.update_snippet_buttons(ide);
-    }
-
-    /// "Ablegen"/"Lösen" and what is enabled, for the selected snippet.
-    fn update_snippet_buttons(&self, ide: &Ide) {
-        let tab = self.snippet_tab.borrow();
-        let Some(tab) = tab.as_ref() else { return };
-        let name = usize::try_from(tab.combo.current_index())
-            .ok()
-            .and_then(|i| tab.names.get(i));
-        let pinned = name.is_some_and(|n| ide.snippets.borrow().pinned.contains(n));
-        tab.pin.set_text(if pinned { "Lösen" } else { "Ablegen" });
-        tab.pin.widget().set_tool_tip(if pinned {
-            "Vom Reiter entfernen (bleibt in der Liste)"
-        } else {
-            "Auf diesem Reiter als Knopf ablegen"
-        });
-        for button in [&tab.insert, &tab.pin, &tab.edit] {
-            button.widget().set_enabled(name.is_some());
+            _ => {}
         }
     }
 
@@ -485,6 +510,7 @@ pub fn connect(ide: &Rc<Ide>) {
                 ide.show_window(window::PROJECT);
                 ide.project.menu_from_main(ide, "pm.cargo");
             }
+            id if id.starts_with("snip.") => ide.main.snippet_menu(ide, id),
             "file.settings" => ide.show_settings(),
             "file.save" => {
                 ide.save();

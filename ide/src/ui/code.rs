@@ -182,6 +182,15 @@ impl CodeWindow {
         self.current().map(|f| f.path.clone())
     }
 
+    /// The selected text of the front tab (`None` without selection).
+    pub fn selected_text(&self) -> Option<String> {
+        self.current()
+            .filter(|f| f.label.is_none())?
+            .editor
+            .selected_text()
+            .filter(|t| !t.trim().is_empty())
+    }
+
     /// Path, text and cursor of the front tab.
     pub fn current_state(&self) -> Option<(PathBuf, String, (usize, usize))> {
         let file = self.current().filter(|f| f.label.is_none())?;
@@ -248,6 +257,12 @@ impl CodeWindow {
                     ide.code.update_titles();
                     ide.code.text_changed(ide, &p, &text);
                 }));
+                // Kontextmenü des Editors: markierten Code als Snippet speichern.
+                editor.set_extra_menu(&Menu::new().item(
+                    "code.save_snippet",
+                    "Als Snippet speichern …",
+                    None,
+                ));
                 let p = path.to_path_buf();
                 let widget = editor.widget().clone();
                 editor.on_gutter_clicked(with(ide, move |ide, click: GutterClick| {
@@ -748,6 +763,10 @@ pub fn connect(ide: &Rc<Ide>) {
             }
             "code.codetools" => {
                 ide.complete_code();
+                Ok(())
+            }
+            "code.save_snippet" => {
+                ide.snippet_from_selection();
                 Ok(())
             }
             "code.fold_all" | "code.unfold_all" => {

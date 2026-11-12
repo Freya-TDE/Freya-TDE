@@ -110,12 +110,40 @@ impl SnippetWindow {
 impl Ide {
     /// Opens the snippet window for a new snippet (`None`) or to edit one.
     pub fn show_snippet_editor(&self, name: Option<&str>) {
-        let w = &self.snippet_window;
         let snippet = name
             .and_then(|n| self.snippets.borrow().get(n).cloned())
             .unwrap_or_else(|| Snippet::new("", "", "", ""));
+        self.open_snippet_window(name, &snippet);
+    }
+
+    /// Code editor → "Als Snippet speichern": the window with the selected
+    /// code; saving adds it to the drop-down.
+    pub fn snippet_from_selection(&self) {
+        match self.code.selected_text() {
+            Some(code) => {
+                let use_lines: Vec<&str> = code
+                    .lines()
+                    .map(str::trim)
+                    .filter(|l| l.starts_with("use "))
+                    .collect();
+                // use-Zeilen im markierten Code werden zur use-Zeile des Snippets.
+                let body: Vec<&str> = code
+                    .lines()
+                    .filter(|l| !l.trim().starts_with("use "))
+                    .collect();
+                let snippet = Snippet::new("", "", &use_lines.join(" "), &dedent(&body.join("\n")));
+                self.open_snippet_window(None, &snippet);
+            }
+            None => self
+                .main
+                .set_status("Als Snippet speichern: erst Code markieren."),
+        }
+    }
+
+    fn open_snippet_window(&self, name: Option<&str>, snippet: &Snippet) {
+        let w = &self.snippet_window;
         *w.editing.borrow_mut() = name.map(str::to_owned);
-        w.fill(&snippet);
+        w.fill(snippet);
         w.window.set_title(if name.is_some() {
             "Snippet bearbeiten"
         } else {
@@ -142,6 +170,20 @@ impl Ide {
             ),
         }
     }
+}
+
+/// Removes the indentation all non-empty lines share.
+fn dedent(text: &str) -> String {
+    let indent = text
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| l.len() - l.trim_start().len())
+        .min()
+        .unwrap_or(0);
+    text.lines()
+        .map(|l| l.get(indent..).unwrap_or(l.trim_start()))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 pub fn connect(ide: &Rc<Ide>) {

@@ -1163,7 +1163,12 @@ fn main() {
         // Snippets: anlegen, auf dem Reiter ablegen, am Cursor einfügen (use-Zeile oben).
         ide.put_snippet(
             None,
-            freya_tde::snippets::Snippet::new("Gruss", "Sagt Hallo", "use std::fmt::Write;", "// Hallo"),
+            freya_tde::snippets::Snippet::new(
+                "Gruss",
+                "Sagt Hallo",
+                "use std::fmt::Write;",
+                "// Hallo",
+            ),
         )
         .unwrap();
         ide.toggle_snippet_pinned("Gruss");
@@ -1172,7 +1177,10 @@ fn main() {
         ide.open_source(&form_rs, lines);
         ide.insert_snippet("Gruss").unwrap();
         let text = ide.code_text(&form_rs).unwrap();
-        assert!(text.contains("use std::fmt::Write;") && text.contains("// Hallo"), "{text}");
+        assert!(
+            text.contains("use std::fmt::Write;") && text.contains("// Hallo"),
+            "{text}"
+        );
         // Werkzeug: formatieren im Hintergrund (generierte Dateien bleiben).
         ide.run_tool(freya_tde::tools::Tool::Fmt);
         assert!(pump_until(60, || !ide.tool_running()), "rustfmt läuft noch");
