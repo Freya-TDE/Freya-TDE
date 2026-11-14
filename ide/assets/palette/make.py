@@ -61,6 +61,23 @@ ICONS = {
             + rect(8, 15, 26, 27, 2) + line(13, 22, 29, 22) + line(13, 29, 26, 29) + line(13, 36, 28, 36)
             + f"<rect x='9' y='26' width='24' height='6' fill='{PALE}'/>" + line(13, 29, 26, 29, BLUE),
     "link": rect(4, 12, 40, 24, 4, fill=SOFT) + text(24, 27, "www", 12, BLUE) + line(10, 31, 38, 31, BLUE, 2),
+    # --- IDE: tool bar ------------------------------------------------------------------
+    "check": f"<circle cx='24' cy='24' r='18' fill='{PALE}' stroke='{LINE}' stroke-width='2'/>"
+             + f"<path d='M15 24.5l6 6 12-13' fill='none' stroke='{BLUE}' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'/>",
+    "clippy": f"<path d='M30 14v17a7 7 0 0 1-14 0V12a5 5 0 0 1 10 0v18a2.5 2.5 0 0 1-5 0V15' fill='none' stroke='{LINE}' stroke-width='3' stroke-linecap='round'/>"
+              + f"<circle cx='35' cy='10' r='5' fill='{BLUE}'/>",
+    "format": rect(6, 6, 36, 36, 3) + line(12, 14, 36, 14, BLUE) + line(16, 21, 36, 21) + line(16, 28, 32, 28) + line(12, 35, 30, 35, BLUE),
+    "test": f"<path d='M19 6h10M21 6v13L11 37a4 4 0 0 0 3.5 6h19a4 4 0 0 0 3.5-6L27 19V6' fill='{BODY}' stroke='{LINE}' stroke-width='2' stroke-linejoin='round'/>"
+            + f"<path d='M15 31h18l3.6 6.2A2.5 2.5 0 0 1 34.4 41H13.6a2.5 2.5 0 0 1-2.2-3.8z' fill='{BLUE}'/>",
+    "update": f"<path d='M38 22A14 14 0 0 0 12 15' fill='none' stroke='{BLUE}' stroke-width='3.5' stroke-linecap='round'/>"
+              + f"<path d='M10 9v7h7' fill='none' stroke='{BLUE}' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'/>"
+              + f"<path d='M10 26a14 14 0 0 0 26 7' fill='none' stroke='{LINE}' stroke-width='3.5' stroke-linecap='round'/>"
+              + f"<path d='M38 39v-7h-7' fill='none' stroke='{LINE}' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'/>",
+    "doc": f"<path d='M24 12c-5-4-12-4-18-3v29c6-1 13-1 18 3 5-4 12-4 18-3V9c-6-1-13-1-18 3z' fill='{BODY}' stroke='{LINE}' stroke-width='2' stroke-linejoin='round'/>"
+           + line(24, 12, 24, 41, LINE, 2) + line(10, 17, 19, 17, BLUE, 2) + line(10, 23, 19, 23) + line(29, 17, 38, 17) + line(29, 23, 38, 23),
+    "sqlx": f"<path d='M7 11v24c0 3 6 6 13 6s13-3 13-6V11' fill='{PALE}' stroke='{LINE}' stroke-width='2'/>"
+            + f"<ellipse cx='20' cy='11' rx='13' ry='5.5' fill='{BODY}' stroke='{LINE}' stroke-width='2'/>"
+            + f"<path d='M34 18l-7 12h6l-3 11 10-15h-6l4-8z' fill='{BLUE}' stroke='{LINE}' stroke-width='1.5' stroke-linejoin='round'/>",
     # --- IDE ------------------------------------------------------------------------
     "pointer": f"<path d='M14 6v31l8-8 5.5 12 5-2.3-5.5-11.7H38z' fill='{BODY}' stroke='{INK}' stroke-width='2.5' stroke-linejoin='round'/>",
     # --- non-visual components -----------------------------------------------------

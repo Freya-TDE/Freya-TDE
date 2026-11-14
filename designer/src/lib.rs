@@ -27,7 +27,7 @@ pub mod hit;
 pub mod render;
 
 pub use hit::{Handle, Hit, hit_test};
-pub use render::{Primitive, render, render_selection, tab_at};
+pub use render::{Primitive, render, render_anchors, render_selection, tab_at};
 pub mod command;
 pub mod document;
 

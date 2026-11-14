@@ -15,7 +15,8 @@ use tdr_core::{
 use tdr_designer::layout::drop_target;
 use tdr_designer::{
     Command, CommandError, Document, DocumentError, FormLayout, ItemKind, OpenReport, Point,
-    Primitive, Theme, hit_test, layout, render, render_selection, suggest_handler, tab_at,
+    Primitive, Theme, hit_test, layout, render, render_anchors, render_selection, suggest_handler,
+    tab_at,
 };
 
 /// Name of the first form of new projects (`main` and `app` are reserved
@@ -387,6 +388,7 @@ impl Session {
         let layout = layout(form, self.doc.registry(), &self.theme);
         let mut primitives = render(form, &layout, self.doc.registry(), &self.theme);
         primitives.extend(render_selection(&layout, &self.selection, &self.theme));
+        primitives.extend(render_anchors(form, &layout, &self.selection, &self.theme));
         Some((layout, primitives))
     }
 

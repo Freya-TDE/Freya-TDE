@@ -62,14 +62,17 @@ fn keep_expansion(new: &mut [TreeItem], old: &[TreeItem]) {
 
 pub struct StructureWindow {
     pub window: RnclWindow,
+    pub pane: super::dock::DockPane,
     tree: RnclTreeView,
 }
 
 impl StructureWindow {
     pub fn build() -> Self {
         let window = RnclWindow::new("Struktur");
-        let tree = RnclTreeView::new(&window);
-        Self { window, tree }
+        let pane =
+            super::dock::DockPane::new(&window, crate::desktop::window::STRUCTURE, "Struktur");
+        let tree = RnclTreeView::new(&pane.root);
+        Self { window, pane, tree }
     }
 
     pub fn refresh(&self, ide: &Ide) {
@@ -91,9 +94,10 @@ impl StructureWindow {
 pub fn connect(ide: &Rc<Ide>) {
     let structure = &ide.structure;
     let weak = Rc::downgrade(ide);
-    structure.window.on_resized(move |w, h| {
+    structure.pane.root.widget().on_resized(move |w, h| {
         if let Some(ide) = weak.upgrade() {
-            ide.structure.tree.set_geometry(0, 0, w, h);
+            let top = ide.structure.pane.layout_grip(w);
+            ide.structure.tree.set_geometry(0, top, w, (h - top).max(0));
         }
     });
     structure

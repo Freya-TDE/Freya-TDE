@@ -58,6 +58,9 @@ pub struct Desktop {
     /// What the project window shows.
     #[serde(default)]
     pub files: ScanOptions,
+    /// Tool windows docked as tabs into another one (`window → host`).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub docked: BTreeMap<String, String>,
 }
 
 /// The configuration directory of Freya TDE for this user. A folder of the
@@ -138,6 +141,7 @@ impl Desktop {
                 .map(|(n, p)| (n.to_owned(), p))
                 .collect(),
             files: ScanOptions::default(),
+            docked: BTreeMap::new(),
         }
     }
 

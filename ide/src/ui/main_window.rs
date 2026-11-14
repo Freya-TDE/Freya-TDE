@@ -15,8 +15,8 @@ const MARGIN: i32 = 6;
 const ROW: i32 = 34;
 const STATUS: i32 = 24;
 const BRANCH: i32 = 200;
-const TOOL_W: i32 = 78;
-const TOOL_H: i32 = 28;
+const TOOL_W: i32 = 96;
+const TOOL_H: i32 = ROW;
 
 /// The palette tab "Snippets": drop-down with all snippets, buttons, and the
 /// snippets the user put on the tab.
@@ -149,6 +149,7 @@ impl MainWindow {
             .map(|tool| {
                 let button = RnclButton::new(&window, tool.label());
                 button.widget().set_tool_tip(tool.description());
+                button.widget().set_image(icons::icon(tool.icon()).as_ref());
                 (button, *tool)
             })
             .collect();

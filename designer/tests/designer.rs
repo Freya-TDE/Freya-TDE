@@ -502,6 +502,26 @@ fn layout_rows_percent_and_absolute_with_anchors() {
         panic!("absolut erwartet");
     };
     assert_eq!(anchors, tdr_core::Anchors::new(false, true, true, false));
+    // Ankermarken: oben und rechts je eine Linie zum Rand des Inhalts (mit Nadel).
+    let shown = layout(doc.form(&main).unwrap(), doc.registry(), &theme);
+    let marks =
+        tdr_designer::render_anchors(doc.form(&main).unwrap(), &shown, &[name("button1")], &theme);
+    let lines: Vec<_> = marks
+        .iter()
+        .filter_map(|p| match p {
+            Primitive::Line { from, to, .. } => Some((*from, *to)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(lines.len(), 2, "{marks:?}");
+    let content = shown.item(&name("window")).unwrap().content.unwrap();
+    assert!(
+        lines.iter().any(|(_, to)| to.x == content.right()),
+        "{lines:?}"
+    );
+    assert!(lines.iter().any(|(_, to)| to.y == content.y), "{lines:?}");
+    // Nicht gewählt: keine Marken.
+    assert!(tdr_designer::render_anchors(doc.form(&main).unwrap(), &shown, &[], &theme).is_empty());
     let design = doc
         .form(&main)
         .unwrap()

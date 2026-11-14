@@ -54,6 +54,19 @@ impl Tool {
         }
     }
 
+    /// Name of its icon (built-in set, `ide/assets/palette/`).
+    pub fn icon(self) -> &'static str {
+        match self {
+            Tool::Check => "check",
+            Tool::Clippy => "clippy",
+            Tool::Fmt => "format",
+            Tool::Test => "test",
+            Tool::Update => "update",
+            Tool::Doc => "doc",
+            Tool::SqlxPrepare => "sqlx",
+        }
+    }
+
     /// What it does (tooltip).
     pub fn description(self) -> &'static str {
         match self {

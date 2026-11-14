@@ -9,6 +9,7 @@ pub mod database_window;
 mod debugger;
 mod debugging;
 mod designer;
+mod dock;
 mod git_window;
 pub mod icons;
 mod inspector;
@@ -240,6 +241,8 @@ pub struct Ide {
     /// A tool of the tool bar is running; its result.
     tool_busy: Cell<bool>,
     tool_results: RefCell<Option<GuiSender<toolbar::ToolDone>>>,
+    /// Panes docked as tabs into another window (`pane → host`).
+    docked: RefCell<std::collections::BTreeMap<String, String>>,
     /// Code completion (Ctrl+Shift+C): request, file and cursor.
     codetools_request: RefCell<Option<(u64, PathBuf, usize, usize)>>,
 }
@@ -334,6 +337,7 @@ impl Ide {
             completion_request: Cell::new(None),
             definition_request: Cell::new(None),
             codetools_request: RefCell::new(None),
+            docked: RefCell::new(Default::default()),
             snippets: RefCell::new(
                 toolbar::snippets_file()
                     .map(|f| crate::snippets::SnippetStore::load_from(&f))
@@ -391,6 +395,7 @@ impl Ide {
         designer::connect(&ide);
         inspector::connect(&ide);
         structure::connect(&ide);
+        dock::connect(&ide);
         panel::connect(&ide);
         code::connect(&ide);
         project::connect(&ide);
@@ -457,11 +462,13 @@ impl Ide {
                 window.show();
             }
         }
+        self.restore_docking(&desktop.docked);
     }
 
     fn save_desktop(&self) {
         let mut desktop = self.desktop.borrow_mut();
         desktop.files = self.project.options();
+        desktop.docked = self.docked();
         for (name, window) in self.windows() {
             let size = window.size();
             let position = window.screen_position();
@@ -1579,6 +1586,9 @@ impl Ide {
     }
 
     pub fn show_window(&self, name: &str) {
+        if self.show_pane(name) {
+            return;
+        }
         if let Some((_, window)) = self.windows().into_iter().find(|(n, _)| *n == name) {
             window.show();
         }

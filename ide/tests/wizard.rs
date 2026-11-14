@@ -194,3 +194,71 @@ fn wizard() {
 
     let _ = std::fs::remove_dir_all(&home);
 }
+
+#[test]
+fn web_starters() {
+    let home = std::env::temp_dir().join(format!("freya-wizard-web-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&home);
+    std::fs::create_dir_all(&home).unwrap();
+    let registry = registry();
+    let mut library = NewProject::library("netz", &home);
+    library.starters = vec![
+        Starter::WebSocketEndpoint {
+            path: "/live".into(),
+        },
+        Starter::WebServer,
+        Starter::WebSocket {
+            url: "wss://example.com/socket".into(),
+        },
+        Starter::HttpClient {
+            base_url: "https://api.example.com".into(),
+        },
+    ];
+    let preview = plan(&library, &registry);
+    assert!(preview.is_ok(), "{:#?}", preview.errors);
+    assert_eq!(preview.packs, ["tokio", "ws", "axum", "http"]);
+    // Der Endpunkt kommt nach dem Router, auf den er verweist.
+    assert_eq!(
+        preview.components,
+        [
+            "runtime: pack:tokio/Runtime",
+            "api: pack:axum/Router",
+            "socket: pack:ws/Client",
+            "http: pack:http/Client",
+            "ws_endpoint: pack:ws/Endpoint",
+        ]
+    );
+    // Endpunkt ohne Webserver, Client ohne URL.
+    let mut wrong = library.clone();
+    wrong.starters = vec![
+        Starter::WebSocketEndpoint { path: "/ws".into() },
+        Starter::WebSocket { url: " ".into() },
+    ];
+    let codes = codes_of(&plan(&wrong, &registry)).join(",");
+    assert!(codes.contains(codes::NEEDS_WEB_SERVER), "{codes}");
+    assert!(codes.contains(codes::NO_URL), "{codes}");
+
+    // Anlegen: der erzeugte Code baut (mit FREYA_TDE_CHECK_SQLX=1, lädt die Crates).
+    let created = create(&library, &registry).unwrap();
+    let services = std::fs::read_to_string(home.join("netz/src/services.ftdr")).unwrap();
+    assert!(
+        services.contains("/live") && services.contains("api"),
+        "{services}"
+    );
+    if std::env::var_os("FREYA_TDE_CHECK_SQLX").is_some() {
+        let mut check = std::process::Command::new("cargo");
+        check
+            .arg("check")
+            .current_dir(created.ptdr.parent().unwrap());
+        if std::env::var_os("FREYA_TDE_CHECK_OFFLINE").is_some() {
+            check.arg("--offline");
+        }
+        let output = check.output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    let _ = std::fs::remove_dir_all(&home);
+}

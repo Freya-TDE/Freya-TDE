@@ -69,6 +69,12 @@ pub enum Starter {
     Redis { url: String },
     /// Axum router `api` (HTTP).
     WebServer,
+    /// WebSocket endpoint `ws_endpoint` on the router `api` (needs `WebServer`).
+    WebSocketEndpoint { path: String },
+    /// WebSocket client `socket`.
+    WebSocket { url: String },
+    /// HTTP client `http` (reqwest); `base_url` may be empty.
+    HttpClient { base_url: String },
     /// Only the Tokio runtime (for own async code).
     Runtime,
 }
@@ -80,6 +86,9 @@ impl Starter {
             Starter::Database { .. } => ("sqlx", "Pool", "db"),
             Starter::Redis { .. } => ("redis", "Client", "cache"),
             Starter::WebServer => ("axum", "Router", "api"),
+            Starter::WebSocketEndpoint { .. } => ("ws", "Endpoint", "ws_endpoint"),
+            Starter::WebSocket { .. } => ("ws", "Client", "socket"),
+            Starter::HttpClient { .. } => ("http", "Client", "http"),
             Starter::Runtime => ("tokio", "Runtime", "runtime"),
         }
     }
@@ -90,7 +99,19 @@ impl Starter {
                 ("driver", Value::Enum(driver.name().to_owned())),
                 ("url", Value::Text(url.clone())),
             ],
-            Starter::Redis { url } => vec![("url", Value::Text(url.clone()))],
+            Starter::Redis { url } | Starter::WebSocket { url } => {
+                vec![("url", Value::Text(url.clone()))]
+            }
+            Starter::WebSocketEndpoint { path } => vec![
+                (
+                    "router",
+                    Value::reference(ComponentName::new("api").expect("valid name")),
+                ),
+                ("path", Value::Text(path.clone())),
+            ],
+            Starter::HttpClient { base_url } if !base_url.trim().is_empty() => {
+                vec![("base_url", Value::Text(base_url.trim().to_owned()))]
+            }
             _ => Vec::new(),
         }
     }
@@ -128,8 +149,10 @@ pub mod codes {
     pub const LICENSE_NOT_ACCEPTED: &str = "license_not_accepted";
     /// The pack a starter needs is not installed.
     pub const MISSING_PACK: &str = "missing_pack";
-    /// A starter is missing its URL.
+    /// A starter is missing its URL (WebSocket endpoint: a path with `/`).
     pub const NO_URL: &str = "no_url";
+    /// The WebSocket endpoint is chosen without the web server.
+    pub const NEEDS_WEB_SERVER: &str = "needs_web_server";
     /// Not a Rust version like `1.99` or `1.99.1`.
     pub const INVALID_RUST_VERSION: &str = "invalid_rust_version";
     /// A starter was chosen twice.
@@ -242,6 +265,8 @@ impl NewProject {
                 .filter(|s| **s != Starter::Runtime)
                 .cloned(),
         );
+        // Der Endpunkt verweist auf den Router: erst der Webserver.
+        list.sort_by_key(|s| matches!(s, Starter::WebSocketEndpoint { .. }));
         list
     }
 
@@ -320,9 +345,20 @@ impl NewProject {
                 errors.push(WizardIssue::new(codes::MISSING_PACK, pack));
             }
             let url_missing = match starter {
-                Starter::Database { url, .. } | Starter::Redis { url } => url.trim().is_empty(),
+                Starter::Database { url, .. }
+                | Starter::Redis { url }
+                | Starter::WebSocket { url } => url.trim().is_empty(),
+                Starter::WebSocketEndpoint { path } => !path.trim().starts_with('/'),
                 _ => false,
             };
+            if matches!(starter, Starter::WebSocketEndpoint { .. })
+                && !self.starters.contains(&Starter::WebServer)
+            {
+                errors.push(WizardIssue::new(
+                    codes::NEEDS_WEB_SERVER,
+                    "der WebSocket-Endpunkt braucht den Webserver (Axum)",
+                ));
+            }
             if url_missing {
                 errors.push(WizardIssue::new(codes::NO_URL, format!("{pack}/{ty}")));
             }

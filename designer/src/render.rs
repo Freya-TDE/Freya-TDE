@@ -774,3 +774,57 @@ pub fn render_selection(
     }
     out
 }
+
+/// Anchor marks of the selected, absolutely placed widgets: from each
+/// anchored edge a line to the same edge of the parent's content, with a pin
+/// at its end (like an anchor editor) – so one sees which edges keep their
+/// distance when the parent grows.
+pub fn render_anchors(
+    form: &tdr_core::Form,
+    layout: &FormLayout,
+    selected: &[ComponentName],
+    theme: &Theme,
+) -> Vec<Primitive> {
+    let mut out = Vec::new();
+    let color = theme.colors.selection;
+    for item in layout.items.iter().filter(|i| selected.contains(&i.name)) {
+        let Some(widget) = form.widget(&item.name) else {
+            continue;
+        };
+        let tdr_core::Placement::Absolute { anchors, .. } = widget.visual.placement else {
+            continue;
+        };
+        let Some(area) = item
+            .parent
+            .as_ref()
+            .and_then(|p| layout.item(p))
+            .map(|p| p.content.unwrap_or(p.rect))
+        else {
+            continue;
+        };
+        let r = item.rect;
+        let (cx, cy) = (r.x + r.width / 2, r.y + r.height / 2);
+        let mut mark = |from: Point, to: Point| {
+            out.push(Primitive::Line { from, to, color });
+            out.push(rect(
+                Rect::new(to.x - 3, to.y - 3, 7, 7),
+                Some(color),
+                Some(color),
+                1,
+            ));
+        };
+        if anchors.left {
+            mark(Point::new(r.x, cy), Point::new(area.x, cy));
+        }
+        if anchors.right {
+            mark(Point::new(r.right(), cy), Point::new(area.right(), cy));
+        }
+        if anchors.top {
+            mark(Point::new(cx, r.y), Point::new(cx, area.y));
+        }
+        if anchors.bottom {
+            mark(Point::new(cx, r.bottom()), Point::new(cx, area.bottom()));
+        }
+    }
+    out
+}

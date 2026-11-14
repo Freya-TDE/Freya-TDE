@@ -119,6 +119,12 @@ pub struct WizardWindow {
     redis: RnclCheckBox,
     redis_url: RnclTextField,
     web: RnclCheckBox,
+    ws_endpoint: RnclCheckBox,
+    ws_path: RnclTextField,
+    socket: RnclCheckBox,
+    socket_url: RnclTextField,
+    http: RnclCheckBox,
+    http_url: RnclTextField,
     runtime: RnclCheckBox,
     // Git und Zusammenfassung
     git: RnclCheckBox,
@@ -211,6 +217,15 @@ impl WizardWindow {
         let redis_url = RnclTextField::new(p);
         redis_url.set_text("redis://127.0.0.1/");
         let web = RnclCheckBox::new(p, "Webserver (Axum)");
+        let ws_endpoint = RnclCheckBox::new(p, "… mit WebSocket-Endpunkt");
+        let ws_path = RnclTextField::new(p);
+        ws_path.set_text("/ws");
+        let socket = RnclCheckBox::new(p, "WebSocket-Client");
+        let socket_url = RnclTextField::new(p);
+        socket_url.set_text("ws://127.0.0.1:3000/ws");
+        let http = RnclCheckBox::new(p, "HTTP-Client (reqwest)");
+        let http_url = RnclTextField::new(p);
+        http_url.set_placeholder("Basis-URL, z. B. https://api.example.com (optional)");
         let runtime = RnclCheckBox::new(p, "Tokio-Laufzeit für eigenen async-Code");
 
         // Git und Zusammenfassung
@@ -252,6 +267,12 @@ impl WizardWindow {
             redis,
             redis_url,
             web,
+            ws_endpoint,
+            ws_path,
+            socket,
+            socket_url,
+            http,
+            http_url,
             runtime,
             git,
             commit,
@@ -333,8 +354,36 @@ impl WizardWindow {
             ROW,
             A::TOP_STRETCH,
         );
-        put(&self.web, 0, 4 * ROW + 32, inner, ROW, A::TOP_STRETCH);
-        put(&self.runtime, 0, 5 * ROW + 38, inner, ROW, A::TOP_STRETCH);
+        let row = |i: i32| ROW + 6 + i * (ROW + 6);
+        put(&self.web, 0, row(3), inner, ROW, A::TOP_STRETCH);
+        put(
+            &self.ws_endpoint,
+            24,
+            row(4),
+            LABEL_W + 16,
+            ROW,
+            A::TOP_LEFT,
+        );
+        put(&self.ws_path, fx + 40, row(4), fw - 40, ROW, A::TOP_STRETCH);
+        put(&self.socket, 0, row(5), LABEL_W + 40, ROW, A::TOP_LEFT);
+        put(
+            &self.socket_url,
+            fx + 40,
+            row(5),
+            fw - 40,
+            ROW,
+            A::TOP_STRETCH,
+        );
+        put(&self.http, 0, row(6), LABEL_W + 40, ROW, A::TOP_LEFT);
+        put(
+            &self.http_url,
+            fx + 40,
+            row(6),
+            fw - 40,
+            ROW,
+            A::TOP_STRETCH,
+        );
+        put(&self.runtime, 0, row(7), inner, ROW, A::TOP_STRETCH);
         // Git und Zusammenfassung
         put(&self.git, 0, 0, inner, ROW, A::TOP_STRETCH);
         put(&self.commit, 24, ROW + 2, inner - 24, ROW, A::TOP_STRETCH);
@@ -412,6 +461,21 @@ impl WizardWindow {
         }
         if self.web.is_checked() {
             request.starters.push(Starter::WebServer);
+            if self.ws_endpoint.is_checked() {
+                request.starters.push(Starter::WebSocketEndpoint {
+                    path: self.ws_path.text().trim().to_owned(),
+                });
+            }
+        }
+        if self.socket.is_checked() {
+            request.starters.push(Starter::WebSocket {
+                url: self.socket_url.text().trim().to_owned(),
+            });
+        }
+        if self.http.is_checked() {
+            request.starters.push(Starter::HttpClient {
+                base_url: self.http_url.text().trim().to_owned(),
+            });
         }
         if self.runtime.is_checked() {
             request.starters.push(Starter::Runtime);
@@ -443,6 +507,9 @@ impl WizardWindow {
         self.database.set_checked(false);
         self.redis.set_checked(false);
         self.web.set_checked(false);
+        self.ws_endpoint.set_checked(false);
+        self.socket.set_checked(false);
+        self.http.set_checked(false);
         self.runtime.set_checked(false);
         for starter in &request.starters {
             match starter {
@@ -458,6 +525,18 @@ impl WizardWindow {
                     self.redis_url.set_text(url);
                 }
                 Starter::WebServer => self.web.set_checked(true),
+                Starter::WebSocketEndpoint { path } => {
+                    self.ws_endpoint.set_checked(true);
+                    self.ws_path.set_text(path);
+                }
+                Starter::WebSocket { url } => {
+                    self.socket.set_checked(true);
+                    self.socket_url.set_text(url);
+                }
+                Starter::HttpClient { base_url } => {
+                    self.http.set_checked(true);
+                    self.http_url.set_text(base_url);
+                }
                 Starter::Runtime => self.runtime.set_checked(true),
             }
         }
@@ -566,6 +645,14 @@ impl WizardWindow {
         self.driver.widget().set_enabled(self.database.is_checked());
         self.db_url.widget().set_enabled(self.database.is_checked());
         self.redis_url.widget().set_enabled(self.redis.is_checked());
+        self.ws_endpoint.widget().set_enabled(self.web.is_checked());
+        self.ws_path
+            .widget()
+            .set_enabled(self.web.is_checked() && self.ws_endpoint.is_checked());
+        self.socket_url
+            .widget()
+            .set_enabled(self.socket.is_checked());
+        self.http_url.widget().set_enabled(self.http.is_checked());
         self.commit.widget().set_enabled(self.git.is_checked());
         self.summary.set_text(&summary(&request, &plan));
         self.finish.widget().set_enabled(plan.is_ok());
@@ -721,7 +808,16 @@ pub fn connect(ide: &Rc<Ide>) {
         }
     }));
     // Jede Eingabe aktualisiert Hinweise und Zusammenfassung.
-    for field in [&w.name, &w.parent, &w.rust, &w.db_url, &w.redis_url] {
+    for field in [
+        &w.name,
+        &w.parent,
+        &w.rust,
+        &w.db_url,
+        &w.redis_url,
+        &w.ws_path,
+        &w.socket_url,
+        &w.http_url,
+    ] {
         field.on_text_changed(with(ide, |ide, _: String| ide.wizard.refresh(ide)));
     }
     for combo in [&w.kind, &w.backend] {
@@ -743,6 +839,9 @@ pub fn connect(ide: &Rc<Ide>) {
         &w.database,
         &w.redis,
         &w.web,
+        &w.ws_endpoint,
+        &w.socket,
+        &w.http,
         &w.runtime,
         &w.git,
         &w.commit,

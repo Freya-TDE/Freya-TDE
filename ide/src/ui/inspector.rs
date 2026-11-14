@@ -136,6 +136,7 @@ fn format(value: &Value) -> String {
 
 pub struct InspectorWindow {
     pub window: RnclWindow,
+    pub pane: super::dock::DockPane,
     element: RnclComboBox,
     tabs: RnclTabView,
     props: RnclScrollView,
@@ -157,17 +158,23 @@ type ApplyValue = dyn Fn(&Rc<Ide>, Value);
 impl InspectorWindow {
     pub fn build() -> Self {
         let window = RnclWindow::new("Objektinspektor");
-        let element = RnclComboBox::new(&window);
-        let tabs = RnclTabView::new(&window);
+        let pane = super::dock::DockPane::new(
+            &window,
+            crate::desktop::window::INSPECTOR,
+            "Objektinspektor",
+        );
+        let element = RnclComboBox::new(&pane.root);
+        let tabs = RnclTabView::new(&pane.root);
         let props_page = tabs.add_tab("Eigenschaften");
         let events_page = tabs.add_tab("Ereignisse");
         let props = RnclScrollView::new(&props_page);
         let events = RnclScrollView::new(&events_page);
-        let note = RnclLabel::new(&window, "");
+        let note = RnclLabel::new(&pane.root, "");
         let timer = Timer::new();
         timer.set_single_shot(true);
         Self {
             window,
+            pane,
             element,
             tabs,
             props,
@@ -187,9 +194,10 @@ impl InspectorWindow {
     }
 
     fn layout(&self, width: i32, height: i32) {
+        let grip = self.pane.layout_grip(width);
         self.element
-            .set_geometry(MARGIN, MARGIN, width - 2 * MARGIN, ROW);
-        let top = MARGIN + ROW + MARGIN;
+            .set_geometry(MARGIN, grip + MARGIN, width - 2 * MARGIN, ROW);
+        let top = grip + MARGIN + ROW + MARGIN;
         self.tabs
             .set_geometry(MARGIN, top, width - 2 * MARGIN, height - top - MARGIN);
         self.note
@@ -746,7 +754,7 @@ impl InspectorWindow {
 pub fn connect(ide: &Rc<Ide>) {
     let inspector = &ide.inspector;
     let weak = Rc::downgrade(ide);
-    inspector.window.on_resized(move |w, h| {
+    inspector.pane.root.widget().on_resized(move |w, h| {
         if let Some(ide) = weak.upgrade() {
             ide.inspector.layout(w, h);
         }

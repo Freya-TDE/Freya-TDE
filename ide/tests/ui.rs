@@ -1258,6 +1258,54 @@ fn main() {
         passed += 1;
     }
 
+    // Struktur und Objektinspektor als Reiter zusammenlegen und wieder trennen.
+    {
+        use freya_tde::desktop::window;
+        let ide = freya_tde::Ide::start(None);
+        ide.show_window(window::STRUCTURE);
+        ide.show_window(window::INSPECTOR);
+        ide.dock_view(window::STRUCTURE, window::INSPECTOR).unwrap();
+        assert_eq!(
+            ide.docked().get(window::STRUCTURE).map(String::as_str),
+            Some(window::INSPECTOR)
+        );
+        // „Struktur“ im Fenster-Menü zeigt jetzt den Reiter im Objektinspektor.
+        ide.show_window(window::STRUCTURE);
+        pump_until(1, || false);
+        let visible: Vec<String> = ide
+            .screenshots(&home.join("dock-shots"))
+            .iter()
+            .filter_map(|p| p.file_stem().map(|s| s.to_string_lossy().into_owned()))
+            .collect();
+        assert!(
+            visible.contains(&window::INSPECTOR.to_owned()),
+            "{visible:?}"
+        );
+        assert!(
+            !visible.contains(&window::STRUCTURE.to_owned()),
+            "{visible:?}"
+        );
+        if let Some(dir) = std::env::var_os("FREYA_TDE_SHOT").map(std::path::PathBuf::from) {
+            ide.screenshots(&dir.join("dock"));
+        }
+        // Ein Fenster, das Reiter enthält, wird nicht selbst angedockt.
+        assert!(ide.dock_view(window::INSPECTOR, window::STRUCTURE).is_ok());
+        ide.undock_view(window::STRUCTURE);
+        assert!(ide.docked().is_empty());
+        pump_until(1, || false);
+        let visible: Vec<String> = ide
+            .screenshots(&home.join("dock-shots-2"))
+            .iter()
+            .filter_map(|p| p.file_stem().map(|s| s.to_string_lossy().into_owned()))
+            .collect();
+        assert!(
+            visible.contains(&window::STRUCTURE.to_owned()),
+            "{visible:?}"
+        );
+        println!("test dock ... ok");
+        passed += 1;
+    }
+
     Application::process_events();
     let _ = std::fs::remove_dir_all(&home);
     println!("\ntest result: ok. {passed} passed");

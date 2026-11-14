@@ -61,6 +61,14 @@ const BUILTIN: &[(&str, &[u8])] = &[
     ("table", include_bytes!("../../assets/palette/table.png")),
     ("tabs", include_bytes!("../../assets/palette/tabs.png")),
     ("timer", include_bytes!("../../assets/palette/timer.png")),
+    // Werkzeugleiste des Hauptfensters.
+    ("check", include_bytes!("../../assets/palette/check.png")),
+    ("clippy", include_bytes!("../../assets/palette/clippy.png")),
+    ("format", include_bytes!("../../assets/palette/format.png")),
+    ("test", include_bytes!("../../assets/palette/test.png")),
+    ("update", include_bytes!("../../assets/palette/update.png")),
+    ("doc", include_bytes!("../../assets/palette/doc.png")),
+    ("sqlx", include_bytes!("../../assets/palette/sqlx.png")),
 ];
 
 /// Icon of a type without an icon of its own.
