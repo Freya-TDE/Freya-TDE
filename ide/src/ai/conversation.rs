@@ -65,6 +65,10 @@ pub enum Turn {
     Continue,
     /// Show these proposals and call [`Conversation::decide`].
     Approve { proposals: Vec<Proposal> },
+    /// Run these program calls (cargo) – e.g. in a worker thread – and
+    /// report each with [`Conversation::finished`]. Only with
+    /// [`Conversation::defer_runs`].
+    Run { proposals: Vec<Proposal> },
     /// The AI has answered.
     Done { text: String, stop: StopReason },
 }
@@ -87,10 +91,15 @@ pub struct Conversation {
     pub max_steps: u32,
     /// Answer limit per call.
     pub max_tokens: u32,
+    /// Program runs (cargo) are not executed here but handed to the
+    /// caller as [`Turn::Run`] (the IDE runs them in the background).
+    pub defer_runs: bool,
     system: String,
     history: Vec<Message>,
     events: Vec<Event>,
     pending: Vec<Proposal>,
+    /// Program runs handed to the caller, with "approved by the developer".
+    running: Vec<(Proposal, bool)>,
     /// Tool results of the current round, sent once all calls are done.
     results: Vec<Part>,
     steps: u32,
@@ -106,10 +115,12 @@ impl Conversation {
             permission,
             max_steps: Self::MAX_STEPS,
             max_tokens: ChatRequest::MAX_TOKENS,
+            defer_runs: false,
             system,
             history: Vec::new(),
             events: Vec::new(),
             pending: Vec::new(),
+            running: Vec::new(),
             results: Vec::new(),
             steps: 0,
             usage: Usage::default(),
@@ -129,6 +140,17 @@ impl Conversation {
         &self.pending
     }
 
+    /// Program runs waiting for [`Conversation::finished`].
+    pub fn running(&self) -> Vec<&Proposal> {
+        self.running.iter().map(|(p, _)| p).collect()
+    }
+
+    /// Replaces the system prompt (e.g. after the permission or the skills
+    /// changed).
+    pub fn set_system(&mut self, system: String) {
+        self.system = system;
+    }
+
     /// Tokens used so far.
     pub fn usage(&self) -> Usage {
         self.usage
@@ -136,7 +158,7 @@ impl Conversation {
 
     /// Adds the developer's message.
     pub fn say(&mut self, text: &str) {
-        self.reject_pending("Der Entwickler hat stattdessen etwas Neues geschrieben.");
+        self.abort("Der Entwickler hat stattdessen etwas Neues geschrieben.");
         self.steps = 0;
         self.history.push(Message::user(text));
     }
@@ -254,6 +276,10 @@ impl Conversation {
             }
         };
         if self.permission == AiPermission::Autonomous {
+            if self.defers(&proposal) {
+                self.running.push((proposal, false));
+                return;
+            }
             let result = tools::apply(ws, &proposal);
             self.result(id, name, result.clone());
             self.events.push(Event::Applied {
@@ -297,6 +323,11 @@ impl Conversation {
                 proposals: self.pending.clone(),
             };
         }
+        if !self.running.is_empty() {
+            return Turn::Run {
+                proposals: self.running.iter().map(|(p, _)| p.clone()).collect(),
+            };
+        }
         // Reihenfolge wie die Aufrufe (manche Anbieter verlangen das).
         let order: Vec<String> = self
             .history
@@ -321,6 +352,10 @@ impl Conversation {
         for proposal in std::mem::take(&mut self.pending) {
             let decision = decisions.iter().find(|d| d.call_id == proposal.call_id);
             if decision.is_some_and(|d| d.approve) {
+                if self.defers(&proposal) {
+                    self.running.push((proposal, true));
+                    continue;
+                }
                 let result = tools::apply(ws, &proposal);
                 self.result(
                     proposal.call_id.clone(),
@@ -358,10 +393,33 @@ impl Conversation {
         self.decide(&decisions, ws)
     }
 
-    /// Drops waiting proposals (e.g. when the developer writes again), so
-    /// the history stays valid for the providers.
-    fn reject_pending(&mut self, reason: &str) {
-        if self.pending.is_empty() && self.results.is_empty() {
+    fn defers(&self, proposal: &Proposal) -> bool {
+        self.defer_runs && matches!(proposal.action, tools::Action::Cargo { .. })
+    }
+
+    /// The result of a program run handed out with [`Turn::Run`].
+    pub fn finished(&mut self, call_id: &str, result: Result<String, String>) -> Turn {
+        if let Some(index) = self.running.iter().position(|(p, _)| p.call_id == call_id) {
+            let (proposal, approved) = self.running.remove(index);
+            self.result(
+                proposal.call_id.clone(),
+                proposal.tool.clone(),
+                result.clone(),
+            );
+            self.events.push(Event::Applied {
+                proposal,
+                approved,
+                result,
+            });
+        }
+        self.next_turn()
+    }
+
+    /// Ends what waits (proposals, program runs) with `reason` as error, so
+    /// the history stays valid for the providers (e.g. when the developer
+    /// writes again or cancels).
+    pub fn abort(&mut self, reason: &str) {
+        if self.pending.is_empty() && self.running.is_empty() && self.results.is_empty() {
             return;
         }
         for proposal in std::mem::take(&mut self.pending) {
@@ -371,6 +429,17 @@ impl Conversation {
                 Err(reason.to_owned()),
             );
             self.events.push(Event::Rejected { proposal });
+        }
+        for (proposal, _) in std::mem::take(&mut self.running) {
+            self.result(
+                proposal.call_id.clone(),
+                proposal.tool.clone(),
+                Err(reason.to_owned()),
+            );
+            self.events.push(Event::Refused {
+                tool: proposal.tool.clone(),
+                reason: reason.to_owned(),
+            });
         }
         self.next_turn();
     }
@@ -440,6 +509,14 @@ pub fn run(
                 Turn::Approve { proposals } => {
                     let decisions = approve(&proposals);
                     turn = conversation.decide(&decisions, ws);
+                }
+                Turn::Run { proposals } => {
+                    let mut next = Turn::Continue;
+                    for p in proposals {
+                        let result = tools::apply(ws, &p);
+                        next = conversation.finished(&p.call_id, result);
+                    }
+                    turn = next;
                 }
                 Turn::Done { text, .. } => return Ok(text),
             }
@@ -711,6 +788,59 @@ mod tests {
         ));
         assert_eq!(h.last().unwrap().text(), "doch nicht");
         assert!(c.pending().is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn deferred_runs_and_abort() {
+        let (mut ws, dir) = project("defer");
+        let skills = SkillTable::default();
+        let mut c = Conversation::new(String::new(), AiPermission::Preview);
+        c.defer_runs = true;
+        c.say("prüfen");
+        let turn = c
+            .receive(
+                calls(&[
+                    ("c1", "cargo", json!({"tool": "check"})),
+                    ("r1", "project_info", json!({})),
+                ]),
+                &mut ws,
+                &skills,
+            )
+            .unwrap();
+        assert!(matches!(turn, Turn::Approve { .. }));
+        let Turn::Run { proposals } = c.decide_all(true, &mut ws) else {
+            panic!("Run erwartet")
+        };
+        assert_eq!(proposals[0].call_id, "c1");
+        assert_eq!(c.running().len(), 1);
+        assert_eq!(
+            c.finished("c1", Ok("cargo check: ok".into())),
+            Turn::Continue
+        );
+        let r = results(&c);
+        assert_eq!(
+            (r[0].0.as_str(), r[0].1.as_str()),
+            ("c1", "cargo check: ok")
+        );
+        assert!(matches!(
+            c.events().last(),
+            Some(Event::Applied { approved: true, .. })
+        ));
+
+        // Abbrechen, während ein Lauf wartet: Fehler als Ergebnis.
+        c.permission = AiPermission::Autonomous;
+        let turn = c
+            .receive(
+                calls(&[("c2", "cargo", json!({"tool": "test"}))]),
+                &mut ws,
+                &skills,
+            )
+            .unwrap();
+        assert!(matches!(turn, Turn::Run { .. }));
+        c.abort("abgebrochen");
+        assert!(c.running().is_empty());
+        assert!(results(&c)[0].2);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

@@ -1,4 +1,4 @@
-//! Putting tool windows together as tabs (structure and object inspector):
+//! Putting tool windows together as tabs (structure, object inspector, KI):
 //! each has a grip at the top ("⠿ Struktur"); dragging it onto the other
 //! window makes both one window with tabs, dragging it out into the open
 //! (no drop target) makes it its own window again. Kept in the window
@@ -63,10 +63,11 @@ impl DockPane {
 
 impl Ide {
     /// The dockable panes with their windows.
-    fn panes(&self) -> [(&DockPane, &RnclWindow); 2] {
+    fn panes(&self) -> [(&DockPane, &RnclWindow); 3] {
         [
             (&self.structure.pane, &self.structure.window),
             (&self.inspector.pane, &self.inspector.window),
+            (&self.ai_window.pane, &self.ai_window.window),
         ]
     }
 

@@ -19,10 +19,11 @@ Fensters steht in [`ide/README.md`](../../ide/README.md).
 | **Quellcodeverwaltung** | Git wie in VS Code (siehe [Kapitel 11](11-git.md)) |
 | **Debugger** | Variablen, Überwacht, Aufrufstapel, Threads, Haltepunkte |
 | **Datenbank** | Schema-Browser für SQLx-Pools und Redis |
+| **KI** | Gespräch mit der KI: oben die Auswahl der KI (Drop-down mit allen Profilen, jederzeit umschaltbar, je Projekt gemerkt) und was sie darf; Verlauf, Vorschläge mit Vorschau (Übernehmen, Ablehnen, Alle übernehmen), Skills, Eingabe (Strg+Enter) – siehe [Kapitel 13](13-automatisierung.md) |
 
-## Struktur und Objektinspektor zusammenlegen
+## Struktur, Objektinspektor und KI zusammenlegen
 
-Beide Fenster haben oben einen Griff („⠿ Struktur“, „⠿ Objektinspektor“). Zieht man den Griff des einen auf
+Die drei Fenster haben oben einen Griff („⠿ Struktur“, „⠿ Objektinspektor“, „⠿ KI“). Zieht man den Griff des einen auf
 das andere Fenster, werden beide **ein Fenster mit Reitern**. Zieht man den Griff ins Freie (neben jedes
 Fenster), wird der Reiter wieder ein eigenes Fenster. Auch das bleibt in der Fensteranordnung gespeichert.
 
@@ -67,5 +68,6 @@ use-Zeile, Code):
 | Strg+Umschalt+C | Code vervollständigen (Methode, Feld, Trait) |
 | Strg+F12 / Strg+Klick | Gehe zu Definition |
 | Strg+Umschalt+G / B / M / U / T | Quellcodeverwaltung / Datenbank / Probleme / Ausgabe / Terminal |
+| Strg+Umschalt+K | KI |
 
 Die Kürzel des Hauptmenüs gelten in jedem Fenster; unter macOS ist Strg die Befehlstaste (⌘).

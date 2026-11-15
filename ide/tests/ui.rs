@@ -34,6 +34,50 @@ fn pump_until(seconds: u64, mut done: impl FnMut() -> bool) -> bool {
     false
 }
 
+/// A tiny OpenAI-compatible server: answers each POST with the next JSON
+/// and hands the request bodies over.
+fn ai_server(
+    answers: Vec<serde_json::Value>,
+) -> (String, std::sync::mpsc::Receiver<serde_json::Value>) {
+    use std::io::{BufRead, BufReader, Read, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = format!("http://{}", listener.local_addr().unwrap());
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        for answer in answers {
+            let Ok((stream, _)) = listener.accept() else {
+                return;
+            };
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut len = 0;
+            loop {
+                let mut line = String::new();
+                reader.read_line(&mut line).unwrap();
+                let line = line.trim_end();
+                if line.is_empty() {
+                    break;
+                }
+                if let Some((k, v)) = line.split_once(':')
+                    && k.eq_ignore_ascii_case("content-length")
+                {
+                    len = v.trim().parse().unwrap();
+                }
+            }
+            let mut body = vec![0; len];
+            reader.read_exact(&mut body).unwrap();
+            let _ = tx.send(serde_json::from_slice(&body).unwrap_or_default());
+            let text = answer.to_string();
+            let mut out = stream;
+            let _ = write!(
+                out,
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{text}",
+                text.len()
+            );
+        }
+    });
+    (addr, rx)
+}
+
 fn main() {
     // Eigene Konfiguration, damit die Fensteranordnung des Nutzers unberührt bleibt.
     let home = std::env::temp_dir().join(format!("freya-ui-{}", std::process::id()));
@@ -1303,6 +1347,119 @@ fn main() {
             "{visible:?}"
         );
         println!("test dock ... ok");
+        passed += 1;
+    }
+
+    // KI-Fenster: Profil per Drop-down wählen, Gespräch mit Vorschlag und
+    // Übernehmen gegen einen kleinen OpenAI-kompatiblen Server.
+    {
+        use freya_tde::settings::{AiPermission, AiProfile, AiProvider, MemoryStore, SettingsEdit};
+        use serde_json::json;
+        let ide = freya_tde::Ide::start(None);
+        ide.set_secret_store(Box::new(MemoryStore::default()));
+        let unused = ai_server(Vec::new());
+        let (addr, seen) = ai_server(vec![
+            json!({"choices": [{"message": {"content": "Ich lege ihn an.", "tool_calls": [
+                {"id": "r1", "type": "function", "function": {"name": "project_info", "arguments": "{}"}},
+                {"id": "w1", "type": "function", "function": {"name": "designer", "arguments":
+                    "{\"commands\":[{\"command\":\"add_widget\",\"form\":\"main_form\",\"parent\":\"window\",\"type\":\"core/Button\",\"name\":\"ok_button\"}]}"}}
+            ]}, "finish_reason": "tool_calls"}]}),
+            json!({"choices": [{"message": {"content": "Erledigt."}, "finish_reason": "stop"}]}),
+        ]);
+        let mut edit = SettingsEdit::new(&ide.settings());
+        // Profile früherer Blöcke entfernen.
+        for old in ide.settings().ai.profiles.iter().map(|p| p.name.clone()) {
+            edit.remove(&old);
+        }
+        for (name, endpoint) in [("Lokal A", &unused.0), ("Lokal B", &addr)] {
+            let mut p = AiProfile::new(name, AiProvider::LmStudio);
+            p.endpoint = Some(format!("{endpoint}/v1"));
+            p.model = "test-model".into();
+            edit.settings.ai.profiles.push(p);
+        }
+        edit.settings.ai.show_on_new_project = false;
+        ide.update_settings(&edit).unwrap();
+        let parent = home.join("ki");
+        std::fs::create_dir_all(&parent).unwrap();
+        let created = ide
+            .create_project(&freya_tde::wizard::NewProject::program(
+                "kitest", &parent, "none",
+            ))
+            .unwrap();
+        ide.show_ai();
+        pump_until(1, || false);
+        let (items, current) = ide.ai_profile_choices();
+        assert_eq!(items.len(), 2, "{items:?}");
+        assert_eq!(current.as_deref(), Some("Lokal A"));
+        ide.ai_choose_profile(1);
+        assert_eq!(ide.ai_profile().as_deref(), Some("Lokal B"));
+        assert_eq!(
+            ide.settings()
+                .ai
+                .projects
+                .get(&created.ptdr)
+                .map(String::as_str),
+            Some("Lokal B"),
+            "für das Projekt gemerkt"
+        );
+        assert_eq!(ide.ai_permission(), AiPermission::Preview);
+
+        ide.ai_send("Füge einen OK-Knopf hinzu").unwrap();
+        assert!(
+            pump_until(20, || !ide.ai_pending().is_empty()),
+            "Vorschlag kommt: {}",
+            ide.ai_transcript()
+        );
+        let request = seen.recv().unwrap();
+        assert_eq!(request["model"], "test-model");
+        assert!(
+            request["messages"][0]["content"]
+                .as_str()
+                .unwrap()
+                .contains("kitest")
+        );
+        assert!(ide.ai_pending()[0].summary.contains("add_widget"));
+        let has_button = |ide: &freya_tde::Ide| {
+            ide.session().document().forms()[0]
+                .widget(&name("ok_button"))
+                .is_some()
+        };
+        assert!(!has_button(&ide), "erst nach Übernehmen");
+        if let Some(dir) = std::env::var_os("FREYA_TDE_SHOT").map(std::path::PathBuf::from) {
+            ide.screenshots(&dir.join("ai"));
+        }
+        ide.ai_decide_all(true);
+        assert!(
+            pump_until(20, || ide.ai_transcript().contains("KI: Erledigt.")),
+            "{}",
+            ide.ai_transcript()
+        );
+        assert!(has_button(&ide));
+        let transcript = ide.ai_transcript();
+        assert!(
+            transcript.contains("Du: Füge einen OK-Knopf hinzu"),
+            "{transcript}"
+        );
+        assert!(
+            transcript.contains("✓ Designer: add_widget"),
+            "{transcript}"
+        );
+        let second = seen.recv().unwrap();
+        let tools: Vec<&serde_json::Value> = second["messages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|m| m["role"] == "tool")
+            .collect();
+        assert_eq!(tools.len(), 2);
+        assert!(unused.1.try_recv().is_err(), "Profil A wurde nicht gefragt");
+
+        ide.set_ai_permission(AiPermission::ReadOnly);
+        assert_eq!(
+            ide.settings().ai.permissions.get(&created.ptdr),
+            Some(&AiPermission::ReadOnly)
+        );
+        println!("test ai window ... ok");
         passed += 1;
     }
 

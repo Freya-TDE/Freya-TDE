@@ -3,6 +3,7 @@
 //! change.
 
 pub mod about;
+mod ai_window;
 mod code;
 mod convert;
 pub mod database_window;
@@ -241,6 +242,9 @@ pub struct Ide {
     /// A tool of the tool bar is running; its result.
     tool_busy: Cell<bool>,
     tool_results: RefCell<Option<GuiSender<toolbar::ToolDone>>>,
+    /// Window "KI" and the results of its background work.
+    ai_window: ai_window::AiWindow,
+    ai_results: RefCell<Option<GuiSender<ai_window::AiDone>>>,
     /// Panes docked as tabs into another window (`pane → host`).
     docked: RefCell<std::collections::BTreeMap<String, String>>,
     /// Code completion (Ctrl+Shift+C): request, file and cursor.
@@ -347,7 +351,15 @@ impl Ide {
             snippet_window: snippet_window::SnippetWindow::build(),
             tool_busy: Cell::new(false),
             tool_results: RefCell::new(None),
+            ai_window: ai_window::AiWindow::build(),
+            ai_results: RefCell::new(None),
         });
+        let weak = Rc::downgrade(&ide);
+        *ide.ai_results.borrow_mut() = Some(GuiSender::new(move |done| {
+            if let Some(ide) = weak.upgrade() {
+                ide.ai_done(done);
+            }
+        }));
         let weak = Rc::downgrade(&ide);
         *ide.build_results.borrow_mut() = Some(GuiSender::new(move |report| {
             if let Some(ide) = weak.upgrade() {
@@ -407,6 +419,7 @@ impl Ide {
         wizard_window::connect(&ide);
         settings_window::connect(&ide);
         snippet_window::connect(&ide);
+        ai_window::connect(&ide);
         ide.apply_settings();
         // Wie bei Delphi: Strg+G, F9, Strg+Umschalt+G … aus jedem Fenster.
         for (name, window) in ide.windows() {
@@ -422,6 +435,12 @@ impl Ide {
             selection: true,
         });
         ide.restore_desktop();
+        {
+            let ai = &ide.settings.borrow().ai;
+            if ai.show_always && ai.connected() {
+                ide.show_ai();
+            }
+        }
         ide
     }
 
@@ -429,7 +448,7 @@ impl Ide {
         self.session.borrow()
     }
 
-    fn windows(&self) -> [(&'static str, &RnclWindow); 11] {
+    fn windows(&self) -> [(&'static str, &RnclWindow); 12] {
         [
             (window::MAIN, &self.main.window),
             (window::STRUCTURE, &self.structure.window),
@@ -442,6 +461,7 @@ impl Ide {
             (window::DEBUGGER, &self.debugger.window),
             (window::SHORTCUTS, &self.shortcuts.window),
             (window::DATABASE, &self.database_window.window),
+            (window::AI, &self.ai_window.window),
         ]
     }
 
@@ -1612,6 +1632,10 @@ impl Ide {
         }
         if let Some(me) = self.me.upgrade() {
             self.inspector.refresh(&me, changes.model);
+        }
+        if changes.model && self.ai_window.window.widget().is_visible() {
+            self.ai_prepare();
+            self.ai_window.refresh(self);
         }
         self.refreshing.set(false);
     }

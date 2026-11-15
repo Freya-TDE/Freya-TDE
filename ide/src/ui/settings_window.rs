@@ -529,6 +529,8 @@ impl Ide {
         };
         Application::set_color_scheme(scheme);
         dialog::set_default_folder(settings.start_folder().as_deref());
+        drop(settings);
+        self.ai_window.refresh(self);
     }
 
     /// "OK" in the settings window.

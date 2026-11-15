@@ -19,10 +19,11 @@ arrangement is saved (`<config>/freya-tde/desktop.toml`) and restored on start; 
 | **Source control** | Git like in VS Code (see [chapter 11](11-git.md)) |
 | **Debugger** | variables, watches, call stack, threads, breakpoints |
 | **Database** | schema browser for SQLx pools and Redis |
+| **KI** (AI) | conversation with the AI: at the top the choice of AI (drop-down with all profiles, switchable at any time, remembered per project) and what it may do; history, proposals with preview (accept, reject, accept all), skills, input (Ctrl+Enter) – see [chapter 13](13-automation.md) |
 
-## Combining structure and object inspector
+## Combining structure, object inspector and AI
 
-Both windows have a grip at the top ("⠿ Struktur", "⠿ Objektinspektor"). Drag one window's grip onto the
+The three windows have a grip at the top ("⠿ Struktur", "⠿ Objektinspektor", "⠿ KI"). Drag one window's grip onto the
 other window and both become **one window with tabs**. Drag the grip out into the open (next to every
 window) and the tab becomes a window of its own again. This is kept in the window arrangement as well.
 
@@ -68,5 +69,6 @@ most important ones (like Delphi/Lazarus):
 | Ctrl+Shift+C | code completion (method, field, trait) |
 | Ctrl+F12 / Ctrl+click | go to definition |
 | Ctrl+Shift+G / B / M / U / T | source control / database / problems / output / terminal |
+| Ctrl+Shift+K | AI |
 
 The main menu's shortcuts work in every window; on macOS Ctrl is the Command key (⌘).

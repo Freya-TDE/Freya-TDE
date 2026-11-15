@@ -48,6 +48,7 @@ pub mod window {
     pub const DEBUGGER: &str = "debugger";
     pub const SHORTCUTS: &str = "shortcuts";
     pub const DATABASE: &str = "database";
+    pub const AI: &str = "ai";
 }
 
 /// All window places.
@@ -132,6 +133,14 @@ impl Desktop {
                 Place {
                     visible: false,
                     ..Place::at(1160, 200, 380, 600)
+                },
+            ),
+            // Fenster → KI (oder per Einstellung beim Start).
+            (
+                window::AI,
+                Place {
+                    visible: false,
+                    ..Place::at(1160, 200, 440, 720)
                 },
             ),
         ];

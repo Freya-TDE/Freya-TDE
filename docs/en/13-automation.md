@@ -41,7 +41,12 @@ overview is in [`ide/README.md`](../../ide/README.md).
 
 ## The AI integration
 
-The core is a library without UI (`freya_tde::ai`); the AI window builds on it.
+The core is a library without UI (`freya_tde::ai`); the window **KI** (Window → KI, Ctrl+Shift+K) builds on
+it. At the top you choose the AI of the conversation from all profiles (drop-down); the switch applies from the
+next request, the conversation goes on with the new AI, and the choice is remembered for the project (like
+"Für dieses Projekt" in the settings). Next to it is what the AI may do. Requests run in the background, so
+does `cargo`; the AI's changes go through the same commands as the designer (undoable) and show up in open
+code tabs at once.
 
 - **Providers:** three protocols cover the usual cloud services and local models, also in the local network –
   Anthropic Messages (Claude), OpenAI-compatible (OpenAI, xAI/Grok, Mistral, DeepSeek, Groq, OpenRouter,

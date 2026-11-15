@@ -42,7 +42,12 @@ viele mehr – eine Übersicht steht in [`ide/README.md`](../../ide/README.md).
 
 ## Die KI-Anbindung
 
-Der Kern steht als Bibliothek ohne Oberfläche (`freya_tde::ai`); das KI-Fenster baut darauf auf.
+Der Kern ist eine Bibliothek ohne Oberfläche (`freya_tde::ai`); das Fenster **KI** (Fenster → KI,
+Strg+Umschalt+K) baut darauf auf. Oben wählt man die KI des Gesprächs aus allen Profilen (Drop-down); der
+Wechsel gilt ab der nächsten Anfrage, das Gespräch läuft mit der neuen KI weiter, und die Wahl wird für das
+Projekt gemerkt (wie „Für dieses Projekt“ in den Einstellungen). Daneben steht, was die KI darf. Anfragen
+laufen im Hintergrund, `cargo` ebenso; Änderungen der KI gehen über dieselben Befehle wie der Designer
+(rückgängig machbar) und erscheinen sofort in offenen Code-Reitern.
 
 - **Anbieter:** drei Protokolle decken die üblichen Cloud-Dienste und lokale Modelle ab, auch im lokalen
   Netzwerk – Anthropic Messages (Claude), OpenAI-kompatibel (OpenAI, xAI/Grok, Mistral, DeepSeek, Groq,

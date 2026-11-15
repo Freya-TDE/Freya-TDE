@@ -360,6 +360,23 @@ impl CodeWindow {
         true
     }
 
+    /// Someone else (the AI) wrote `text` to `path` on disk: an open file
+    /// shows it as its saved state. `false` if it is not open.
+    pub fn written(&self, ide: &Ide, path: &Path, text: &str) -> bool {
+        let Some(file) = self.file(path) else {
+            return false;
+        };
+        file.editor.set_text(text);
+        let old = file.shown.replace(text.to_owned());
+        *file.saved.borrow_mut() = text.to_owned();
+        ide.code_lines_moved(&file.path, &old, text);
+        self.refresh_diff(&file.path);
+        self.update_titles();
+        ide.lsp_changed(&file.path, text);
+        ide.lsp_saved(std::slice::from_ref(&file.path));
+        true
+    }
+
     /// Gutter marks of an open file (build and rust-analyzer).
     pub fn marks(&self, path: &Path) -> Vec<LineMark> {
         self.file(path)

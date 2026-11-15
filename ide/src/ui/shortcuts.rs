@@ -70,6 +70,8 @@ fn description(id: &str) -> &'static str {
         "code.complete" => "Zeigt Vorschläge (rust-analyzer).",
         "code.definition" => "Springt zur Definition des Worts am Cursor.",
         "code.designer" | "designer.code" => "Wechselt zwischen Designer und Code.",
+        "window.ai" => "Zeigt das Fenster KI (Gespräch, Profil-Auswahl, Vorschläge).",
+        "ai.send" => "Schickt die Nachricht an die KI.",
         "git.commit" => "Committet die gestagten Änderungen mit der Nachricht.",
         "git.refresh" => "Liest Status und Graph neu ein.",
         "term.copy" => "Kopiert die Auswahl im Terminal.",
@@ -117,6 +119,7 @@ pub fn shortcuts() -> Vec<Shortcut> {
             "Terminal",
             vec![("Kontextmenü".to_owned(), super::panel::terminal_menu())],
         ),
+        ("KI", vec![("KI".to_owned(), super::ai_window::menu())]),
     ];
     for (scope, bar) in bars {
         for (title, menu) in bar {

@@ -169,6 +169,13 @@ CT-Editor; Projekt-Skills nach Freigabe mit SHA-256), `system_prompt`. Codes in 
 `FREYA_TDE_TEST_AI="provider|endpoint|model" cargo test -p freya-tde --test ai_live`.
 *AI core without UI: module `ai` – provider client (three protocols), tools with permissions and previews,
 conversation state machine, skill table.*
+Fenster „KI“ (Fenster → KI, Strg+Umschalt+K; `ui/ai_window.rs`, andockbar): Drop-down mit allen KI-Profilen
+(jederzeit umschaltbar, je Projekt gemerkt), Rechte, Verlauf, Vorschläge mit Vorschau, Skills, Eingabe. Anfragen
+und `cargo` laufen im Hintergrund (`Conversation::defer_runs`, `Turn::Run`), Werkzeuge auf der `Session` und den
+offenen Editoren. Automatisierung: `Ide::show_ai`, `ai_send`, `ai_profile`, `set_ai_profile`, `ai_choose_profile`,
+`ai_profile_choices`, `ai_permission`, `set_ai_permission`, `ai_pending`, `ai_decide`, `ai_decide_all`,
+`ai_cancel`, `ai_new_conversation`, `ai_busy`, `ai_transcript`, `ai_approve_skills`.
+*Window "KI": AI drop-down (switchable, remembered per project), permission, history, proposals, skills.*
 Den CT-Editor sucht Freya TDE in
 `FREYA_TDE_CT_EDITOR`, neben dem Programm, im Repository (`CT-Editor/target/…`) und im `PATH`. Packs werden in `components/`
 und `widgets/` neben dem Programm bzw. im Repository gesucht, zusätzlich in

@@ -763,6 +763,13 @@ impl Ide {
             status.push_str(&format!(" {} ({})", w.detail, w.code));
         }
         self.set_status(&status);
+        let show_ai = {
+            let ai = &self.settings.borrow().ai;
+            ai.connected() && (ai.show_on_new_project || ai.show_always)
+        };
+        if show_ai {
+            self.show_ai();
+        }
         Ok(created)
     }
 
