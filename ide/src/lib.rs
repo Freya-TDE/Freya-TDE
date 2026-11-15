@@ -6,6 +6,7 @@
 //! behind them lives in [`session`] and [`files`] (no UI) and in
 //! `tdr-designer`; the windows in `ui` only forward input and draw.
 
+pub mod ai;
 pub mod codetools;
 pub mod database;
 pub mod debug;

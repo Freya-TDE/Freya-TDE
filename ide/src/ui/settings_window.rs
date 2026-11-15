@@ -491,13 +491,14 @@ impl Ide {
 
     /// Takes over `edit`: stores and removes keys, saves the settings file
     /// and applies the settings. Blocking problems come back with their codes
-    /// (a missing key is not one: it can still come from `FREYA_TDE_AI_KEY`).
+    /// (a missing key is not one: it can still come from `FREYA_TDE_AI_KEY`;
+    /// nor is a key over `http://`, which is only a warning).
     pub fn update_settings(&self, edit: &SettingsEdit) -> Result<Settings, Vec<SettingsError>> {
         let blocking: Vec<SettingsError> = edit
             .settings
             .validate()
             .into_iter()
-            .filter(|i| i.code != codes::KEY_MISSING)
+            .filter(|i| i.code != codes::KEY_MISSING && i.code != codes::INSECURE_KEY_TRANSPORT)
             .map(|i| SettingsError {
                 code: i.code,
                 detail: i.detail,

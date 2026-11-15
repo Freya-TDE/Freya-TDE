@@ -39,7 +39,30 @@ The IDE itself (`freya_tde::Ide`) offers automation for tests and a future AI in
 `update_settings`, `run_tool`, `insert_snippet`, `dock_view`, `git_run`, `debug_command` and many more – an
 overview is in [`ide/README.md`](../../ide/README.md).
 
-## The planned AI integration
+## The AI integration
 
-The AI profiles are already prepared in the settings. The integration itself – an AI window that uses the
-library API directly – is the next big step.
+The core is a library without UI (`freya_tde::ai`); the AI window builds on it.
+
+- **Providers:** three protocols cover the usual cloud services and local models, also in the local network –
+  Anthropic Messages (Claude), OpenAI-compatible (OpenAI, xAI/Grok, Mistral, DeepSeek, Groq, OpenRouter,
+  Ollama, LM Studio, llama.cpp, vLLM …) and Google Gemini. `Client::models` lists the models, `Client::chat`
+  sends a request (synchronous, for worker threads). Errors have stable codes (`auth_failed`, `rate_limited`,
+  `unreachable`, `timeout` …). If an API key would go over `http://` to another machine, Freya TDE warns
+  (`insecure_key_transport`).
+- **Tools** are the library API: reading (`project_info`, `list_files`, `read_file`, `search_files`,
+  `read_form`, `component_types`, `problems`, `generated_code`) is always allowed; changing (`write_file`,
+  `edit_file`, `designer`, `generate_code`) and running (`cargo` check/clippy/test) follow the project's
+  permission. The AI changes forms only through designer commands and never touches generated files.
+- **Permission per project:** "read only", "with preview" (default: every change is first a proposal with a
+  diff and only "Übernehmen" applies it) and "autonomous". It lives in the personal settings, not in the
+  `.ptdr` – a cloned repository cannot grant the AI rights.
+- **Conversation:** `Conversation` is a state machine without network or UI (`say`, `request`, `receive`,
+  `decide`); `ai::run` handles one message in a loop (tests, scripts).
+- **Skills** in the open Agent Skills format: built in are the skills of Freya TDE (`ide/skills`), RUF and the
+  CT-Editor. A project's own skills (`.agents/skills/`) apply only after approval; the approval remembers the
+  SHA-256 of the content, so a changed skill needs a new one. The AI first sees only names and descriptions
+  and loads the text when needed (`load_skill`). Signed skill packs come with the launcher.
+
+A test against a real provider runs with
+`FREYA_TDE_TEST_AI="ollama|http://localhost:11434|qwen3:8b" cargo test -p freya-tde --test ai_live`
+(key from `FREYA_TDE_AI_KEY`).

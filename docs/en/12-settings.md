@@ -16,8 +16,8 @@ changes over.
 
 ## AI
 
-Several **AI profiles** with provider (Anthropic, OpenAI, Ollama, OpenAI-compatible such as LM Studio),
-model, address and API key; one default profile and one per project ("because project X is like this, I use
+Several **AI profiles** with provider (Anthropic, OpenAI, Google Gemini, xAI, Mistral, DeepSeek, Groq,
+OpenRouter, Ollama, LM Studio or an own OpenAI-compatible server – local or in the network), model, address and API key; one default profile and one per project ("because project X is like this, I use
 AI Y"). Plus "show the AI window for a new project" and "always show" – effective once the AI integration
 arrives.
 

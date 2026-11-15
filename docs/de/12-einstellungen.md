@@ -15,7 +15,8 @@
 
 ## KI
 
-Mehrere **KI-Profile** mit Anbieter (Anthropic, OpenAI, Ollama, OpenAI-kompatibel wie LM Studio), Modell,
+Mehrere **KI-Profile** mit Anbieter (Anthropic, OpenAI, Google Gemini, xAI, Mistral, DeepSeek, Groq,
+OpenRouter, Ollama, LM Studio oder ein eigener OpenAI-kompatibler Server – lokal oder im Netzwerk), Modell,
 Adresse und API-Key; ein Standardprofil und je Projekt ein eigenes („weil Projekt X so ist, nehme ich KI Y“).
 Dazu „KI-Fenster bei neuem Projekt anzeigen“ und „immer anzeigen“ – wirksam, sobald die KI-Anbindung kommt.
 

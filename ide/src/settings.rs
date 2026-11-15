@@ -98,7 +98,11 @@ impl Theme {
     }
 }
 
-/// Who answers the AI requests.
+/// Who answers the AI requests: cloud services and local models (also in
+/// the local network, e.g. `http://192.168.1.20:11434`).
+///
+/// Each provider speaks one of three protocols ([`AiProvider::protocol`]);
+/// most services and all local servers use the OpenAI-compatible one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AiProvider {
@@ -106,18 +110,51 @@ pub enum AiProvider {
     Anthropic,
     /// OpenAI, `https://api.openai.com/v1`.
     OpenAi,
+    /// Google Gemini, `https://generativelanguage.googleapis.com`.
+    Google,
+    /// xAI (Grok), `https://api.x.ai/v1`.
+    Xai,
+    /// Mistral AI, `https://api.mistral.ai/v1`.
+    Mistral,
+    /// DeepSeek, `https://api.deepseek.com/v1`.
+    DeepSeek,
+    /// Groq, `https://api.groq.com/openai/v1`.
+    Groq,
+    /// OpenRouter (many models behind one key), `https://openrouter.ai/api/v1`.
+    OpenRouter,
     /// A local model with Ollama, `http://localhost:11434`.
     Ollama,
-    /// Any service with an OpenAI-compatible interface (LM Studio,
-    /// llama.cpp server, vLLM …); the endpoint is required.
+    /// LM Studio's local server, `http://localhost:1234/v1`.
+    LmStudio,
+    /// Any service with an OpenAI-compatible interface (llama.cpp server,
+    /// vLLM, LocalAI, Jan …); the endpoint (with `/v1`) is required.
     OpenAiCompatible,
 }
 
+/// The wire protocol of a provider.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AiProtocol {
+    /// Anthropic Messages API (`/v1/messages`).
+    Anthropic,
+    /// OpenAI Chat Completions (`/chat/completions`).
+    OpenAi,
+    /// Google Gemini (`/v1beta/models/<model>:generateContent`).
+    Gemini,
+}
+
 impl AiProvider {
-    pub const ALL: [AiProvider; 4] = [
+    pub const ALL: [AiProvider; 11] = [
         AiProvider::Anthropic,
         AiProvider::OpenAi,
+        AiProvider::Google,
+        AiProvider::Xai,
+        AiProvider::Mistral,
+        AiProvider::DeepSeek,
+        AiProvider::Groq,
+        AiProvider::OpenRouter,
         AiProvider::Ollama,
+        AiProvider::LmStudio,
         AiProvider::OpenAiCompatible,
     ];
 
@@ -125,8 +162,15 @@ impl AiProvider {
         match self {
             AiProvider::Anthropic => "Anthropic (Claude)",
             AiProvider::OpenAi => "OpenAI",
-            AiProvider::Ollama => "Ollama (lokal)",
-            AiProvider::OpenAiCompatible => "OpenAI-kompatibel (lokal/eigener Server)",
+            AiProvider::Google => "Google (Gemini)",
+            AiProvider::Xai => "xAI (Grok)",
+            AiProvider::Mistral => "Mistral AI",
+            AiProvider::DeepSeek => "DeepSeek",
+            AiProvider::Groq => "Groq",
+            AiProvider::OpenRouter => "OpenRouter",
+            AiProvider::Ollama => "Ollama (lokal/Netzwerk)",
+            AiProvider::LmStudio => "LM Studio (lokal/Netzwerk)",
+            AiProvider::OpenAiCompatible => "OpenAI-kompatibel (eigener Server)",
         }
     }
 
@@ -135,14 +179,39 @@ impl AiProvider {
         match self {
             AiProvider::Anthropic => Some("https://api.anthropic.com"),
             AiProvider::OpenAi => Some("https://api.openai.com/v1"),
+            AiProvider::Google => Some("https://generativelanguage.googleapis.com"),
+            AiProvider::Xai => Some("https://api.x.ai/v1"),
+            AiProvider::Mistral => Some("https://api.mistral.ai/v1"),
+            AiProvider::DeepSeek => Some("https://api.deepseek.com/v1"),
+            AiProvider::Groq => Some("https://api.groq.com/openai/v1"),
+            AiProvider::OpenRouter => Some("https://openrouter.ai/api/v1"),
             AiProvider::Ollama => Some("http://localhost:11434"),
+            AiProvider::LmStudio => Some("http://localhost:1234/v1"),
             AiProvider::OpenAiCompatible => None,
         }
     }
 
-    /// Does the service need an API key?
+    /// Does the service need an API key? (Local servers do not; a key
+    /// given anyway is sent.)
     pub fn needs_key(self) -> bool {
-        matches!(self, AiProvider::Anthropic | AiProvider::OpenAi)
+        !self.is_local()
+    }
+
+    /// Runs on the developer's machine or in the local network.
+    pub fn is_local(self) -> bool {
+        matches!(
+            self,
+            AiProvider::Ollama | AiProvider::LmStudio | AiProvider::OpenAiCompatible
+        )
+    }
+
+    /// The wire protocol.
+    pub fn protocol(self) -> AiProtocol {
+        match self {
+            AiProvider::Anthropic => AiProtocol::Anthropic,
+            AiProvider::Google => AiProtocol::Gemini,
+            _ => AiProtocol::OpenAi,
+        }
     }
 }
 
@@ -200,6 +269,37 @@ fn account(profile: &str) -> String {
     format!("ai:{profile}")
 }
 
+/// What the AI may do in a project besides reading (reading the project,
+/// code, forms, problems and schema is always allowed).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AiPermission {
+    /// Only read; no tools that change something or run programs.
+    ReadOnly,
+    /// Every change and every program run shows a preview first and waits
+    /// for "Übernehmen" (default).
+    #[default]
+    Preview,
+    /// Changes and program runs happen without asking.
+    Autonomous,
+}
+
+impl AiPermission {
+    pub const ALL: [AiPermission; 3] = [
+        AiPermission::ReadOnly,
+        AiPermission::Preview,
+        AiPermission::Autonomous,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            AiPermission::ReadOnly => "nur lesen",
+            AiPermission::Preview => "mit Vorschau",
+            AiPermission::Autonomous => "selbstständig",
+        }
+    }
+}
+
 /// AI settings: profiles and when the AI window shows.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AiSettings {
@@ -217,6 +317,16 @@ pub struct AiSettings {
     /// Profile chosen for a project (key: the project's `.ptdr`).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub projects: BTreeMap<PathBuf, String>,
+    /// What the AI may do per project (key: the project's `.ptdr`). Kept
+    /// here, per user, not in the project: a cloned repository must not
+    /// grant the AI rights.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub permissions: BTreeMap<PathBuf, AiPermission>,
+    /// Approved own skills per project (key: the project's `.ptdr`; skill
+    /// name → SHA-256 of its `SKILL.md`). A changed skill needs a new
+    /// approval.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub skill_approvals: BTreeMap<PathBuf, BTreeMap<String, String>>,
 }
 
 fn yes() -> bool {
@@ -231,6 +341,8 @@ impl Default for AiSettings {
             show_on_new_project: true,
             show_always: false,
             projects: BTreeMap::new(),
+            permissions: BTreeMap::new(),
+            skill_approvals: BTreeMap::new(),
         }
     }
 }
@@ -250,6 +362,41 @@ impl AiSettings {
                     .as_deref()
                     .and_then(|n| self.profile(n))
             })
+    }
+
+    /// What the AI may do in `project` (default: with preview).
+    pub fn permission_for(&self, project: Option<&Path>) -> AiPermission {
+        project
+            .and_then(|p| self.permissions.get(p))
+            .copied()
+            .unwrap_or_default()
+    }
+
+    /// The approved own skills of `project` (name → SHA-256).
+    pub fn approved_skills(&self, project: &Path) -> BTreeMap<String, String> {
+        self.skill_approvals
+            .get(project)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    /// Approves (or with `None` withdraws) an own skill of `project`.
+    pub fn approve_skill(&mut self, project: &Path, name: &str, sha256: Option<&str>) {
+        let entry = self
+            .skill_approvals
+            .entry(project.to_path_buf())
+            .or_default();
+        match sha256 {
+            Some(hash) => {
+                entry.insert(name.to_owned(), hash.to_owned());
+            }
+            None => {
+                entry.remove(name);
+            }
+        }
+        if entry.is_empty() {
+            self.skill_approvals.remove(project);
+        }
     }
 
     /// Is an AI connected (a profile that can be used)?
@@ -292,6 +439,9 @@ pub mod codes {
     pub const PROFILE_UNKNOWN: &str = "profile_unknown";
     pub const ENDPOINT_MISSING: &str = "endpoint_missing";
     pub const KEY_MISSING: &str = "key_missing";
+    /// A warning (does not block): the API key would go unencrypted
+    /// (`http://`) to another machine.
+    pub const INSECURE_KEY_TRANSPORT: &str = crate::ai::codes::INSECURE_KEY_TRANSPORT;
     pub const WRITE_FAILED: &str = "write_failed";
 }
 
@@ -388,6 +538,14 @@ impl Settings {
                 issue(
                     codes::ENDPOINT_MISSING,
                     format!("KI-Profil „{}“ braucht eine Adresse", p.name),
+                );
+            }
+            if let Some(endpoint) = p.effective_endpoint()
+                && let Some(risk) = crate::ai::key_transport_risk(endpoint, p.has_key())
+            {
+                issue(
+                    codes::INSECURE_KEY_TRANSPORT,
+                    format!("KI-Profil „{}“: {}", p.name, risk.detail),
                 );
             }
             if p.provider.needs_key() && !p.has_key() && std::env::var_os(KEY_ENV).is_none() {

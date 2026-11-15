@@ -40,7 +40,30 @@ Die IDE selbst (`freya_tde::Ide`) bietet Automatisierung für Tests und eine sp�
 `create_project`, `update_settings`, `run_tool`, `insert_snippet`, `dock_view`, `git_run`, `debug_command` und
 viele mehr – eine Übersicht steht in [`ide/README.md`](../../ide/README.md).
 
-## Die geplante KI-Anbindung
+## Die KI-Anbindung
 
-Die KI-Profile sind in den Einstellungen schon vorbereitet. Die Anbindung selbst – ein KI-Fenster, das die
-Bibliotheks-API direkt nutzt – ist der nächste große Schritt.
+Der Kern steht als Bibliothek ohne Oberfläche (`freya_tde::ai`); das KI-Fenster baut darauf auf.
+
+- **Anbieter:** drei Protokolle decken die üblichen Cloud-Dienste und lokale Modelle ab, auch im lokalen
+  Netzwerk – Anthropic Messages (Claude), OpenAI-kompatibel (OpenAI, xAI/Grok, Mistral, DeepSeek, Groq,
+  OpenRouter, Ollama, LM Studio, llama.cpp, vLLM …) und Google Gemini. `Client::models` ruft die Modelle ab,
+  `Client::chat` schickt eine Anfrage (synchron, für Hintergrund-Threads). Fehler haben stabile Codes
+  (`auth_failed`, `rate_limited`, `unreachable`, `timeout` …). Geht ein API-Key über `http://` an einen
+  anderen Rechner, warnt Freya TDE (`insecure_key_transport`).
+- **Werkzeuge** sind die Bibliotheks-API: lesen (`project_info`, `list_files`, `read_file`, `search_files`,
+  `read_form`, `component_types`, `problems`, `generated_code`) ist immer erlaubt; ändern (`write_file`,
+  `edit_file`, `designer`, `generate_code`) und ausführen (`cargo` check/clippy/test) richten sich nach den
+  Rechten des Projekts. Formulare ändert die KI nur über Designer-Befehle, generierte Dateien nie.
+- **Rechte je Projekt:** „nur lesen“, „mit Vorschau“ (Vorgabe: jede Änderung erst als Vorschlag mit Diff, erst
+  „Übernehmen“ führt sie aus) und „selbstständig“. Sie liegen in den persönlichen Einstellungen, nicht in der
+  `.ptdr` – ein geklontes Repository kann der KI keine Rechte geben.
+- **Gespräch:** `Conversation` ist ein Zustandsautomat ohne Netz und Oberfläche (`say`, `request`, `receive`,
+  `decide`); `ai::run` erledigt eine Nachricht in einer Schleife (Tests, Skripte).
+- **Skills** im offenen Format Agent Skills: eingebaut sind die Skills von Freya TDE (`ide/skills`), RUF und
+  CT-Editor. Eigene Skills eines Projekts (`.agents/skills/`) gelten erst nach Freigabe; die Freigabe merkt
+  sich die SHA-256 des Inhalts, ein geänderter Skill braucht eine neue. Die KI sieht zuerst nur Namen und
+  Beschreibungen und lädt den Text bei Bedarf (`load_skill`). Signierte Skill-Pakete kommen mit dem Launcher.
+
+Ein Test gegen einen echten Anbieter läuft mit
+`FREYA_TDE_TEST_AI="ollama|http://localhost:11434|qwen3:8b" cargo test -p freya-tde --test ai_live`
+(Key aus `FREYA_TDE_AI_KEY`).
