@@ -52,7 +52,9 @@ laufen im Hintergrund, `cargo` ebenso; Änderungen der KI gehen über dieselben 
 - **Anbieter:** drei Protokolle decken die üblichen Cloud-Dienste und lokale Modelle ab, auch im lokalen
   Netzwerk – Anthropic Messages (Claude), OpenAI-kompatibel (OpenAI, xAI/Grok, Mistral, DeepSeek, Groq,
   OpenRouter, Ollama, LM Studio, llama.cpp, vLLM …) und Google Gemini. `Client::models` ruft die Modelle ab,
-  `Client::chat` schickt eine Anfrage (synchron, für Hintergrund-Threads). Fehler haben stabile Codes
+  `Client::chat` schickt eine Anfrage (synchron, für Hintergrund-Threads), `Client::chat_stream` ebenso, liefert
+  den Text aber Stück für Stück, während er entsteht (Server-Sent Events; ein Server ohne Streaming wird normal
+  gelesen). Das KI-Fenster zeigt Antworten so schon beim Schreiben. Fehler haben stabile Codes
   (`auth_failed`, `rate_limited`, `unreachable`, `timeout` …). Geht ein API-Key über `http://` an einen
   anderen Rechner, warnt Freya TDE (`insecure_key_transport`).
 - **Werkzeuge** sind die Bibliotheks-API: lesen (`project_info`, `list_files`, `read_file`, `search_files`,

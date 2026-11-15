@@ -76,3 +76,23 @@ fn models_and_tool_round_trip() {
     assert!(notes.contains("kolibri"), "{notes}");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn streamed_answer() {
+    let Some(profile) = profile() else {
+        eprintln!("FREYA_TDE_TEST_AI nicht gesetzt – übersprungen");
+        return;
+    };
+    let key = std::env::var("FREYA_TDE_AI_KEY").ok();
+    let client = Client::new(&profile, key).expect("client");
+    let req = freya_tde::ai::ChatRequest::new(vec![freya_tde::ai::Message::user(
+        "Zähle von 1 bis 20, jede Zahl als Wort in einer eigenen Zeile.",
+    )]);
+    let mut pieces = Vec::new();
+    let r = client
+        .chat_stream(&req, &mut |t| pieces.push(t.to_owned()))
+        .expect("stream");
+    eprintln!("{} Stücke, Verbrauch {:?}", pieces.len(), r.usage);
+    assert_eq!(pieces.concat(), r.text());
+    assert!(!r.text().trim().is_empty());
+}

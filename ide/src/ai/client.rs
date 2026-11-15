@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::message::{ChatRequest, ChatResponse};
-use super::{AiError, AiIssue, anthropic, codes, gemini, openai, security};
+use super::{AiError, AiIssue, anthropic, codes, gemini, openai, security, stream};
 use crate::settings::{AiProfile, AiProtocol, AiProvider, SecretStore, Settings};
 
 /// A model offered by the server.
@@ -150,28 +150,90 @@ impl Client {
 
     /// Sends `req` and waits for the whole answer.
     pub fn chat(&self, req: &ChatRequest) -> Result<ChatResponse, AiError> {
+        let (url, body) = self.chat_request(req, false)?;
+        let v = self.send(self.headers(self.agent.post(&url)).send_json(&body))?;
+        self.parse(&v)
+    }
+
+    /// Sends `req` with streaming: `on_text` gets the answer's text piece
+    /// by piece as it arrives; the result is the same as from
+    /// [`Client::chat`]. A server that answers without streaming is read
+    /// the usual way (`on_text` then gets the whole text at once).
+    pub fn chat_stream(
+        &self,
+        req: &ChatRequest,
+        on_text: &mut dyn FnMut(&str),
+    ) -> Result<ChatResponse, AiError> {
+        let (url, body) = self.chat_request(req, true)?;
+        let mut resp = self
+            .headers(self.agent.post(&url))
+            .header("Accept", "text/event-stream")
+            .send_json(&body)
+            .map_err(transport_error)?;
+        let status = resp.status().as_u16();
+        let events = resp
+            .headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|t| t.starts_with("text/event-stream"));
+        if !(200..300).contains(&status) || !events {
+            let v = self.send(Ok(resp))?;
+            let response = self.parse(&v)?;
+            let text = response.text();
+            if !text.is_empty() {
+                on_text(&text);
+            }
+            return Ok(response);
+        }
+        let mut collector = stream::Collector::new(self.provider.protocol());
+        let reader = std::io::BufReader::new(
+            resp.body_mut()
+                .with_config()
+                .limit(64 * 1024 * 1024)
+                .reader(),
+        );
+        stream::read(reader, &mut collector, on_text)?;
+        self.parse(&collector.finish())
+    }
+
+    /// Address and body of a chat request.
+    fn chat_request(&self, req: &ChatRequest, stream: bool) -> Result<(String, Value), AiError> {
         if self.model.is_empty() {
             return Err(AiError::new(codes::MODEL_MISSING, "kein Modell gewählt"));
         }
-        let (url, body) = match self.provider.protocol() {
-            AiProtocol::Anthropic => (
-                format!("{}/v1/messages", self.root()),
-                anthropic::request(&self.model, req),
-            ),
+        Ok(match self.provider.protocol() {
+            AiProtocol::Anthropic => {
+                let mut body = anthropic::request(&self.model, req);
+                if stream {
+                    body["stream"] = Value::Bool(true);
+                }
+                (format!("{}/v1/messages", self.root()), body)
+            }
             AiProtocol::Gemini => (
-                format!("{}{}", self.root(), gemini::path(&self.model)),
+                format!("{}{}", self.root(), gemini::path(&self.model, stream)),
                 gemini::request(req),
             ),
-            AiProtocol::OpenAi => (
-                format!("{}/chat/completions", self.openai_base()),
-                openai::request(&self.model, req, self.provider == AiProvider::OpenAi),
-            ),
-        };
-        let v = self.send(self.headers(self.agent.post(&url)).send_json(&body))?;
+            AiProtocol::OpenAi => {
+                let own = self.provider == AiProvider::OpenAi;
+                let mut body = openai::request(&self.model, req, own);
+                if stream {
+                    body["stream"] = Value::Bool(true);
+                    // Verbrauch am Ende des Stroms; nicht jeder kompatible
+                    // Server kennt das Feld, deshalb nur bei OpenAI selbst.
+                    if own {
+                        body["stream_options"] = serde_json::json!({ "include_usage": true });
+                    }
+                }
+                (format!("{}/chat/completions", self.openai_base()), body)
+            }
+        })
+    }
+
+    fn parse(&self, v: &Value) -> Result<ChatResponse, AiError> {
         match self.provider.protocol() {
-            AiProtocol::Anthropic => anthropic::response(&v),
-            AiProtocol::Gemini => gemini::response(&v),
-            AiProtocol::OpenAi => openai::response(&v),
+            AiProtocol::Anthropic => anthropic::response(v),
+            AiProtocol::Gemini => gemini::response(v),
+            AiProtocol::OpenAi => openai::response(v),
         }
     }
 
@@ -404,6 +466,81 @@ mod tests {
             }
             p => panic!("{p:?}"),
         }
+    }
+
+    #[test]
+    fn streamed_answers() {
+        use crate::ai::mock::raw_server;
+        let sse = "event: message_start\n\
+data: {\"type\":\"message_start\",\"message\":{\"model\":\"m1\",\"usage\":{\"input_tokens\":2}}}\n\n\
+event: content_block_start\n\
+data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n\
+event: content_block_delta\n\
+data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hallo \"}}\n\n\
+event: content_block_delta\n\
+data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Welt\"}}\n\n\
+event: message_delta\n\
+data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":3}}\n\n\
+event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n";
+        let (addr, rx) = raw_server(vec![
+            (200, "text/event-stream; charset=utf-8", sse.to_owned()),
+            // Ein Server, der das Streaming überhört, antwortet mit JSON.
+            (
+                200,
+                "application/json",
+                json!({"choices": [{"message": {"content": "am Stück"}, "finish_reason": "stop"}]})
+                    .to_string(),
+            ),
+            (
+                200,
+                "text/event-stream",
+                "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"G\"}]},\"finishReason\":\"STOP\"}]}\n\n"
+                    .to_owned(),
+            ),
+            (401, "application/json", json!({"error": {"message": "falscher Key"}}).to_string()),
+        ]);
+        let c = Client::new(&profile(AiProvider::Anthropic, &addr), Some("k".into())).unwrap();
+        let mut pieces = Vec::new();
+        let r = c
+            .chat_stream(&tool_request(), &mut |t| pieces.push(t.to_owned()))
+            .unwrap();
+        let seen = rx.recv().unwrap();
+        assert_eq!(seen.body["stream"], true);
+        assert_eq!(seen.header("accept"), Some("text/event-stream"));
+        assert_eq!(pieces, ["Hallo ", "Welt"]);
+        assert_eq!(r.text(), "Hallo Welt");
+        assert_eq!(r.stop, StopReason::EndTurn);
+        assert_eq!(r.usage.output_tokens, 3);
+
+        let c = Client::new(
+            &profile(AiProvider::OpenAi, &format!("{addr}/v1")),
+            Some("k".into()),
+        )
+        .unwrap();
+        let mut pieces = Vec::new();
+        let r = c
+            .chat_stream(&tool_request(), &mut |t| pieces.push(t.to_owned()))
+            .unwrap();
+        let seen = rx.recv().unwrap();
+        assert_eq!(seen.body["stream"], true);
+        assert_eq!(seen.body["stream_options"]["include_usage"], true);
+        assert_eq!(
+            (pieces, r.text()),
+            (vec!["am Stück".to_owned()], "am Stück".to_owned())
+        );
+
+        let c = Client::new(&profile(AiProvider::Google, &addr), Some("k".into())).unwrap();
+        let r = c.chat_stream(&tool_request(), &mut |_| {}).unwrap();
+        assert_eq!(
+            rx.recv().unwrap().line,
+            "POST /v1beta/models/m1:streamGenerateContent?alt=sse HTTP/1.1"
+        );
+        assert_eq!(r.text(), "G");
+
+        let c = Client::new(&profile(AiProvider::Mistral, &addr), Some("k".into())).unwrap();
+        let e = c.chat_stream(&tool_request(), &mut |_| {}).unwrap_err();
+        assert_eq!((e.code, e.status), (codes::AUTH_FAILED, Some(401)));
+        assert!(rx.recv().unwrap().body.get("stream_options").is_none());
     }
 
     #[test]

@@ -1,6 +1,8 @@
 //! Window "Einstellungen" (File → Settings, Ctrl+,): tab "Allgemein"
 //! (working directory, language, appearance) and tab "KI" (profiles, default
-//! profile, profile of the current project, AI window). The window edits a
+//! profile, profile and permission of the current project, AI window;
+//! "Abrufen" fetches the models of the shown profile, a key that would go
+//! over `http://` to another machine is warned about). The window edits a
 //! [`SettingsEdit`]; only "OK" stores keys, saves and applies
 //! ([`Ide::update_settings`], also for automation).
 
@@ -12,14 +14,15 @@ use rncl::prelude::*;
 use ruf::{Application, ColorScheme, dialog};
 
 use super::{Ide, with, with0};
+use crate::ai::{AiError, ModelInfo};
 use crate::codetools::MethodOrder;
 use crate::settings::{
-    AiProfile, AiProvider, Language, SecretStore, Settings, SettingsEdit, SettingsError, Theme,
-    codes,
+    AiPermission, AiProfile, AiProvider, Language, SecretStore, Settings, SettingsEdit,
+    SettingsError, Theme, codes,
 };
 
 const W: i32 = 660;
-const H: i32 = 560;
+const H: i32 = 640;
 const M: i32 = 16;
 const ROW: i32 = 32;
 const GAP: i32 = 8;
@@ -47,13 +50,16 @@ pub struct SettingsWindow {
     remove: RnclButton,
     name: RnclTextField,
     provider: RnclComboBox,
-    model: RnclTextField,
+    model: RnclComboBox,
+    fetch: RnclButton,
     endpoint: RnclTextField,
     key: RnclTextField,
     key_state: RnclLabel,
+    warning: RnclLabel,
     remove_key: RnclButton,
     default_profile: RnclComboBox,
     project_profile: RnclComboBox,
+    permission: RnclComboBox,
     show_on_new: RnclCheckBox,
     show_always: RnclCheckBox,
     ai_hint: RnclLabel,
@@ -69,6 +75,10 @@ pub struct SettingsWindow {
     project: RefCell<Option<PathBuf>>,
     /// Set while fields are filled (their signals must not edit).
     filling: Cell<bool>,
+    /// Number of the last "Abrufen" (older answers are ignored).
+    models_request: Cell<u64>,
+    /// Result of "Abrufen" (shown when there is no warning).
+    models_notice: RefCell<String>,
 }
 
 fn label<P: AsWidget + ?Sized>(parent: &P, text: &str) -> RnclLabel {
@@ -129,19 +139,33 @@ impl SettingsWindow {
             label(p, "API-Key"),
             label(p, "Standardprofil"),
             label(p, "Für dieses Projekt"),
+            label(p, "Rechte der KI"),
         ];
         let name = RnclTextField::new(p);
         let provider = RnclComboBox::new(p);
         provider.set_items(&AiProvider::ALL.map(AiProvider::label));
-        let model = RnclTextField::new(p);
-        model.set_placeholder("z. B. claude-opus-5-5, llama3.2");
+        let model = RnclComboBox::new(p);
+        model.set_editable(true);
+        model.set_placeholder("z. B. llama3.2 – oder abrufen");
+        let fetch = RnclButton::new(p, "Abrufen");
+        fetch
+            .widget()
+            .set_tool_tip("Modelle des Anbieters abrufen (mit Adresse und Key dieses Profils)");
         let endpoint = RnclTextField::new(p);
         let key = RnclTextField::new(p);
         key.set_password_mode(true);
         let key_state = label(p, "");
+        let warning = label(p, "");
+        warning.set_word_wrap(true);
         let remove_key = RnclButton::new(p, "Key entfernen");
         let default_profile = RnclComboBox::new(p);
         let project_profile = RnclComboBox::new(p);
+        let permission = RnclComboBox::new(p);
+        permission.set_items(&AiPermission::ALL.map(AiPermission::label));
+        permission.widget().set_tool_tip(
+            "Lesen ist immer erlaubt. „mit Vorschau“: jede Änderung erst als Vorschlag; \
+             „selbstständig“: ohne Rückfrage",
+        );
         let show_on_new = RnclCheckBox::new(p, "KI-Fenster bei neuem Projekt anzeigen");
         let show_always = RnclCheckBox::new(p, "KI-Fenster immer anzeigen");
         let ai_hint = label(p, "");
@@ -168,12 +192,15 @@ impl SettingsWindow {
             name,
             provider,
             model,
+            fetch,
             endpoint,
             key,
             key_state,
+            warning,
             remove_key,
             default_profile,
             project_profile,
+            permission,
             show_on_new,
             show_always,
             ai_hint,
@@ -184,6 +211,8 @@ impl SettingsWindow {
             selected: Cell::new(-1),
             project: RefCell::new(None),
             filling: Cell::new(false),
+            models_request: Cell::new(0),
+            models_notice: RefCell::new(String::new()),
         };
         w.place();
         w.layout_pages(W - 2 * M, H - BAR - M - 40);
@@ -252,21 +281,24 @@ impl SettingsWindow {
         }
         self.name.set_geometry(rfx, line(0), rfw, ROW);
         self.provider.set_geometry(rfx, line(1), rfw, ROW);
-        self.model.set_geometry(rfx, line(2), rfw, ROW);
+        self.model.set_geometry(rfx, line(2), rfw - 90 - GAP, ROW);
+        self.fetch.set_geometry(rfx + rfw - 90, line(2), 90, ROW);
         self.endpoint.set_geometry(rfx, line(3), rfw, ROW);
         let kw = rfw - 130 - GAP;
         self.key.set_geometry(rfx, line(4), kw, ROW);
         self.remove_key
             .set_geometry(rfx + kw + GAP, line(4), 130, ROW);
         self.key_state.set_geometry(rfx, line(5), rfw, ROW);
+        self.warning.set_geometry(p, line(6), inner, ROW);
         for (i, l) in self.ai_labels.iter().skip(5).enumerate() {
-            l.set_geometry(p, line(6 + i as i32), LABEL_W, ROW);
+            l.set_geometry(p, line(7 + i as i32), LABEL_W, ROW);
         }
-        self.default_profile.set_geometry(fx, line(6), fw, ROW);
-        self.project_profile.set_geometry(fx, line(7), fw, ROW);
-        self.show_on_new.set_geometry(p, line(8), inner, ROW);
-        self.show_always.set_geometry(p, line(8) + ROW, inner, ROW);
-        let y = line(8) + 2 * ROW + GAP;
+        self.default_profile.set_geometry(fx, line(7), fw, ROW);
+        self.project_profile.set_geometry(fx, line(8), fw, ROW);
+        self.permission.set_geometry(fx, line(9), fw, ROW);
+        self.show_on_new.set_geometry(p, line(10), inner, ROW);
+        self.show_always.set_geometry(p, line(10) + ROW, inner, ROW);
+        let y = line(10) + 2 * ROW + GAP;
         self.ai_hint
             .set_geometry(p, y, inner, (height - y - p).max(ROW));
     }
@@ -333,6 +365,13 @@ impl SettingsWindow {
         let project = self.project.borrow().clone();
         self.project_profile
             .set_current_index(pos(project.as_ref().and_then(|p| s.ai.projects.get(p))));
+        let permission = s.ai.permission_for(project.as_deref());
+        self.permission.set_current_index(
+            AiPermission::ALL
+                .iter()
+                .position(|x| *x == permission)
+                .unwrap_or(0) as i32,
+        );
         self.show_on_new.set_checked(s.ai.show_on_new_project);
         self.show_always.set_checked(s.ai.show_always);
         drop(edit);
@@ -349,6 +388,7 @@ impl SettingsWindow {
             self.name.widget(),
             self.provider.widget(),
             self.model.widget(),
+            self.fetch.widget(),
             self.endpoint.widget(),
             self.key.widget(),
             self.remove_key.widget(),
@@ -364,7 +404,9 @@ impl SettingsWindow {
                 .position(|x| *x == p.provider)
                 .unwrap_or(0) as i32,
         );
-        self.model.set_text(&p.model);
+        self.model.clear();
+        self.model.set_current_text(&p.model);
+        self.models_notice.borrow_mut().clear();
         self.endpoint
             .set_text(p.endpoint.as_deref().unwrap_or_default());
         self.key.set_text(
@@ -408,6 +450,11 @@ impl SettingsWindow {
             },
         };
         self.key_state.set_text(&state);
+        let warning = p.as_ref().and_then(|p| edit.key_warning(&p.name));
+        self.warning.set_text(&match warning {
+            Some(w) => format!("⚠ {}", w.detail),
+            None => self.models_notice.borrow().clone(),
+        });
         self.key.set_placeholder(
             if p.as_ref()
                 .is_some_and(|p| p.has_key() && !edit.keys.contains_key(&p.name))
@@ -424,14 +471,18 @@ impl SettingsWindow {
         self.project_profile
             .widget()
             .set_enabled(connected && self.project.borrow().is_some());
+        self.permission
+            .widget()
+            .set_enabled(connected && self.project.borrow().is_some());
         self.ai_hint.set_text(if !connected {
             "Noch keine KI angebunden: „Neu“ legt ein Profil an (Anthropic, OpenAI, Ollama oder\n\
              ein OpenAI-kompatibler Server wie LM Studio). Mehrere Profile sind möglich;\n\
              je Projekt lässt sich eines wählen."
         } else if self.project.borrow().is_none() {
-            "Das Profil je Projekt lässt sich wählen, sobald das Projekt gespeichert ist."
+            "Profil und Rechte je Projekt lassen sich wählen, sobald das Projekt gespeichert ist."
         } else {
-            "Ohne eigene Wahl nutzt ein Projekt das Standardprofil."
+            "Ohne eigene Wahl nutzt ein Projekt das Standardprofil; die Rechte gelten nur für \
+             dieses Projekt\n(Lesen ist immer erlaubt)."
         });
     }
 }
@@ -574,6 +625,80 @@ impl Ide {
         w.fill();
     }
 
+    /// "Abrufen" on the AI tab: fetches the models of the shown profile as
+    /// edited (address and key before "OK") in a worker thread; the answer
+    /// fills the model drop-down.
+    pub fn settings_fetch_models(&self) {
+        let w = &self.settings_window;
+        let Some(p) = w.profile() else { return };
+        let Some(sender) = self.ai_results.borrow().clone() else {
+            return;
+        };
+        let client = w
+            .edit
+            .borrow()
+            .client(&p.name, self.secrets.borrow().as_ref());
+        let request = w.models_request.get() + 1;
+        w.models_request.set(request);
+        match client {
+            Ok(client) => {
+                *w.models_notice.borrow_mut() =
+                    format!("Frage {} nach Modellen …", p.provider.label());
+                w.fetch.widget().set_enabled(false);
+                std::thread::spawn(move || {
+                    sender.send(super::ai_window::AiDone::Models(request, client.models()));
+                });
+            }
+            Err(e) => *w.models_notice.borrow_mut() = format!("{} ({})", e.detail, e.code),
+        }
+        w.update_state();
+    }
+
+    /// The answer to "Abrufen".
+    pub(super) fn settings_models_done(
+        &self,
+        request: u64,
+        result: Result<Vec<ModelInfo>, AiError>,
+    ) {
+        let w = &self.settings_window;
+        if request != w.models_request.get() {
+            return;
+        }
+        w.fetch.widget().set_enabled(w.profile().is_some());
+        let notice = match result {
+            Ok(models) if models.is_empty() => "Der Server nennt keine Modelle.".to_owned(),
+            Ok(models) => {
+                let current = w.model.current_text();
+                let ids: Vec<&str> = models.iter().map(|m| m.id.as_str()).collect();
+                let tips: Vec<&str> = models
+                    .iter()
+                    .map(|m| m.name.as_deref().unwrap_or(&m.id))
+                    .collect();
+                w.filling.set(true);
+                w.model.set_items(&ids);
+                w.model.set_item_tooltips(&tips);
+                w.model.set_current_text(&current);
+                w.filling.set(false);
+                let n = models.len();
+                if current.is_empty() {
+                    format!("{n} Modelle gefunden – bitte eines wählen.")
+                } else {
+                    format!("{n} Modelle gefunden.")
+                }
+            }
+            Err(e) => format!("Modelle abrufen: {} ({})", e.detail, e.code),
+        };
+        *w.models_notice.borrow_mut() = notice;
+        w.update_state();
+    }
+
+    /// The models offered in the drop-down of the settings window (after
+    /// "Abrufen") and the status line under the key (tests).
+    pub fn settings_models(&self) -> (Vec<String>, String) {
+        let w = &self.settings_window;
+        (w.model.items(), w.warning.text())
+    }
+
     /// "Entfernen" on the AI tab.
     fn settings_remove_profile(&self) {
         let w = &self.settings_window;
@@ -710,12 +835,39 @@ pub fn connect(ide: &Rc<Ide>) {
         ide.settings_window
             .change_profile(|p| p.model = text.trim().to_owned());
     }));
+    w.fetch
+        .on_clicked(with0(ide, |ide| ide.settings_fetch_models()));
+    w.permission
+        .on_current_index_changed(with(ide, |ide, i: i32| {
+            let w = &ide.settings_window;
+            let Some(project) = w.project.borrow().clone() else {
+                return;
+            };
+            let Some(permission) = usize::try_from(i)
+                .ok()
+                .and_then(|i| AiPermission::ALL.get(i))
+            else {
+                return;
+            };
+            if w.filling.get() {
+                return;
+            }
+            let mut edit = w.edit.borrow_mut();
+            if *permission == AiPermission::default() {
+                edit.settings.ai.permissions.remove(&project);
+            } else {
+                edit.settings.ai.permissions.insert(project, *permission);
+            }
+        }));
     w.endpoint.on_text_changed(with(ide, |ide, text: String| {
         let w = &ide.settings_window;
         w.change_profile(|p| {
             let text = text.trim();
             p.endpoint = (!text.is_empty()).then(|| text.to_owned());
         });
+        if !w.filling.get() {
+            w.update_state();
+        }
     }));
     w.key.on_text_changed(with(ide, |ide, text: String| {
         let w = &ide.settings_window;

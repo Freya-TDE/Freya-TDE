@@ -19,8 +19,8 @@ use ruf::dialog;
 
 use super::{Ide, with, with0};
 use crate::ai::{
-    self, AiError, ChatResponse, Client, Conversation, Decision, Event, Proposal, SkillTable, Turn,
-    Workspace,
+    self, AiError, ChatResponse, Client, Conversation, Decision, Event, ModelInfo, Proposal,
+    SkillTable, Turn, Workspace,
 };
 use crate::desktop::window;
 use crate::session::{Changes, Session};
@@ -28,15 +28,21 @@ use crate::settings::{AiPermission, Settings};
 
 /// Results of the background work.
 pub enum AiDone {
+    /// A piece of the answer's text arrived (request generation, text).
+    Text(u64, String),
     /// The model answered (request generation, answer).
     Chat(u64, Result<ChatResponse, AiError>),
     /// A cargo run finished (generation, call id, report).
     Run(u64, String, Result<String, String>),
+    /// "Abrufen" in the settings window answered (request number, models).
+    Models(u64, Result<Vec<ModelInfo>, AiError>),
 }
 
 const M: i32 = 6;
 const ROW: i32 = 28;
 const GAP: i32 = 6;
+/// How often streamed text is shown.
+const STREAM_INTERVAL: std::time::Duration = std::time::Duration::from_millis(80);
 
 /// State of the conversation shown in the window.
 #[derive(Default)]
@@ -49,6 +55,8 @@ pub struct AiState {
     busy: bool,
     /// Counts requests; answers of an older (cancelled) one are dropped.
     generation: u64,
+    /// Text of the running request already shown (streaming).
+    streamed: String,
     shown_events: usize,
     /// Profile and permission chosen while the project is unsaved.
     profile: Option<String>,
@@ -253,6 +261,18 @@ impl AiWindow {
 
     fn log(&self, line: &str) {
         self.transcript.append_line(line);
+        self.scroll_down();
+    }
+
+    /// Appends `piece` to the last line (streamed answer).
+    fn append(&self, piece: &str) {
+        let mut text = self.transcript.text();
+        text.push_str(piece);
+        self.transcript.set_text(&text);
+        self.scroll_down();
+    }
+
+    fn scroll_down(&self) {
         let lines = self.transcript.text().lines().count() as i32;
         self.transcript.goto_line(lines.max(1));
     }
@@ -652,6 +672,7 @@ impl Ide {
             conversation.set_system(system);
             let request = conversation.request(&skills);
             state.busy = true;
+            state.streamed.clear();
             (request, state.generation)
         };
         self.ai_window
@@ -659,7 +680,19 @@ impl Ide {
             .set_text(&format!("{} denkt …", client.model()));
         self.ai_window.refresh(self);
         std::thread::spawn(move || {
-            let result = client.chat(&request);
+            // Text höchstens alle 80 ms ans Fenster, damit es flüssig bleibt.
+            let mut pending = String::new();
+            let mut last = std::time::Instant::now();
+            let result = client.chat_stream(&request, &mut |piece| {
+                pending.push_str(piece);
+                if last.elapsed() >= STREAM_INTERVAL {
+                    sender.send(AiDone::Text(generation, std::mem::take(&mut pending)));
+                    last = std::time::Instant::now();
+                }
+            });
+            if !pending.is_empty() {
+                sender.send(AiDone::Text(generation, pending));
+            }
             sender.send(AiDone::Chat(generation, result));
         });
     }
@@ -667,15 +700,52 @@ impl Ide {
     /// Background work finished.
     pub(super) fn ai_done(&self, done: AiDone) {
         match done {
-            AiDone::Chat(generation, result) => {
-                if generation != self.ai_window.state.borrow().generation {
-                    return;
+            AiDone::Text(generation, piece) => {
+                let first = {
+                    let mut state = self.ai_window.state.borrow_mut();
+                    if generation != state.generation {
+                        return;
+                    }
+                    // Leerraum am Anfang erst zeigen, wenn Text folgt.
+                    let first = state.streamed.trim().is_empty();
+                    state.streamed.push_str(&piece);
+                    if state.streamed.trim().is_empty() {
+                        return;
+                    }
+                    first
+                };
+                if first {
+                    let text = self
+                        .ai_window
+                        .state
+                        .borrow()
+                        .streamed
+                        .trim_start()
+                        .to_owned();
+                    self.ai_window.log(&format!("KI: {text}"));
+                } else {
+                    self.ai_window.append(&piece);
                 }
-                self.ai_window.state.borrow_mut().busy = false;
+            }
+            AiDone::Chat(generation, result) => {
+                let streamed = {
+                    let mut state = self.ai_window.state.borrow_mut();
+                    if generation != state.generation {
+                        return;
+                    }
+                    state.busy = false;
+                    !std::mem::take(&mut state.streamed).trim().is_empty()
+                };
+                if streamed {
+                    let text = self.ai_window.transcript.text();
+                    if text.trim_end().len() != text.len() {
+                        self.ai_window.transcript.set_text(text.trim_end());
+                    }
+                }
                 match result {
                     Ok(response) => {
                         let text = response.text();
-                        if !text.trim().is_empty() {
+                        if !streamed && !text.trim().is_empty() {
                             self.ai_window.log(&format!("KI: {}", text.trim()));
                         }
                         let turn = self.ai_with_workspace(|c, ws, skills| {
@@ -700,6 +770,7 @@ impl Ide {
                 let turn = self.ai_with_workspace(|c, _, _| Ok(c.finished(&call_id, result)));
                 self.ai_turn(turn);
             }
+            AiDone::Models(request, result) => self.settings_models_done(request, result),
         }
     }
 

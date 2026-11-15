@@ -66,11 +66,15 @@ fn ai_server(
             let mut body = vec![0; len];
             reader.read_exact(&mut body).unwrap();
             let _ = tx.send(serde_json::from_slice(&body).unwrap_or_default());
-            let text = answer.to_string();
+            // Text = Server-Sent Events (gestreamte Antwort), sonst JSON.
+            let (content_type, text) = match answer {
+                serde_json::Value::String(events) => ("text/event-stream", events),
+                other => ("application/json", other.to_string()),
+            };
             let mut out = stream;
             let _ = write!(
                 out,
-                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{text}",
+                "HTTP/1.1 200 OK\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{text}",
                 text.len()
             );
         }
@@ -1273,6 +1277,40 @@ fn main() {
                     .save_screenshot(dir.join(format!("settings-{tab}.png")));
             }
         }
+        // „Abrufen“ nutzt Adresse und Key, wie sie gerade bearbeitet werden.
+        let (addr, _seen) = ai_server(vec![serde_json::json!({"data": [
+            {"id": "claude-b", "display_name": "Claude B"},
+            {"id": "claude-a"}
+        ]})]);
+        let mut probe = edit.clone();
+        probe.settings.ai.profiles[0].endpoint = Some(addr);
+        ide.set_settings_edit(probe.clone());
+        ide.settings_fetch_models();
+        assert!(
+            pump_until(10, || !ide.settings_models().0.is_empty()),
+            "Modelle kommen an: {:?}",
+            ide.settings_models()
+        );
+        let (models, notice) = ide.settings_models();
+        assert_eq!(models, ["claude-a", "claude-b"]);
+        assert!(notice.contains("2 Modelle"), "{notice}");
+        // Key über http:// an einen anderen Rechner: Warnung im Fenster.
+        probe.settings.ai.profiles[0].endpoint = Some("http://192.168.1.20:8000".into());
+        ide.set_settings_edit(probe);
+        assert!(
+            ide.settings_models().1.starts_with('⚠'),
+            "{:?}",
+            ide.settings_models()
+        );
+        if let Some(dir) = &shots {
+            ide.settings_tab(1);
+            pump_until(1, || false);
+            ide.settings_window()
+                .widget()
+                .save_screenshot(dir.join("settings-models.png"));
+        }
+        ide.set_settings_edit(edit.clone());
+
         // Fehlendes Arbeitsverzeichnis blockiert.
         let mut wrong = edit.clone();
         wrong.settings.base_dir = Some(home.join("gibt-es-nicht"));
@@ -1364,7 +1402,12 @@ fn main() {
                 {"id": "w1", "type": "function", "function": {"name": "designer", "arguments":
                     "{\"commands\":[{\"command\":\"add_widget\",\"form\":\"main_form\",\"parent\":\"window\",\"type\":\"core/Button\",\"name\":\"ok_button\"}]}"}}
             ]}, "finish_reason": "tool_calls"}]}),
-            json!({"choices": [{"message": {"content": "Erledigt."}, "finish_reason": "stop"}]}),
+            // Die zweite Antwort kommt gestreamt in zwei Stücken.
+            json!(
+                "data: {\"choices\":[{\"delta\":{\"content\":\"Erle\"}}]}\n\n\
+                 data: {\"choices\":[{\"delta\":{\"content\":\"digt.\"},\"finish_reason\":\"stop\"}]}\n\n\
+                 data: [DONE]\n\n"
+            ),
         ]);
         let mut edit = SettingsEdit::new(&ide.settings());
         // Profile früherer Blöcke entfernen.
@@ -1443,6 +1486,11 @@ fn main() {
         assert!(
             transcript.contains("✓ Designer: add_widget"),
             "{transcript}"
+        );
+        assert_eq!(
+            transcript.matches("Erledigt.").count(),
+            1,
+            "gestreamt, nicht doppelt: {transcript}"
         );
         let second = seen.recv().unwrap();
         let tools: Vec<&serde_json::Value> = second["messages"]

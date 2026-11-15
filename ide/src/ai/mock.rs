@@ -26,11 +26,22 @@ impl Seen {
 
 /// A server answering each request with the next `(status, body)`.
 pub fn server(answers: Vec<(u16, Value)>) -> (String, mpsc::Receiver<Seen>) {
+    raw_server(
+        answers
+            .into_iter()
+            .map(|(status, body)| (status, "application/json", body.to_string()))
+            .collect(),
+    )
+}
+
+/// A server answering each request with the next `(status, content type,
+/// body)`, e.g. server-sent events.
+pub fn raw_server(answers: Vec<(u16, &'static str, String)>) -> (String, mpsc::Receiver<Seen>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = format!("http://{}", listener.local_addr().unwrap());
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
-        for (status, body) in answers {
+        for (status, content_type, text) in answers {
             let (stream, _) = listener.accept().unwrap();
             let mut reader = BufReader::new(stream.try_clone().unwrap());
             let mut line = String::new();
@@ -59,11 +70,10 @@ pub fn server(answers: Vec<(u16, Value)>) -> (String, mpsc::Receiver<Seen>) {
                 body: body_in,
             })
             .unwrap();
-            let text = body.to_string();
             let mut out = stream;
             write!(
                 out,
-                "HTTP/1.1 {status} X\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{text}",
+                "HTTP/1.1 {status} X\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{text}",
                 text.len()
             )
             .unwrap();

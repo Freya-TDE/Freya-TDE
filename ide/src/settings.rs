@@ -742,6 +742,69 @@ impl SettingsEdit {
         Ok(())
     }
 
+    /// The key `profile` has in this edit: a new key typed in, none if it
+    /// is to be removed, else the stored one (keyring under the name before
+    /// any rename, settings file); `FREYA_TDE_AI_KEY` as fallback.
+    pub fn key(&self, profile: &str, store: &dyn SecretStore) -> Option<String> {
+        let env = || std::env::var(KEY_ENV).ok().filter(|k| !k.is_empty());
+        if let Some(key) = self.keys.get(profile) {
+            return key
+                .as_deref()
+                .map(str::trim)
+                .filter(|k| !k.is_empty())
+                .map(str::to_owned)
+                .or_else(env);
+        }
+        let p = self.settings.ai.profile(profile)?;
+        let mut original = profile.to_owned();
+        for (old, new) in self.renames.iter().rev() {
+            if *new == original {
+                original.clone_from(old);
+            }
+        }
+        let stored = if p.key_in_keyring {
+            store.get(&account(&original)).ok().flatten()
+        } else {
+            p.key.clone()
+        };
+        stored.or_else(env)
+    }
+
+    /// Whether `profile` has a key in this edit (without asking the keyring).
+    pub fn has_key(&self, profile: &str) -> bool {
+        match self.keys.get(profile) {
+            Some(key) => key.as_deref().is_some_and(|k| !k.trim().is_empty()),
+            None => self
+                .settings
+                .ai
+                .profile(profile)
+                .is_some_and(AiProfile::has_key),
+        }
+    }
+
+    /// A warning if the key of `profile` would go unencrypted to another
+    /// machine (code `insecure_key_transport`).
+    pub fn key_warning(&self, profile: &str) -> Option<crate::ai::AiIssue> {
+        let p = self.settings.ai.profile(profile)?;
+        crate::ai::key_transport_risk(p.effective_endpoint()?, self.has_key(profile))
+    }
+
+    /// A client for `profile` as edited, e.g. for "Modelle abrufen" before
+    /// "OK".
+    pub fn client(
+        &self,
+        profile: &str,
+        store: &dyn SecretStore,
+    ) -> Result<crate::ai::Client, crate::ai::AiError> {
+        let p = self.settings.ai.profile(profile).ok_or_else(|| {
+            crate::ai::AiError::new(
+                crate::ai::codes::PROFILE_UNKNOWN,
+                format!("unbekanntes KI-Profil „{profile}“"),
+            )
+        })?;
+        crate::ai::Client::new(p, self.key(profile, store))
+    }
+
     /// Removes a profile from the edit (its key goes on commit).
     pub fn remove(&mut self, profile: &str) {
         let ai = &mut self.settings.ai;
@@ -969,6 +1032,21 @@ mod tests {
         // Abbrechen = nichts committen: Schlüsselbund unverändert.
         assert_eq!(store.get("ai:A").unwrap().as_deref(), Some("ka"));
         assert_eq!(store.get("ai:C").unwrap(), None);
+        // Vor „OK“: der Key folgt der Umbenennung, neue Keys gelten sofort.
+        assert_eq!(edit.key("A2", &store).as_deref(), Some("ka"));
+        assert_eq!(edit.key("C", &store).as_deref(), Some("kc"));
+        assert!(edit.has_key("C"));
+        assert_eq!(edit.key_warning("C"), None, "Ollama auf localhost");
+        edit.settings.ai.profiles[1].endpoint = Some("http://192.168.1.20:11434".into());
+        assert_eq!(
+            edit.key_warning("C").unwrap().code,
+            codes::INSECURE_KEY_TRANSPORT
+        );
+        assert_eq!(edit.client("C", &store).unwrap().model(), "");
+        assert_eq!(
+            edit.client("X", &store).unwrap_err().code,
+            crate::ai::codes::PROFILE_UNKNOWN
+        );
 
         let s = edit.commit(&saved, &store);
         assert_eq!(s.key("A2", &store).as_deref(), Some("ka"));

@@ -41,6 +41,7 @@ mod mock;
 mod openai;
 mod security;
 pub mod skills;
+mod stream;
 pub mod tools;
 
 pub use client::{Client, ModelInfo};

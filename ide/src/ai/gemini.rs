@@ -1,4 +1,5 @@
-//! Google Gemini (`POST /v1beta/models/<model>:generateContent`).
+//! Google Gemini (`POST /v1beta/models/<model>:generateContent`, streamed
+//! `:streamGenerateContent?alt=sse`).
 
 use serde_json::{Map, Value, json};
 
@@ -10,8 +11,13 @@ use super::{AiError, codes};
 /// they are not sent back.
 pub(super) const LOCAL_ID: &str = "gemini_call_";
 
-pub fn path(model: &str) -> String {
-    format!("/v1beta/models/{model}:generateContent")
+/// The request path; with `stream` the answer comes as server-sent events.
+pub fn path(model: &str, stream: bool) -> String {
+    if stream {
+        format!("/v1beta/models/{model}:streamGenerateContent?alt=sse")
+    } else {
+        format!("/v1beta/models/{model}:generateContent")
+    }
 }
 
 pub fn request(req: &ChatRequest) -> Value {

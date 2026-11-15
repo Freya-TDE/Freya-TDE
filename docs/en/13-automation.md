@@ -51,7 +51,9 @@ code tabs at once.
 - **Providers:** three protocols cover the usual cloud services and local models, also in the local network –
   Anthropic Messages (Claude), OpenAI-compatible (OpenAI, xAI/Grok, Mistral, DeepSeek, Groq, OpenRouter,
   Ollama, LM Studio, llama.cpp, vLLM …) and Google Gemini. `Client::models` lists the models, `Client::chat`
-  sends a request (synchronous, for worker threads). Errors have stable codes (`auth_failed`, `rate_limited`,
+  sends a request (synchronous, for worker threads), `Client::chat_stream` too, but hands over the text piece by
+  piece as it is written (server-sent events; a server without streaming is read the usual way). The AI window
+  shows answers this way while they are being written. Errors have stable codes (`auth_failed`, `rate_limited`,
   `unreachable`, `timeout` …). If an API key would go over `http://` to another machine, Freya TDE warns
   (`insecure_key_transport`).
 - **Tools** are the library API: reading (`project_info`, `list_files`, `read_file`, `search_files`,

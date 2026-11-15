@@ -18,7 +18,12 @@
 Mehrere **KI-Profile** mit Anbieter (Anthropic, OpenAI, Google Gemini, xAI, Mistral, DeepSeek, Groq,
 OpenRouter, Ollama, LM Studio oder ein eigener OpenAI-kompatibler Server – lokal oder im Netzwerk), Modell,
 Adresse und API-Key; ein Standardprofil und je Projekt ein eigenes („weil Projekt X so ist, nehme ich KI Y“).
-Dazu „KI-Fenster bei neuem Projekt anzeigen“ und „immer anzeigen“ – wirksam, sobald die KI-Anbindung kommt.
+**Abrufen** neben dem Modell fragt den Anbieter nach seinen Modellen – mit Adresse und Key, wie sie gerade im
+Fenster stehen, also schon vor „OK“ – und füllt damit die Auswahl; das Modell lässt sich weiter frei eintippen.
+Würde der API-Key über `http://` an einen anderen Rechner gehen, steht eine Warnung unter dem Key.
+**Rechte der KI** gelten für das aktuelle Projekt: „nur lesen“, „mit Vorschau“ (Vorgabe) oder „selbstständig“
+(dasselbe wie im KI-Fenster, siehe [Kapitel 13](13-automatisierung.md)).
+Dazu „KI-Fenster bei neuem Projekt anzeigen“ und „immer anzeigen“.
 
 **API-Keys** liegen im Schlüsselbund des Systems (Secret Service, macOS-Schlüsselbund,
 Windows-Anmeldeinformationen); nur wenn keiner verfügbar ist, in der Einstellungsdatei. `FREYA_TDE_AI_KEY` gilt
