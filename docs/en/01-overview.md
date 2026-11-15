@@ -14,8 +14,8 @@ find your way around.
 │  widgets/    UI backends for target projects (GTK 4, egui, iced, Slint, Flutter, WebView)        │
 │  db/         database helper freya-tde-db (separate process)                                     │
 │                                                                                                  │
-│  RUF/  ──────► submodule: Dragon-InterActive/RUF   (UI framework of the IDE)                     │
-│  CT-Editor/ ─► submodule: Dragon-InterActive/CT-E  (editor for Cargo.toml, also built on RUF)    │
+│  RUF/  ──────► submodule: Freya-TDE/RUF   (UI framework of the IDE)                     │
+│  CT-Editor/ ─► submodule: Freya-TDE/CT-E  (editor for Cargo.toml, also built on RUF)    │
 └──────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 

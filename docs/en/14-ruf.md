@@ -3,7 +3,7 @@
 [Contents](README.md) · back: [13 Automation and AI](13-automation.md) · next: [15 CT-Editor](15-ct-editor.md)
 
 **RUF** (Rust native UI Framework) is the UI framework that Freya TDE's user interface and the CT-Editor run
-on. It is a project of its own (repository [Dragon-InterActive/RUF](https://github.com/Dragon-InterActive/RUF),
+on. It is a project of its own (repository [Freya-TDE/RUF](https://github.com/Freya-TDE/RUF),
 a submodule `RUF/` in Freya-TDE) and can be used for any desktop program in Rust.
 
 ## What RUF is
@@ -56,6 +56,6 @@ Much of RUF was created because Freya TDE needed it – and is now available to 
 
 RUF's developer documentation (German and English) with getting started, architecture, component reference,
 custom components, designer integration, release and troubleshooting:
-[RUF/docs/en](https://github.com/Dragon-InterActive/RUF/blob/main/docs/en/README.md).
+[RUF/docs/en](https://github.com/Freya-TDE/RUF/blob/main/docs/en/README.md).
 
 **License:** MIT OR Apache-2.0 at your option; programs built with RUF may use any license.

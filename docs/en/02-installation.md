@@ -54,7 +54,7 @@ brew install gtk4 gtksourceview5
 RUF and the CT-Editor are submodules – fetch them while cloning:
 
 ```bash
-git clone --recurse-submodules https://github.com/Dragon-InterActive/Freya-TDE.git
+git clone --recurse-submodules https://github.com/Freya-TDE/Freya-TDE.git
 cd Freya-TDE
 cargo build --release -p freya-tde        # the IDE
 cargo build --release -p freya-tde-db     # database helper (for the "Database" window)

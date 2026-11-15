@@ -14,8 +14,8 @@ findet sich schneller zurecht.
 │  widgets/    UI-Backends für Zielprojekte (GTK 4, egui, iced, Slint, Flutter, WebView)           │
 │  db/         Datenbank-Helfer freya-tde-db (eigener Prozess)                                     │
 │                                                                                                  │
-│  RUF/  ──────► Submodul: Dragon-InterActive/RUF   (UI-Framework der IDE)                         │
-│  CT-Editor/ ─► Submodul: Dragon-InterActive/CT-E  (Editor für Cargo.toml, nutzt ebenfalls RUF)   │
+│  RUF/  ──────► Submodul: Freya-TDE/RUF   (UI-Framework der IDE)                         │
+│  CT-Editor/ ─► Submodul: Freya-TDE/CT-E  (Editor für Cargo.toml, nutzt ebenfalls RUF)   │
 └──────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 

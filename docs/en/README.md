@@ -58,7 +58,7 @@ The handbook explains and points the way; the detailed references live next to t
 | Component model, code generation | [`core/README.md`](../../core/README.md) |
 | Designer logic | [`designer/README.md`](../../designer/README.md) |
 | Database helper | [`db/README.md`](../../db/README.md) |
-| RUF developer docs | [RUF/docs/en](https://github.com/Dragon-InterActive/RUF/blob/main/docs/en/README.md) |
-| CT-Editor manual | [CT-E/docs/en](https://github.com/Dragon-InterActive/CT-E/blob/main/docs/en/README.md) |
+| RUF developer docs | [RUF/docs/en](https://github.com/Freya-TDE/RUF/blob/main/docs/en/README.md) |
+| CT-Editor manual | [CT-E/docs/en](https://github.com/Freya-TDE/CT-E/blob/main/docs/en/README.md) |
 
 The detailed reference files above are largely written in German with English summaries.

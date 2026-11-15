@@ -63,4 +63,4 @@ Each backend does what its toolkit can. The most important limits (complete in
 | No keyring available (e.g. Linux without Secret Service) | the API key cannot go into the keyring | Freya TDE stores it in `settings.toml` (readable only by the user) |
 
 More build and runtime problems of RUF:
-[RUF – troubleshooting](https://github.com/Dragon-InterActive/RUF/blob/main/docs/en/troubleshooting.md).
+[RUF – troubleshooting](https://github.com/Freya-TDE/RUF/blob/main/docs/en/troubleshooting.md).

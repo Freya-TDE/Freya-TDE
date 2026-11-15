@@ -4,7 +4,7 @@
 
 **RUF** (Rust native UI Framework) ist das UI-Framework, auf dem die Oberfläche von Freya TDE und der
 CT-Editor laufen. Es ist ein eigenes Projekt (Repository
-[Dragon-InterActive/RUF](https://github.com/Dragon-InterActive/RUF), in Freya-TDE als Submodul `RUF/`) und
+[Freya-TDE/RUF](https://github.com/Freya-TDE/RUF), in Freya-TDE als Submodul `RUF/`) und
 lässt sich für jedes Desktop-Programm in Rust nutzen.
 
 ## Was RUF ist
@@ -58,7 +58,7 @@ Vieles in RUF ist entstanden, weil Freya TDE es brauchte – und steht jetzt jed
 
 Die Entwicklerdoku von RUF (Deutsch und Englisch) mit Erste Schritte, Architektur, Komponenten-Referenz,
 eigenen Komponenten, Designer-Anbindung, Release und Fehlerbehebung:
-[RUF/docs/de](https://github.com/Dragon-InterActive/RUF/blob/main/docs/de/README.md).
+[RUF/docs/de](https://github.com/Freya-TDE/RUF/blob/main/docs/de/README.md).
 
 **Lizenz:** MIT OR Apache-2.0 nach Wahl; Programme, die mit RUF gebaut werden, dürfen unter beliebiger Lizenz
 stehen.

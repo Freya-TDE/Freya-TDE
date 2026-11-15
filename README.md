@@ -27,13 +27,13 @@ choice: GTK 4, egui, iced, Slint, Flutter or a web view.
 | **Freya TDE** (`ide/`, `core/`, `designer/`) | die IDE: Designer, Objektinspektor, Code-Editor mit rust-analyzer, Debugger (DAP), Git wie in VS Code, Terminal, Schema-Browser | the IDE: designer, object inspector, code editor with rust-analyzer, debugger (DAP), Git like in VS Code, terminal, schema browser |
 | **UI-Backends / UI backends** (`widgets/`) | GTK 4, egui, iced, Slint, Flutter, WebView – jedes mit eigener Palette | GTK 4, egui, iced, Slint, Flutter, WebView – each with its own palette |
 | **Komponenten-Packs / component packs** (`components/`) | Tokio, SQLx (PostgreSQL, MySQL, SQLite), Redis/Valkey, Axum, WebSocket, HTTP | Tokio, SQLx (PostgreSQL, MySQL, SQLite), Redis/Valkey, Axum, WebSocket, HTTP |
-| **[RUF](https://github.com/Dragon-InterActive/RUF)** (Submodul `RUF/`) | das UI-Framework der IDE auf GTK 4 | the IDE's UI framework on GTK 4 |
-| **[CT-Editor](https://github.com/Dragon-InterActive/CT-E)** (Submodul `CT-Editor/`) | visueller Editor für `Cargo.toml` | visual editor for `Cargo.toml` |
+| **[RUF](https://github.com/Freya-TDE/RUF)** (Submodul `RUF/`) | das UI-Framework der IDE auf GTK 4 | the IDE's UI framework on GTK 4 |
+| **[CT-Editor](https://github.com/Freya-TDE/CT-E)** (Submodul `CT-Editor/`) | visueller Editor für `Cargo.toml` | visual editor for `Cargo.toml` |
 
 ## Schnellstart / Quick start
 
 ```bash
-git clone --recurse-submodules https://github.com/Dragon-InterActive/Freya-TDE.git
+git clone --recurse-submodules https://github.com/Freya-TDE/Freya-TDE.git
 cd Freya-TDE
 cargo run --release -p freya-tde
 ```

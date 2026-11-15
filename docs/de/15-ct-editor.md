@@ -3,7 +3,7 @@
 [Inhalt](README.md) · zurück: [14 RUF und RNCL](14-ruf.md) · weiter: [16 Bekannte Probleme und Grenzen](16-probleme.md)
 
 Der **CT-Editor** (Cargo TOML Editor) bearbeitet `Cargo.toml`-Dateien visuell. Er ist ein eigenes Projekt
-(Repository [Dragon-InterActive/CT-E](https://github.com/Dragon-InterActive/CT-E), in Freya-TDE als Submodul
+(Repository [Freya-TDE/CT-E](https://github.com/Freya-TDE/CT-E), in Freya-TDE als Submodul
 `CT-Editor/`), gebaut mit RUF, und läuft auf Linux, Windows und macOS. Fertige Pakete für alle drei Systeme
 gibt es auf der Release-Seite des Repositorys (zuletzt 0.3.1).
 
@@ -50,6 +50,6 @@ geplant):
 ## Weiterlesen
 
 Das Handbuch des CT-Editors (Deutsch und Englisch) mit allen Optionen, Abläufen, Tastenkürzeln, Sprachen und
-dem Release-Workflow: [CT-E/docs/de](https://github.com/Dragon-InterActive/CT-E/blob/main/docs/de/README.md).
+dem Release-Workflow: [CT-E/docs/de](https://github.com/Freya-TDE/CT-E/blob/main/docs/de/README.md).
 
 **Lizenz:** MIT OR Apache-2.0 nach Wahl.

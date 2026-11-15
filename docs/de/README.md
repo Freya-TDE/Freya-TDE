@@ -59,5 +59,5 @@ Das Handbuch erklärt und verweist; die ausführlichen Nachschlagewerke liegen b
 | Komponentenmodell, Codegen | [`core/README.md`](../../core/README.md) |
 | Designer-Logik | [`designer/README.md`](../../designer/README.md) |
 | Datenbank-Helfer | [`db/README.md`](../../db/README.md) |
-| RUF-Entwicklerdoku | [RUF/docs/de](https://github.com/Dragon-InterActive/RUF/blob/main/docs/de/README.md) |
-| CT-Editor-Handbuch | [CT-E/docs/de](https://github.com/Dragon-InterActive/CT-E/blob/main/docs/de/README.md) |
+| RUF-Entwicklerdoku | [RUF/docs/de](https://github.com/Freya-TDE/RUF/blob/main/docs/de/README.md) |
+| CT-Editor-Handbuch | [CT-E/docs/de](https://github.com/Freya-TDE/CT-E/blob/main/docs/de/README.md) |

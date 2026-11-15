@@ -63,4 +63,4 @@ Jedes Backend setzt um, was sein Toolkit kann. Die wichtigsten Grenzen (vollstä
 | Kein Schlüsselbund verfügbar (z. B. Linux ohne Secret Service) | der API-Key kann nicht in den Schlüsselbund | Freya TDE speichert ihn in `settings.toml` (nur für den Nutzer lesbar) |
 
 Weitere Build- und Laufzeitprobleme von RUF:
-[RUF – Fehlerbehebung](https://github.com/Dragon-InterActive/RUF/blob/main/docs/de/fehlerbehebung.md).
+[RUF – Fehlerbehebung](https://github.com/Freya-TDE/RUF/blob/main/docs/de/fehlerbehebung.md).
