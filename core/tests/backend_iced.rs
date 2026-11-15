@@ -402,6 +402,9 @@ fn generated_project_builds_runs_and_reacts_to_clicks() {
         assert!(start.elapsed() < Duration::from_secs(20), "kein Fenster");
         std::thread::sleep(Duration::from_millis(200));
     };
+    // Das Formular ist höher als der Xvfb-Bildschirm (640×480); zentriert
+    // läge sein oberer Rand und damit der OK-Knopf außerhalb.
+    xdotool(&["windowmove", &window, "0", "0"]);
     std::thread::sleep(Duration::from_millis(1500));
     if let Some(dir) = std::env::var_os("FREYA_TDE_SHOT") {
         let _ = Command::new("import")
