@@ -78,6 +78,24 @@ type = "core/CheckBox"
 type = "crate::app::Control<bool>"
 init = "crate::app::Control::new({{ rust.checked }}).with_caption({{ rust.caption }}).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
 
+[[extend]]
+type = "core/ImageBox"
+[extend.codegen]
+type = "crate::app::Control<crate::app::Picture>"
+init = "crate::app::Control::new(crate::app::Picture::new({{ rust.file }}, {{ rust.fit }}, {{ rust.gamma }}, {{ rust.opacity }})).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+[[extend]]
+type = "core/ImageScrollBox"
+[extend.list]
+set-items = """
+self.{{ name }}.items = items;
+self.{{ name }}.value.reset();
+"""
+selected = """self.{{ name }}.value.selected"""
+[extend.codegen]
+type = "crate::app::Control<crate::app::Gallery>"
+init = "crate::app::Control::new(crate::app::Gallery::new({{ rust.orientation }}, {{ rust.thumb_size }}, {{ rust.spacing }}, {{ rust.fit }}, {{ rust.gamma }}, {{ rust.opacity }})).with_items::<&str>({{ rust.images }}).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
 # --- egui-Palette / egui palette ----------------------------------------------------------
 
 [[component]]

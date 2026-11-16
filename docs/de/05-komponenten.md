@@ -17,8 +17,19 @@ Hinter dem Designer steht ein neutrales Modell, das von keinem UI-Toolkit abhän
 - **Alles ist eine Komponente:** Name, Typ, Eigenschaften, Ereignisse.
 - Ein **Widget** ist eine Komponente mit visueller Erweiterung (Platzierung, Kinder).
 - **Nicht-visuelle Komponenten** (Timer, Datenbank, HTTP …) erscheinen als Symbol in der Komponentenleiste.
-- Typen kommen aus Packs: ein kleiner gemeinsamer Kern (Label, Button, Edit, CheckBox, Container), dazu die
-  Palette des jeweiligen UI-Backends und die Komponenten-Packs.
+- Typen kommen aus Packs: ein kleiner gemeinsamer Kern (Label, Button, Edit, CheckBox, Container, ImageBox,
+  ImageScrollBox), dazu die Palette des jeweiligen UI-Backends und die Komponenten-Packs.
+
+### Bilder: ImageBox und ImageScrollBox
+
+Die **ImageBox** zeigt ein Bild: Pfad in `file` (relativ zum Projekt), Einpassung `fit` (Contain, Cover,
+Stretch, Center), dazu `opacity` (Transparenz 0–1) und `gamma` (> 1 hellt auf), Ereignis `on_click`. Die Größe
+in Pixeln oder Prozent kommt wie bei jedem Widget aus der Platzierung (Anfasser, Gruppe „Platzierung“).
+Die **ImageScrollBox** ist die Fortsetzung für mehrere Bilder: Liste `images` im Objektinspektor oder eine
+Datenquelle wie bei Listen (`data_source`, Pfad in `display_field`), Anordnung `orientation` (eine Zeile, eine
+Spalte oder Raster), Vorschaugröße `thumb_size`, Abstand `spacing`; ein Klick wählt ein Bild und ruft
+`on_select(index, path)`. Der Designer zeichnet die echten Bilder. Formate: PNG, JPEG, GIF, WebP, BMP, kein
+SVG; Einzelheiten je Backend in `widgets/README.md`.
 
 ## Eigenschaften
 

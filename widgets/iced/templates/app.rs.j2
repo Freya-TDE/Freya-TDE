@@ -92,3 +92,107 @@ pub struct Table {
     /// Editable grids: the cell being edited (row, column, text).
     pub editing: Option<(usize, usize, String)>,
 }
+{%- if pictures %}
+
+/// A picture prepared by `freya_image` (gamma, opacity) as an iced handle.
+fn freya_handle(path: &str, gamma: f64, opacity: f64) -> Option<iced::widget::image::Handle> {
+    match freya_image(path, gamma, opacity) {
+        Ok(picture) => Some(iced::widget::image::Handle::from_rgba(
+            picture.width,
+            picture.height,
+            picture.rgba.to_vec(),
+        )),
+        Err(error) => {
+            eprintln!("{error}");
+            None
+        }
+    }
+}
+
+/// How a picture fits its place (Cover, Stretch, Contain, Center).
+pub fn content_fit(fit: &str) -> iced::ContentFit {
+    match fit {
+        "Cover" => iced::ContentFit::Cover,
+        "Stretch" => iced::ContentFit::Fill,
+        "Center" => iced::ContentFit::None,
+        _ => iced::ContentFit::Contain,
+    }
+}
+
+/// State of an ImageBox; `set_file` loads another picture.
+#[allow(dead_code)]
+pub struct Picture {
+    pub file: String,
+    pub fit: String,
+    pub gamma: f64,
+    pub opacity: f64,
+    pub handle: Option<iced::widget::image::Handle>,
+}
+
+#[allow(dead_code)]
+impl Picture {
+    pub fn new(file: &str, fit: &str, gamma: f64, opacity: f64) -> Self {
+        let mut picture = Self {
+            file: String::new(),
+            fit: fit.to_owned(),
+            gamma,
+            opacity,
+            handle: None,
+        };
+        picture.set_file(file);
+        picture
+    }
+
+    pub fn set_file(&mut self, file: &str) {
+        self.file = file.to_owned();
+        self.handle = (!file.is_empty())
+            .then(|| freya_handle(file, self.gamma, self.opacity))
+            .flatten();
+    }
+}
+
+/// State of an ImageScrollBox; the paths are the control's `items`,
+/// `load` prepares their pictures.
+#[allow(dead_code)]
+pub struct Gallery {
+    pub selected: Option<usize>,
+    pub orientation: String,
+    pub thumb: (f32, f32),
+    pub spacing: f32,
+    pub fit: String,
+    pub gamma: f64,
+    pub opacity: f64,
+    pub handles: Vec<Option<iced::widget::image::Handle>>,
+}
+
+#[allow(dead_code)]
+impl Gallery {
+    pub fn new(orientation: &str, thumb: (i32, i32), spacing: i64, fit: &str, gamma: f64, opacity: f64) -> Self {
+        Self {
+            selected: None,
+            orientation: orientation.to_owned(),
+            thumb: (thumb.0 as f32, thumb.1 as f32),
+            spacing: spacing as f32,
+            fit: fit.to_owned(),
+            gamma,
+            opacity,
+            handles: Vec::new(),
+        }
+    }
+
+    /// Prepares the pictures of `paths`; the selection starts over.
+    pub fn load(&mut self, paths: &[String]) {
+        self.selected = None;
+        self.handles = paths
+            .iter()
+            .map(|path| freya_handle(path, self.gamma, self.opacity))
+            .collect();
+    }
+
+    /// Same as `load`, for the initial state.
+    pub fn loaded(mut self, paths: &[&str]) -> Self {
+        self.load(&paths.iter().map(|p| p.to_string()).collect::<Vec<_>>());
+        self
+    }
+}
+{%- endif %}

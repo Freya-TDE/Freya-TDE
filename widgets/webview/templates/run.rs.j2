@@ -22,6 +22,12 @@ let builder = wry::WebViewBuilder::new()
     .with_ipc_handler(move |request: wry::http::Request<String>| {
         let _ = ipc.send_event(crate::app::FreyaEvent::Ipc(request.into_body()));
     });
+{%- if pictures %}
+// Bilder (ImageBox, ImageScrollBox) über das eigene Schema `freya`.
+let builder = builder.with_custom_protocol("freya".into(), |_, request| {
+    crate::app::freya_picture_response(request)
+});
+{%- endif %}
 #[cfg(target_os = "linux")]
 let webview = {
     use tao::platform::unix::WindowExtUnix;

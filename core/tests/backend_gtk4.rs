@@ -16,6 +16,8 @@ use tdr_core::*;
 mod data;
 #[path = "support/edit.rs"]
 mod edit;
+#[path = "support/pictures.rs"]
+mod pictures;
 #[path = "support/style.rs"]
 mod style;
 
@@ -317,7 +319,22 @@ fn started(app: &mut app::App) -> Result<(), app::Error> {
     let window = app.main_form.window.clone();
     let pages = app.main_form.pages.clone();
     let colors = app.main_form.colors.clone();
+    let photo = app.main_form.photo.clone();
+    let gallery = app.main_form.gallery.clone();
     gtk4::glib::timeout_add_local_once(std::time::Duration::from_millis(800), move || {
+        // Bilder: die ImageBox hat ihr Bild, die Galerie drei; das zweite wählen.
+        println!("photo={}", photo.paintable().is_some());
+        let flow = gallery
+            .child()
+            .and_then(|viewport| viewport.downcast::<gtk4::Viewport>().ok())
+            .and_then(|viewport| viewport.child())
+            .and_then(|flow| flow.downcast::<gtk4::FlowBox>().ok())
+            .expect("FlowBox in der Galerie");
+        println!("gallery={}", flow.observe_children().n_items());
+        if let Some(child) = flow.child_at_index(1) {
+            flow.select_child(&child);
+            child.activate();
+        }
         edit.set_text("Freya");
         button.emit_clicked();
         blue.set_active(true);
@@ -411,6 +428,7 @@ fn generated_project_builds_and_runs() {
     let registry = registry();
     let mut form = form();
     style::apply(&mut form, "greeting", "ok_button");
+    pictures::add(&mut form);
     let issues = validate(&form, &ValidationContext::for_backend(&registry, "gtk4"));
     assert!(
         issues.iter().all(|i| i.severity != Severity::Error),
@@ -430,12 +448,16 @@ fn generated_project_builds_and_runs() {
     assert!(!generation.has_errors(), "{:#?}", generation.diagnostics);
     write(&dir, &generation).unwrap();
     style::picture(&dir);
+    pictures::files(&dir);
     // Nutzercode wie nach dem Ausfüllen der Handler.
     std::fs::write(dir.join("src/main.rs"), MAIN_RS).unwrap();
     let select = "if let Some(model) = self.grid.model().and_downcast::<gtk4::SingleSelection>() { model.set_selected(1); }";
     let form_rs = FORM_RS
         .replace("/*EDIT_CALLS*/", &edit::calls("println_str", select))
-        .replace("/*EDIT_HANDLERS*/", &edit::handlers("println_str"));
+        .replace(
+            "/*EDIT_HANDLERS*/",
+            &(edit::handlers("println_str") + pictures::HANDLERS),
+        );
     std::fs::write(dir.join("src/main_form.rs"), form_rs).unwrap();
     // Ein zweiter Lauf ändert die Nutzerdateien nicht (alle Handler da).
     let again = generate(&project, &forms, &registry, &dir);
@@ -473,6 +495,9 @@ fn generated_project_builds_and_runs() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(stdout.contains("created"), "{stdout}");
+    assert!(stdout.contains("photo=true"), "{stdout}");
+    assert!(stdout.contains("gallery=3"), "{stdout}");
+    assert!(stdout.contains("picture=1 path=second.png"), "{stdout}");
     assert!(stdout.contains("name=Freya"), "{stdout}");
     assert!(stdout.contains("label=Hallo Freya"), "{stdout}");
     assert!(stdout.contains("bound_items=3"), "{stdout}");

@@ -309,6 +309,30 @@ behalten seine Kinder ihre Lage; zurück in ein anderes Layout kommen sie wieder
 Die Editor-Oberfläche selbst (RUF/RNCL) hat Anker ebenfalls: `Component::set_anchors` (siehe RUF-Doku).
 *The editor UI (RUF/RNCL) has anchors as well.*
 
+## Bilder: ImageBox und ImageScrollBox / pictures
+
+Die Kern-Widgets `ImageBox` (ein Bild, `file`, `on_click`) und `ImageScrollBox` (Bilderliste `images` oder
+Datenquelle mit dem Pfad in `display_field`, `orientation` Horizontal/Vertical/Grid, `thumb_size`, `spacing`,
+`on_select(index, path)`) gibt es in allen sechs Backends. Beide haben `fit` (Contain, Cover, Stretch, Center),
+`opacity` (0–1) und `gamma` (0,1–5; > 1 hellt auf). Gamma und Transparenz rechnet der Kern einmal in
+`app.gen.rs` ein (`freya_image`, Crate `image`), deshalb sehen sie überall gleich aus. Formate: PNG, JPEG,
+GIF (erstes Bild), WebP, BMP – **kein SVG** (dafür das Backend-Widget `Image` von GTK 4 oder Slint). Pfade
+gelten relativ zum Arbeitsverzeichnis des Programms; eine Datei, die fehlt, bleibt leer und wird auf stderr
+gemeldet. Ohne Wunschgröße ist die ImageBox 96 px hoch, die ImageScrollBox 240 × 128 px (wie im Designer).
+Ein anderes Bild zur Laufzeit: `self.<name>.value.set_file(…)` (egui, iced, Flutter, WebView), bei GTK 4
+`self.<name>.set_filename(…)` (ohne Gamma/Transparenz), bei Slint `set_<name>_source(…)`; die Galerie füllt
+die Datenbindung neu (`<name>_reload()`).
+*Core widgets in all six backends; gamma and opacity are applied once by the core (`freya_image`), no SVG;
+paths are relative to the working directory.*
+
+| GTK 4 | egui | iced | Slint | Flutter | WebView |
+|---|---|---|---|---|---|
+| `Picture` mit `MemoryTexture` (`ContentFit`, braucht GTK ≥ 4.12); Galerie `FlowBox` in `ScrolledWindow`, Auswahl über `child-activated` | Textur im Zustand (`crate::app::Picture`/`Gallery`), Galerie in einer `ScrollArea` | `image::Handle::from_rgba`, Galerie `scrollable` mit `row`/`column`/`row().wrap()` | `slint::Image::from_rgba8`, Galerie `ScrollView` mit `for`-Wiederholung | Rust legt ein aufbereitetes PNG im Temp-Ordner ab (`freya-pictures`), Dart zeigt es mit `Image.file`; Pfade relativ zum Projekt (das Programm läuft in `flutter/`) | eigenes Schema `freya://` (Windows: `http://freya.localhost/`), CSS `object-fit`; Galerie per Flexbox |
+
+Grenzen: `Center` zeigt das Bild in Originalgröße und schneidet ab (GTK: `ScaleDown`, verkleinert also große
+Bilder). WebView behält aufbereitete Bilder bis zum Programmende im Speicher, Flutter im Temp-Ordner.
+*Limits: `Center` keeps the natural size (GTK scales big pictures down).*
+
 ## Backend-Pack / backend pack
 
 Ein UI-Backend ist ein Ordner `widgets/<backend>/` mit einer `pack.toml` (`kind = "backend"`):

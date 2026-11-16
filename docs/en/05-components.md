@@ -17,8 +17,19 @@ Behind the designer is a neutral model that does not depend on any UI toolkit (c
 - **Everything is a component:** name, type, properties, events.
 - A **widget** is a component with a visual extension (placement, children).
 - **Non-visual components** (timer, database, HTTP …) appear as an icon in the component bar.
-- Types come from packs: a small common core (Label, Button, Edit, CheckBox, Container), plus the palette of
-  the UI backend and the component packs.
+- Types come from packs: a small common core (Label, Button, Edit, CheckBox, Container, ImageBox,
+  ImageScrollBox), plus the palette of the UI backend and the component packs.
+
+### Pictures: ImageBox and ImageScrollBox
+
+The **ImageBox** shows one picture: path in `file` (relative to the project), fit `fit` (Contain, Cover,
+Stretch, Center), plus `opacity` (0–1) and `gamma` (> 1 brightens), event `on_click`. Its size in pixels or
+percent comes from the placement like for any widget (handles, group "Placement"). The **ImageScrollBox**
+continues it for several pictures: list `images` in the object inspector or a data source as for lists
+(`data_source`, path in `display_field`), arrangement `orientation` (one row, one column or a grid), thumbnail
+size `thumb_size`, gap `spacing`; a click selects a picture and calls `on_select(index, path)`. The designer
+draws the real pictures. Formats: PNG, JPEG, GIF, WebP, BMP, no SVG; details per backend in
+`widgets/README.md`.
 
 ## Properties
 

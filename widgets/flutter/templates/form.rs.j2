@@ -73,7 +73,7 @@ impl {{ form.struct }} {
                 match event {
                 {%- for event, handler in c.events | items if handler %}
                 {%- set key = t ~ "." ~ event %}
-                {%- if key in ["core/Button.on_click", "core/Edit.on_submit"] %}
+                {%- if key in ["core/Button.on_click", "core/Edit.on_submit", "core/ImageBox.on_click"] %}
                     "{{ event }}" => self.{{ handler }}(),
                 {%- elif key in ["core/Edit.on_change", "backend:flutter/TextEdit.on_change"] %}
                     "{{ event }}" => {
@@ -94,6 +94,13 @@ impl {{ form.struct }} {
                     "{{ event }}" => {
                         let index = self.{{ c.name }}.value;
                         self.{{ handler }}(index);
+                    }
+                {%- elif key == "core/ImageScrollBox.on_select" %}
+                    "{{ event }}" => {
+                        if let Some(index) = self.{{ c.name }}.value.selected {
+                            let path = self.{{ c.name }}.items.get(index).cloned().unwrap_or_default();
+                            self.{{ handler }}(index, &path);
+                        }
                     }
                 {%- elif key == "backend:flutter/Tabs.on_page" %}
                     "{{ event }}" => {

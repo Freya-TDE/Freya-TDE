@@ -110,6 +110,52 @@ DropdownButton<int>(
   ],
   onChanged: c.enabled ? (v) => _send({{ n }}, 'on_select', freyaInput(index: v ?? -1)) : null,
 )
+{%- elif t == "core/ImageBox" -%}
+{%- set p = c.placement if c.placement and c.placement.kind == "layout" else none %}
+GestureDetector(
+  onTap: c.enabled ? () => _send({{ n }}, 'on_click') : null,
+  child: SizedBox(
+    width: {{ p.width if p and p.width > 0 else 96 }},
+    height: {{ p.height if p and p.height > 0 else 96 }},
+    child: c.text.isEmpty ? const SizedBox() : Image.file(File(c.text), fit: {{ fits[c.props.fit] }}),
+  ),
+)
+{%- elif t == "core/ImageScrollBox" -%}
+{%- set p = c.placement if c.placement and c.placement.kind == "layout" else none %}
+{%- set tw = c.props.thumb_size.width %}
+{%- set th = c.props.thumb_size.height %}
+{%- set sp = c.props.spacing %}
+SizedBox(
+  width: {{ p.width if p and p.width > 0 else 240 }},
+  height: {{ p.height if p and p.height > 0 else 128 }},
+  child: SingleChildScrollView(
+    scrollDirection: {{ "Axis.horizontal" if c.props.orientation == "Horizontal" else "Axis.vertical" }},
+    child: {{ "Row" if c.props.orientation == "Horizontal" else ("Column" if c.props.orientation == "Vertical" else "Wrap") }}(
+      spacing: {{ sp }},
+      {%- if c.props.orientation == "Grid" %}
+      runSpacing: {{ sp }},
+      {%- endif %}
+      children: [
+        for (var i = 0; i < c.items.length; i++)
+          GestureDetector(
+            onTap: c.enabled ? () => _send({{ n }}, 'on_select', freyaInput(index: i)) : null,
+            child: Container(
+              width: {{ tw }},
+              height: {{ th }},
+              padding: const EdgeInsets.all(2),
+              decoration: c.index == i
+                  ? BoxDecoration(
+                      border: Border.all(color: Theme.of(context).colorScheme.primary, width: 2),
+                      borderRadius: BorderRadius.circular(2),
+                    )
+                  : null,
+              child: c.items[i].isEmpty ? const SizedBox() : Image.file(File(c.items[i]), fit: {{ fits[c.props.fit] }}),
+            ),
+          ),
+      ],
+    ),
+  ),
+)
 {%- elif t == "backend:flutter/ListBox" -%}
 SizedBox(
   height: {{ c.placement.height if c.placement and c.placement.kind == "absolute" else 120 }},
@@ -272,6 +318,7 @@ Align(alignment: Alignment.centerRight, child: {{ sized(c) }})
 // ignore_for_file: non_constant_identifier_names, prefer_const_constructors, unused_element, unused_import
 
 import 'dart:async';
+import 'dart:io' show File;
 import 'dart:ui' show AppExitResponse;
 
 import 'package:flutter/material.dart';

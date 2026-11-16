@@ -242,6 +242,23 @@ pub const FREYA_JS: &str = r####"
     slider: (el, c) => { if (!focused(el)) el.value = c.number; },
     progress: (el, c) => { el.value = c.number; },
     select: (el, c) => { fill(el, c.items); el.selectedIndex = c.index; },
+    picture: (el, c) => {
+      const img = el.querySelector("img");
+      if (img.getAttribute("src") !== c.text) { if (c.text) img.src = c.text; else img.removeAttribute("src"); }
+    },
+    gallery: (el, c) => {
+      const key = JSON.stringify(c.items);
+      if (el.dataset.items !== key) {
+        el.replaceChildren(...c.items.map((url, i) => {
+          const img = document.createElement("img");
+          if (url) img.src = url;
+          img.dataset.index = i;
+          return img;
+        }));
+        el.dataset.items = key;
+      }
+      [...el.children].forEach((img, i) => img.classList.toggle("freya-selected", i === c.index));
+    },
     frame: (el, c) => {
       const legend = el.querySelector(":scope > legend");
       legend.textContent = c.caption;
@@ -358,6 +375,15 @@ pub const FREYA_JS: &str = r####"
         case "select":
           el.addEventListener("change", () => send(name, "on_select", { index: el.selectedIndex }));
           break;
+        case "picture":
+          el.addEventListener("click", () => { if (!el.classList.contains("freya-disabled")) send(name, "on_click"); });
+          break;
+        case "gallery":
+          el.addEventListener("click", (e) => {
+            const img = e.target.closest("img");
+            if (img && !el.classList.contains("freya-disabled")) send(name, "on_select", { index: Number(img.dataset.index) });
+          });
+          break;
         case "tabs":
           el.querySelector(":scope > nav").addEventListener("click", (e) => {
             const b = e.target.closest("button");
@@ -432,6 +458,11 @@ body > [data-kind="form"] { min-height: 100%; }
 [data-kind="tabs"] > nav > button { border-radius: 4px 4px 0 0; margin: 0; width: auto; }
 [data-kind="tabs"] > nav > button.freya-active { font-weight: bold; }
 [data-kind="grid"] { border-collapse: collapse; width: 100%; }
+[data-kind="picture"] > img { width: 100%; height: 100%; display: block; }
+[data-kind="gallery"] { overflow: auto; align-content: flex-start; }
+[data-kind="gallery"] > img { width: var(--freya-thumb-w); height: var(--freya-thumb-h); object-fit: var(--freya-fit); flex-shrink: 0; box-sizing: border-box; padding: 2px; border: 2px solid transparent; border-radius: 2px; }
+[data-kind="gallery"] > img.freya-selected { border-color: Highlight; }
+[data-kind="picture"] > img:not([src]), [data-kind="gallery"] > img:not([src]) { visibility: hidden; }
 [data-kind="grid"] th, [data-kind="grid"] td { text-align: left; padding: 4px 8px; }
 [data-kind="grid"] tr.freya-selected td { background: Highlight; color: HighlightText; }
 [data-kind="grid"] td > input { width: 100%; margin: 0; padding: 2px 4px; }
@@ -474,3 +505,148 @@ fieldset { border: 1px solid color-mix(in srgb, currentColor 25%, transparent); 
 legend { padding: 0 4px; }
 hr { border: 0; border-top: 1px solid color-mix(in srgb, currentColor 25%, transparent); }
 "####;
+{%- if pictures %}
+
+/// Pictures prepared for the page, served by the scheme `freya`.
+static FREYA_PICTURES: std::sync::Mutex<
+    std::collections::BTreeMap<String, std::sync::Arc<Vec<u8>>>,
+> = std::sync::Mutex::new(std::collections::BTreeMap::new());
+
+/// Address of a picture for the page, prepared by `freya_image` (gamma,
+/// opacity) as a PNG; empty when it cannot be read.
+pub fn freya_picture_url(path: &str, gamma: f64, opacity: f64) -> String {
+    use std::hash::{Hash as _, Hasher as _};
+    if path.is_empty() {
+        return String::new();
+    }
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    (path, gamma.to_bits(), opacity.to_bits()).hash(&mut hasher);
+    let key = format!("{:016x}.png", hasher.finish());
+    let mut pictures = FREYA_PICTURES
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if !pictures.contains_key(&key) {
+        match freya_image(path, gamma, opacity).and_then(|image| freya_image_png(&image)) {
+            Ok(png) => {
+                pictures.insert(key.clone(), std::sync::Arc::new(png));
+            }
+            Err(error) => {
+                eprintln!("{error}");
+                return String::new();
+            }
+        }
+    }
+    // Windows (WebView2) erreicht eigene Schemata über http://<schema>.localhost.
+    if cfg!(windows) {
+        format!("http://freya.localhost/{key}")
+    } else {
+        format!("freya://localhost/{key}")
+    }
+}
+
+/// Answers the page's request for a picture (scheme `freya`).
+pub fn freya_picture_response(
+    request: wry::http::Request<Vec<u8>>,
+) -> wry::http::Response<std::borrow::Cow<'static, [u8]>> {
+    let key = request.uri().path().trim_start_matches('/').to_owned();
+    let png = FREYA_PICTURES
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .get(&key)
+        .cloned();
+    let builder = wry::http::Response::builder().header("Access-Control-Allow-Origin", "*");
+    match png {
+        Some(png) => builder
+            .header("Content-Type", "image/png")
+            .body(std::borrow::Cow::Owned(png.to_vec())),
+        None => builder.status(404).body(std::borrow::Cow::Borrowed(&[][..])),
+    }
+    .unwrap_or_else(|_| wry::http::Response::new(std::borrow::Cow::Borrowed(&[][..])))
+}
+
+/// State of an ImageBox; `set_file` prepares another picture.
+#[allow(dead_code)]
+pub struct Picture {
+    pub file: String,
+    pub gamma: f64,
+    pub opacity: f64,
+    url: String,
+}
+
+#[allow(dead_code)]
+impl Picture {
+    pub fn new(file: &str, gamma: f64, opacity: f64) -> Self {
+        let mut picture = Self {
+            file: String::new(),
+            gamma,
+            opacity,
+            url: String::new(),
+        };
+        picture.set_file(file);
+        picture
+    }
+
+    pub fn set_file(&mut self, file: &str) {
+        self.file = file.to_owned();
+        self.url = freya_picture_url(file, self.gamma, self.opacity);
+    }
+}
+
+impl FreyaValue for Picture {
+    fn put(&self, control: &mut serde_json::Map<String, serde_json::Value>) {
+        control.insert("text".into(), self.url.clone().into());
+    }
+}
+
+/// State of an ImageScrollBox; the paths are the control's `items`,
+/// `load` prepares their pictures.
+#[allow(dead_code)]
+pub struct Gallery {
+    pub selected: Option<usize>,
+    pub gamma: f64,
+    pub opacity: f64,
+    urls: Vec<String>,
+}
+
+#[allow(dead_code)]
+impl Gallery {
+    pub fn new(gamma: f64, opacity: f64) -> Self {
+        Self {
+            selected: None,
+            gamma,
+            opacity,
+            urls: Vec::new(),
+        }
+    }
+
+    /// Prepares the pictures of `paths`; the selection starts over.
+    pub fn load(&mut self, paths: &[String]) {
+        self.selected = None;
+        self.urls = paths
+            .iter()
+            .map(|path| freya_picture_url(path, self.gamma, self.opacity))
+            .collect();
+    }
+
+    /// Same as `load`, for the initial state.
+    pub fn loaded(mut self, paths: &[&str]) -> Self {
+        self.load(&paths.iter().map(|p| p.to_string()).collect::<Vec<_>>());
+        self
+    }
+}
+
+impl FreyaValue for Gallery {
+    fn put(&self, control: &mut serde_json::Map<String, serde_json::Value>) {
+        control.insert("items".into(), self.urls.clone().into());
+        control.insert(
+            "index".into(),
+            self.selected.map_or(-1, |i| i as i64).into(),
+        );
+    }
+    fn take(&mut self, input: &Input) {
+        if let Some(index) = input.index {
+            self.selected = usize::try_from(index).ok().filter(|i| *i < self.urls.len());
+        }
+    }
+}
+{%- endif %}

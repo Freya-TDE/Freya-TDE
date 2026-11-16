@@ -53,6 +53,18 @@ type = "core/Form"
 type = "FormUi"
 init = "{{ form }}::FormUi::new()?"
 
+[[extend]]
+type = "core/ImageScrollBox"
+[extend.list]
+set-items = """
+freya_slint_gallery(&self.{{ root }}, &items, {{ props.gamma }}_f64, {{ props.opacity }}_f64, |ui, images, paths| {
+    ui.set_{{ name }}_images(images);
+    ui.set_{{ name }}_paths(paths);
+    ui.set_{{ name }}_selected(-1);
+});
+"""
+selected = """usize::try_from(self.{{ root }}.get_{{ name }}_selected()).ok()"""
+
 # --- Slint-Palette / Slint palette --------------------------------------------------------
 
 [[component]]

@@ -19,6 +19,8 @@ use tdr_core::*;
 mod data;
 #[path = "support/edit.rs"]
 mod edit;
+#[path = "support/pictures.rs"]
+mod pictures;
 #[path = "support/style.rs"]
 mod style;
 
@@ -282,6 +284,14 @@ impl MainForm {
         self.window.set_greeting_text(format!("Hallo {name}").into());
         self.window.set_window_title("geklickt".into());
         say(&format!("label={}", self.window.get_greeting_text()));
+        {
+            use slint::Model as _;
+            say(&format!(
+                "gallery={} photo={}",
+                self.window.get_gallery_images().row_count(),
+                self.window.get_photo_source().size().width > 0
+            ));
+        }
         /*EDIT_CALLS*/
     }
     /*EDIT_HANDLERS*/
@@ -335,6 +345,7 @@ fn generated_project_builds_runs_and_reacts_to_clicks() {
     let registry = registry();
     let mut form = form();
     style::apply(&mut form, "greeting", "ok_button");
+    pictures::add(&mut form);
     let issues = validate(&form, &ValidationContext::for_backend(&registry, "slint"));
     assert!(
         issues.iter().all(|i| i.severity != Severity::Error),
@@ -352,12 +363,16 @@ fn generated_project_builds_runs_and_reacts_to_clicks() {
     assert!(!generation.has_errors(), "{:#?}", generation.diagnostics);
     write(&dir, &generation).unwrap();
     style::picture(&dir);
+    pictures::files(&dir);
     let form_rs = FORM_RS
         .replace(
             "/*EDIT_CALLS*/",
             &edit::calls("say", "self.window.set_grid_current(1);"),
         )
-        .replace("/*EDIT_HANDLERS*/", &edit::handlers("say"));
+        .replace(
+            "/*EDIT_HANDLERS*/",
+            &(edit::handlers("say") + pictures::HANDLERS),
+        );
     std::fs::write(dir.join("src/main_form.rs"), form_rs).unwrap();
     // Ein Bild für das Image-Widget.
     std::fs::write(
@@ -439,6 +454,7 @@ fn generated_project_builds_runs_and_reacts_to_clicks() {
         .unwrap();
     assert!(stdout.contains("created"), "{stdout}");
     assert!(stdout.contains("label=Hallo Freya"), "{stdout}");
+    assert!(stdout.contains("gallery=3 photo=true"), "{stdout}");
     assert!(stdout.contains("bound_items=3"), "{stdout}");
     assert!(stdout.contains("bound=Some(2)"), "{stdout}");
     assert!(stdout.contains("grid_rows=3 grid_columns=2"), "{stdout}");

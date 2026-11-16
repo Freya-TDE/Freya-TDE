@@ -285,3 +285,208 @@ pub fn anchored(
         eframe::egui::vec2(w as f32, h as f32),
     )
 }
+{%- if pictures %}
+
+/// Where a picture of size `image` goes in `rect` for `fit` (Cover,
+/// Stretch, Contain, Center).
+fn fit_rect(rect: eframe::egui::Rect, image: eframe::egui::Vec2, fit: &str) -> eframe::egui::Rect {
+    use eframe::egui;
+    if image.x <= 0.0 || image.y <= 0.0 {
+        return rect;
+    }
+    let scale = egui::vec2(rect.width() / image.x, rect.height() / image.y);
+    match fit {
+        "Stretch" => rect,
+        "Contain" => egui::Rect::from_center_size(rect.center(), image * scale.x.min(scale.y)),
+        "Center" => egui::Rect::from_center_size(rect.center(), image),
+        _ => egui::Rect::from_center_size(rect.center(), image * scale.x.max(scale.y)),
+    }
+}
+
+/// A texture of `path` prepared by `freya_image` (gamma, opacity).
+fn freya_texture(
+    ctx: &eframe::egui::Context,
+    path: &str,
+    gamma: f64,
+    opacity: f64,
+) -> Option<eframe::egui::TextureHandle> {
+    match freya_image(path, gamma, opacity) {
+        Ok(picture) => {
+            let image = eframe::egui::ColorImage::from_rgba_unmultiplied(
+                [picture.width as usize, picture.height as usize],
+                &picture.rgba,
+            );
+            Some(ctx.load_texture(path, image, Default::default()))
+        }
+        Err(error) => {
+            eprintln!("{error}");
+            None
+        }
+    }
+}
+
+/// Size of a picture widget: what the layout gives (a requested size or
+/// percent), else as in the designer.
+fn picture_size(ui: &eframe::egui::Ui, natural: eframe::egui::Vec2) -> eframe::egui::Vec2 {
+    let layout = ui.layout();
+    if layout.horizontal_justify() && layout.vertical_justify() {
+        ui.available_size()
+    } else if layout.horizontal_justify() {
+        eframe::egui::vec2(ui.available_width(), natural.y)
+    } else {
+        natural
+    }
+}
+
+/// State of an ImageBox: the file, how it fits, and its texture (loaded once).
+#[allow(dead_code)]
+pub struct Picture {
+    pub file: String,
+    pub fit: String,
+    pub gamma: f64,
+    pub opacity: f64,
+    texture: Option<(String, Option<eframe::egui::TextureHandle>)>,
+}
+
+#[allow(dead_code)]
+impl Picture {
+    pub fn new(file: &str, fit: &str, gamma: f64, opacity: f64) -> Self {
+        Self {
+            file: file.to_owned(),
+            fit: fit.to_owned(),
+            gamma,
+            opacity,
+            texture: None,
+        }
+    }
+
+    /// Shows another picture (loaded when drawn next).
+    pub fn set_file(&mut self, file: &str) {
+        self.file = file.to_owned();
+    }
+
+    /// Draws the picture; a click is the response's `clicked()`.
+    pub fn show(&mut self, ui: &mut eframe::egui::Ui) -> eframe::egui::Response {
+        let size = picture_size(ui, eframe::egui::vec2(96.0, 96.0));
+        let (rect, response) = ui.allocate_exact_size(size, eframe::egui::Sense::click());
+        if self.texture.as_ref().is_none_or(|(file, _)| *file != self.file) {
+            let texture = (!self.file.is_empty())
+                .then(|| freya_texture(ui.ctx(), &self.file, self.gamma, self.opacity))
+                .flatten();
+            self.texture = Some((self.file.clone(), texture));
+        }
+        if let Some((_, Some(texture))) = &self.texture {
+            let uv = eframe::egui::Rect::from_min_max(eframe::egui::pos2(0.0, 0.0), eframe::egui::pos2(1.0, 1.0));
+            ui.painter().with_clip_rect(rect).image(
+                texture.id(),
+                fit_rect(rect, texture.size_vec2(), &self.fit),
+                uv,
+                eframe::egui::Color32::WHITE,
+            );
+        }
+        response
+    }
+}
+
+/// State of an ImageScrollBox; the paths are the control's `items`.
+#[allow(dead_code)]
+pub struct Gallery {
+    pub selected: Option<usize>,
+    pub orientation: String,
+    pub thumb: eframe::egui::Vec2,
+    pub spacing: f32,
+    pub fit: String,
+    pub gamma: f64,
+    pub opacity: f64,
+    textures: std::collections::HashMap<String, Option<eframe::egui::TextureHandle>>,
+}
+
+#[allow(dead_code)]
+impl Gallery {
+    pub fn new(orientation: &str, thumb: (i32, i32), spacing: i64, fit: &str, gamma: f64, opacity: f64) -> Self {
+        Self {
+            selected: None,
+            orientation: orientation.to_owned(),
+            thumb: eframe::egui::vec2(thumb.0 as f32, thumb.1 as f32),
+            spacing: spacing as f32,
+            fit: fit.to_owned(),
+            gamma,
+            opacity,
+            textures: Default::default(),
+        }
+    }
+
+    /// Draws the pictures in a scroll area; choosing one marks the response
+    /// as changed (`selected` holds the index).
+    pub fn show(&mut self, ui: &mut eframe::egui::Ui, items: &[String]) -> eframe::egui::Response {
+        use eframe::egui;
+        let size = picture_size(ui, egui::vec2(240.0, 128.0));
+        let mut chosen = None;
+        let mut response = ui
+            .allocate_ui(size, |ui| {
+                ui.set_min_size(size);
+                let horizontal = self.orientation == "Horizontal";
+                egui::ScrollArea::new([horizontal, !horizontal])
+                    .id_salt(ui.next_auto_id())
+                    .max_width(size.x)
+                    .max_height(size.y)
+                    .show(ui, |ui| {
+                        ui.spacing_mut().item_spacing = egui::vec2(self.spacing, self.spacing);
+                        let mut thumbs = |ui: &mut egui::Ui| {
+                            for (index, path) in items.iter().enumerate() {
+                                let (rect, response) = ui.allocate_exact_size(self.thumb, egui::Sense::click());
+                                let texture = self
+                                    .textures
+                                    .entry(path.clone())
+                                    .or_insert_with(|| freya_texture(ui.ctx(), path, self.gamma, self.opacity));
+                                if let Some(texture) = texture {
+                                    let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
+                                    ui.painter().with_clip_rect(rect).image(
+                                        texture.id(),
+                                        fit_rect(rect, texture.size_vec2(), &self.fit),
+                                        uv,
+                                        egui::Color32::WHITE,
+                                    );
+                                }
+                                if self.selected == Some(index) {
+                                    ui.painter().rect_stroke(
+                                        rect,
+                                        2.0,
+                                        ui.visuals().selection.stroke,
+                                        egui::StrokeKind::Inside,
+                                    );
+                                }
+                                if response.clicked() {
+                                    chosen = Some(index);
+                                }
+                            }
+                        };
+                        match self.orientation.as_str() {
+                            "Horizontal" => {
+                                ui.horizontal(|ui| thumbs(ui));
+                            }
+                            "Vertical" => {
+                                ui.vertical(|ui| thumbs(ui));
+                            }
+                            _ => {
+                                ui.set_max_width(size.x);
+                                ui.horizontal_wrapped(|ui| thumbs(ui));
+                            }
+                        }
+                    });
+            })
+            .response;
+        if let Some(index) = chosen {
+            self.selected = Some(index);
+            response.mark_changed();
+        }
+        response
+    }
+
+    /// New paths (data binding): textures and the selection start over.
+    pub fn reset(&mut self) {
+        self.textures.clear();
+        self.selected = None;
+    }
+}
+{%- endif %}

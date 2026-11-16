@@ -29,6 +29,10 @@ egui::RichText::new({{ text }}){% if c.props.bold %}.strong(){% endif %}{% if c.
 {%- set t = c.type -%}
 {%- if t == "core/Label" -%}
 egui::Label::new({{ rich(c, "self." ~ c.name ~ ".value.as_str()") }}){% if c.props.wrap %}.wrap(){% else %}.extend(){% endif %}
+{%- elif t == "core/ImageBox" -%}
+|ui: &mut egui::Ui| self.{{ c.name }}.value.show(ui)
+{%- elif t == "core/ImageScrollBox" -%}
+|ui: &mut egui::Ui| self.{{ c.name }}.value.show(ui, &self.{{ c.name }}.items)
 {%- elif t == "core/Button" -%}
 egui::Button::new({{ rich(c, "self." ~ c.name ~ ".caption.as_str()") }})
 {%- elif t == "core/Edit" -%}
@@ -266,9 +270,16 @@ if response.changed() {
 {%- endif %}
 {%- for event, handler in c.events | items if handler %}
 {%- set key = t ~ "." ~ event %}
-{%- if key == "core/Button.on_click" %}
+{%- if key in ["core/Button.on_click", "core/ImageBox.on_click"] %}
 if response.clicked() {
     self.{{ handler }}();
+}
+{%- elif key == "core/ImageScrollBox.on_select" %}
+if response.changed()
+    && let Some(index) = self.{{ c.name }}.value.selected
+{
+    let path = self.{{ c.name }}.items.get(index).cloned().unwrap_or_default();
+    self.{{ handler }}(index, &path);
 }
 {%- elif key in ["core/Edit.on_change", "backend:egui/TextEdit.on_change"] %}
 if response.changed() {

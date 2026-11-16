@@ -469,6 +469,73 @@ Rectangle {
     background: Palette.border;
     visible: root.{{ c.name }}_visible;
 }
+{%- elif t == "core/ImageBox" %}
+Rectangle {
+    preferred_width: 96px;
+    preferred_height: 96px;
+    min_width: 16px;
+    min_height: 16px;
+    visible: root.{{ c.name }}_visible;
+    Image {
+        width: 100%;
+        height: 100%;
+        source: root.{{ c.name }}_source;
+        image_fit: {{ {"Cover": "cover", "Stretch": "fill", "Contain": "contain", "Center": "preserve"}[c.props.fit] }};
+    }
+    TouchArea {
+        enabled: root.{{ c.name }}_enabled;
+        {%- if e.on_click %}
+        clicked => { root.{{ cb(c, "on_click") }}(); }
+        {%- endif %}
+    }
+}
+{%- elif t == "core/ImageScrollBox" %}
+{%- set tw = c.props.thumb_size.width %}
+{%- set th = c.props.thumb_size.height %}
+{%- set sp = c.props.spacing %}
+{%- set o = c.props.orientation %}
+{{ c.name }}_view := ScrollView {
+    preferred_width: 240px;
+    preferred_height: 128px;
+    min_width: 32px;
+    min_height: 32px;
+    visible: root.{{ c.name }}_visible;
+    {%- if o == "Horizontal" %}
+    property <int> columns: max(1, root.{{ c.name }}_images.length);
+    {%- elif o == "Vertical" %}
+    property <int> columns: 1;
+    {%- else %}
+    property <int> columns: max(1, floor((self.visible_width + {{ sp }}px) / 1px / {{ tw + sp }}));
+    {%- endif %}
+    content_width: max(self.visible_width, self.columns * {{ tw + sp }}px);
+    content_height: max(self.visible_height, ceil(root.{{ c.name }}_images.length / self.columns) * {{ th + sp }}px);
+    for picture[index] in root.{{ c.name }}_images: Rectangle {
+        x: mod(index, {{ c.name }}_view.columns) * {{ tw + sp }}px;
+        y: floor(index / {{ c.name }}_view.columns) * {{ th + sp }}px;
+        width: {{ tw }}px;
+        height: {{ th }}px;
+        border_width: root.{{ c.name }}_selected == index ? 2px : 0px;
+        border_color: Palette.accent_background;
+        border_radius: 2px;
+        Image {
+            x: 2px;
+            y: 2px;
+            width: parent.width - 4px;
+            height: parent.height - 4px;
+            source: picture;
+            image_fit: {{ {"Cover": "cover", "Stretch": "fill", "Contain": "contain", "Center": "preserve"}[c.props.fit] }};
+        }
+        TouchArea {
+            enabled: root.{{ c.name }}_enabled;
+            clicked => {
+                root.{{ c.name }}_selected = index;
+                {%- if e.on_select %}
+                root.{{ cb(c, "on_select") }}(index, root.{{ c.name }}_paths[index]);
+                {%- endif %}
+            }
+        }
+    }
+}
 {%- elif t == "backend:slint/Image" %}
 Image {
     source: root.{{ c.name }}_source;
@@ -560,6 +627,12 @@ callback {{ c.name }}_cancelled();
 {%- elif t == "backend:slint/ListView" %}
 in_out property <[StandardListViewItem]> {{ c.name }}_items: [{% for i in c.props["items"] %}{ text: {{ i | rust_str }} }{% if not loop.last %}, {% endif %}{% endfor %}];
 in_out property <int> {{ c.name }}_selected: {{ c.props.selected }};
+{%- elif t == "core/ImageBox" %}
+in_out property <image> {{ c.name }}_source;
+{%- elif t == "core/ImageScrollBox" %}
+in_out property <[image]> {{ c.name }}_images;
+in_out property <[string]> {{ c.name }}_paths;
+in_out property <int> {{ c.name }}_selected: -1;
 {%- elif t == "backend:slint/Image" %}
 in_out property <image> {{ c.name }}_source;
 {%- elif t == "backend:slint/GroupBox" %}
@@ -577,7 +650,7 @@ in_out property <int> {{ c.name }}_current: {{ c.props.page }};
 use slint::ComponentHandle as _;
 
 slint::slint! {
-    import { Button, LineEdit, CheckBox, RadioGroup, Switch, SpinBox, Slider, ProgressIndicator, ComboBox, StandardListView, StandardTableView, TextEdit, GroupBox, TabWidget, AboutSlint, Palette } from "std-widgets.slint";
+    import { Button, LineEdit, CheckBox, RadioGroup, Switch, SpinBox, Slider, ProgressIndicator, ComboBox, StandardListView, StandardTableView, TextEdit, GroupBox, TabWidget, AboutSlint, Palette, ScrollView } from "std-widgets.slint";
 
     export component FormUi inherits Window {
         title: root.{{ root.name }}_title;
@@ -631,6 +704,7 @@ slint::slint! {
             {%- elif event == "on_toggle" %}bool
             {%- elif event in ["on_change", "on_select", "on_page"] and c.type in ["backend:slint/SpinBox", "backend:slint/ComboBox", "backend:slint/ListView", "backend:slint/TabWidget", "backend:slint/DataGrid"] %}int
             {%- elif event == "on_change" and c.type == "backend:slint/Slider" %}float
+            {%- elif event == "on_select" and c.type == "core/ImageScrollBox" %}int, string
             {%- endif %});
         {%- endfor %}
         {%- endfor %}
@@ -706,6 +780,8 @@ impl {{ form.struct }} {
             form.{{ root.name }}.on_{{ cb(c, event) }}(move |
                 {%- if c.type in ["core/Edit", "backend:slint/TextEdit"] and event == "on_change" %}text| {
                 Self::freya_call(&weak, |f| f.{{ handler }}(&text));
+                {%- elif event == "on_select" and c.type == "core/ImageScrollBox" %}index, path| {
+                Self::freya_call(&weak, |f| f.{{ handler }}(index as usize, &path));
                 {%- elif event == "on_toggle" %}checked| {
                 Self::freya_call(&weak, |f| f.{{ handler }}(checked));
                 {%- elif event in ["on_change", "on_select", "on_page"] and c.type in ["backend:slint/SpinBox", "backend:slint/ComboBox", "backend:slint/ListView", "backend:slint/TabWidget", "backend:slint/Slider", "backend:slint/DataGrid"] %}value| {
@@ -770,6 +846,18 @@ impl {{ form.struct }} {
             });
         }
     {%- endfor %}
+    {%- for c in widgets if c.type == "core/ImageBox" and c.props.file %}
+        form.{{ root.name }}.set_{{ c.name }}_source(freya_slint_image({{ c.rust.file }}, {{ c.rust.gamma }}, {{ c.rust.opacity }}));
+    {%- endfor %}
+    {%- for c in widgets if c.type == "core/ImageScrollBox" and c.props.images %}
+        {
+            let paths: Vec<String> = {{ c.rust.images }}.iter().map(|p| p.to_string()).collect();
+            freya_slint_gallery(&form.{{ root.name }}, &paths, {{ c.rust.gamma }}, {{ c.rust.opacity }}, |ui, images, paths| {
+                ui.set_{{ c.name }}_images(images);
+                ui.set_{{ c.name }}_paths(paths);
+            });
+        }
+    {%- endfor %}
     {%- for c in widgets if c.type == "backend:slint/Image" and c.props.file %}
         form.{{ root.name }}.set_{{ c.name }}_source(
             slint::Image::load_from_path(std::path::Path::new({{ c.rust.file }})).unwrap_or_default(),
@@ -829,5 +917,44 @@ impl {{ form.struct }} {
         Self::freya_call(&weak, |f| f.{{ root.events.on_create }}());
     {%- endif %}
     }
+}
+{%- endif %}
+{%- if widgets | selectattr("type", "in", ["core/ImageBox", "core/ImageScrollBox"]) | list %}
+
+/// A picture prepared by `freya_image` (gamma, opacity) for Slint.
+#[allow(dead_code)]
+fn freya_slint_image(path: &str, gamma: f64, opacity: f64) -> slint::Image {
+    match crate::app::freya_image(path, gamma, opacity) {
+        Ok(picture) => slint::Image::from_rgba8(slint::SharedPixelBuffer::clone_from_slice(
+            &picture.rgba,
+            picture.width,
+            picture.height,
+        )),
+        Err(error) => {
+            eprintln!("{error}");
+            slint::Image::default()
+        }
+    }
+}
+
+/// Pictures and paths of a gallery as Slint models, handed to `set`.
+#[allow(dead_code)]
+fn freya_slint_gallery<U>(
+    ui: &U,
+    paths: &[String],
+    gamma: f64,
+    opacity: f64,
+    set: impl FnOnce(&U, slint::ModelRc<slint::Image>, slint::ModelRc<slint::SharedString>),
+) {
+    let images: Vec<slint::Image> = paths
+        .iter()
+        .map(|path| freya_slint_image(path, gamma, opacity))
+        .collect();
+    let names: Vec<slint::SharedString> = paths.iter().map(|p| p.as_str().into()).collect();
+    set(
+        ui,
+        slint::ModelRc::new(slint::VecModel::from(images)),
+        slint::ModelRc::new(slint::VecModel::from(names)),
+    );
 }
 {%- endif %}

@@ -24,7 +24,8 @@ generated-code-license = "MIT OR Apache-2.0"
 event-loop = "main-thread"
 absolute-positioning = true
 platforms = ["linux", "windows", "macos"]
-cargo = [{ crate = "gtk4", version = "0.11" }]
+# v4_12: Picture::set_content_fit, FlowBox::remove_all (ImageBox, ImageScrollBox).
+cargo = [{ crate = "gtk4", version = "0.11", features = ["v4_12"] }]
 setup = "gtk4::init()?;"
 form-file = "templates/form.rs.j2"
 run-file = "templates/run.rs.j2"
@@ -152,6 +153,153 @@ init = """{
 }"""
 
 # --- GTK-Palette / GTK palette ------------------------------------------------------------
+
+[[extend]]
+type = "core/ImageBox"
+[extend.codegen]
+type = "gtk4::Picture"
+init = """{
+    use gtk4::prelude::*;
+    let picture = gtk4::Picture::new();
+    {%- if props.file %}
+    match crate::app::freya_image({{ rust.file }}, {{ rust.gamma }}, {{ rust.opacity }}) {
+        Ok(image) => {
+            let bytes = gtk4::glib::Bytes::from(&image.rgba[..]);
+            let texture = gtk4::gdk::MemoryTexture::new(
+                image.width as i32,
+                image.height as i32,
+                gtk4::gdk::MemoryFormat::R8g8b8a8,
+                &bytes,
+                image.width as usize * 4,
+            );
+            picture.set_paintable(Some(&texture));
+        }
+        Err(error) => eprintln!("{error}"),
+    }
+    {%- endif %}
+    picture.set_content_fit(gtk4::ContentFit::{{ {"Contain": "Contain", "Cover": "Cover", "Stretch": "Fill", "Center": "ScaleDown"}[props.fit] }});
+    picture.set_can_shrink({{ "false" if props.fit == "Center" else "true" }});
+    // Wie im Designer (Theme); eine Wunschgröße aus dem Layout geht vor.
+    picture.set_size_request(96, 96);
+    picture.set_sensitive({{ rust.enabled }});
+    picture.set_visible({{ rust.visible }});
+    {%- if props.tooltip %}
+    picture.set_tooltip_text(Some({{ rust.tooltip }}));
+    {%- endif %}
+    picture
+}"""
+
+[[extend]]
+type = "core/ImageScrollBox"
+[extend.list]
+set-items = """
+let flow = self.{{ name }}
+    .child()
+    .and_then(|viewport| viewport.downcast::<gtk4::Viewport>().ok())
+    .and_then(|viewport| viewport.child())
+    .and_then(|flow| flow.downcast::<gtk4::FlowBox>().ok());
+if let Some(flow) = flow {
+    flow.remove_all();
+    for path in &items {
+        let path: &str = path.as_ref();
+        let picture = gtk4::Picture::new();
+        picture.set_size_request({{ props.thumb_size.width }}, {{ props.thumb_size.height }});
+        picture.set_content_fit(gtk4::ContentFit::{{ {"Contain": "Contain", "Cover": "Cover", "Stretch": "Fill", "Center": "ScaleDown"}[props.fit] }});
+        picture.set_can_shrink(true);
+        match crate::app::freya_image(path, {{ props.gamma }}_f64, {{ props.opacity }}_f64) {
+            Ok(image) => {
+                let bytes = gtk4::glib::Bytes::from(&image.rgba[..]);
+                let texture = gtk4::gdk::MemoryTexture::new(
+                    image.width as i32,
+                    image.height as i32,
+                    gtk4::gdk::MemoryFormat::R8g8b8a8,
+                    &bytes,
+                    image.width as usize * 4,
+                );
+                picture.set_paintable(Some(&texture));
+            }
+            Err(error) => eprintln!("{error}"),
+        }
+        let child = gtk4::FlowBoxChild::new();
+        child.set_child(Some(&picture));
+        // Der Pfad reist am Eintrag mit (für on_select).
+        child.set_widget_name(path);
+        flow.insert(&child, -1);
+    }
+}
+"""
+selected = """{
+    let flow = self.{{ name }}
+        .child()
+        .and_then(|viewport| viewport.downcast::<gtk4::Viewport>().ok())
+        .and_then(|viewport| viewport.child())
+        .and_then(|flow| flow.downcast::<gtk4::FlowBox>().ok());
+    flow.and_then(|flow| flow.selected_children().first().map(|child| child.index() as usize))
+}"""
+[extend.codegen]
+type = "gtk4::ScrolledWindow"
+init = """{
+    use gtk4::prelude::*;
+    let flow = gtk4::FlowBox::new();
+    flow.set_selection_mode(gtk4::SelectionMode::Single);
+    flow.set_homogeneous(true);
+    flow.set_row_spacing({{ props.spacing }});
+    flow.set_column_spacing({{ props.spacing }});
+    flow.set_valign(gtk4::Align::Start);
+    {%- if props.orientation == "Horizontal" %}
+    // Spalten mit je einem Bild ergeben eine Zeile.
+    flow.set_orientation(gtk4::Orientation::Vertical);
+    flow.set_max_children_per_line(1);
+    {%- elif props.orientation == "Vertical" %}
+    flow.set_max_children_per_line(1);
+    {%- else %}
+    flow.set_max_children_per_line(1000);
+    {%- endif %}
+    let items: Vec<&str> = {{ rust.images }};
+    for path in &items {
+        let path: &str = path.as_ref();
+        let picture = gtk4::Picture::new();
+        picture.set_size_request({{ props.thumb_size.width }}, {{ props.thumb_size.height }});
+        picture.set_content_fit(gtk4::ContentFit::{{ {"Contain": "Contain", "Cover": "Cover", "Stretch": "Fill", "Center": "ScaleDown"}[props.fit] }});
+        picture.set_can_shrink(true);
+        match crate::app::freya_image(path, {{ props.gamma }}_f64, {{ props.opacity }}_f64) {
+            Ok(image) => {
+                let bytes = gtk4::glib::Bytes::from(&image.rgba[..]);
+                let texture = gtk4::gdk::MemoryTexture::new(
+                    image.width as i32,
+                    image.height as i32,
+                    gtk4::gdk::MemoryFormat::R8g8b8a8,
+                    &bytes,
+                    image.width as usize * 4,
+                );
+                picture.set_paintable(Some(&texture));
+            }
+            Err(error) => eprintln!("{error}"),
+        }
+        let child = gtk4::FlowBoxChild::new();
+        child.set_child(Some(&picture));
+        // Der Pfad reist am Eintrag mit (für on_select).
+        child.set_widget_name(path);
+        flow.insert(&child, -1);
+    }
+    let viewport = gtk4::Viewport::new(None::<&gtk4::Adjustment>, None::<&gtk4::Adjustment>);
+    viewport.set_child(Some(&flow));
+    let scrolled = gtk4::ScrolledWindow::new();
+    {%- if props.orientation == "Horizontal" %}
+    scrolled.set_policy(gtk4::PolicyType::Automatic, gtk4::PolicyType::Never);
+    {%- else %}
+    scrolled.set_policy(gtk4::PolicyType::Never, gtk4::PolicyType::Automatic);
+    {%- endif %}
+    scrolled.set_child(Some(&viewport));
+    // Wie im Designer (Theme); eine Wunschgröße aus dem Layout geht vor.
+    scrolled.set_size_request(240, 128);
+    scrolled.set_sensitive({{ rust.enabled }});
+    scrolled.set_visible({{ rust.visible }});
+    {%- if props.tooltip %}
+    scrolled.set_tooltip_text(Some({{ rust.tooltip }}));
+    {%- endif %}
+    scrolled
+}"""
 
 [[component]]
 name = "RadioButton"

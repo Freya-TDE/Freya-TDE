@@ -301,3 +301,129 @@ pub fn freya_host_close(form: &str) -> bool {
     })
     .unwrap_or(true)
 }
+{%- if pictures %}
+
+/// A picture for the Flutter side: the file itself when nothing needs
+/// changing, else prepared by `freya_image` (gamma, opacity) as a PNG in the
+/// temporary folder. Relative paths start at the project folder (the
+/// program runs in `flutter/`). Empty when the picture cannot be read.
+pub fn freya_png_file(path: &str, gamma: f64, opacity: f64) -> String {
+    use std::hash::{Hash as _, Hasher as _};
+    if path.is_empty() {
+        return String::new();
+    }
+    let candidates = [std::path::PathBuf::from(path), std::path::Path::new("..").join(path)];
+    let Some(file) = candidates.iter().find(|p| p.is_file()) else {
+        eprintln!("{path}: not found");
+        return String::new();
+    };
+    let file = std::fs::canonicalize(file).unwrap_or_else(|_| file.clone());
+    if gamma == 1.0 && opacity == 1.0 {
+        return file.display().to_string();
+    }
+    let modified = std::fs::metadata(&file).and_then(|m| m.modified()).ok();
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    (&file, modified, gamma.to_bits(), opacity.to_bits()).hash(&mut hasher);
+    let dir = std::env::temp_dir().join("freya-pictures");
+    let target = dir.join(format!("{:016x}.png", hasher.finish()));
+    if target.is_file() {
+        return target.display().to_string();
+    }
+    let result = freya_image(&file.display().to_string(), gamma, opacity)
+        .and_then(|image| freya_image_png(&image))
+        .and_then(|png| {
+            std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+            std::fs::write(&target, png).map_err(|e| e.to_string())
+        });
+    match result {
+        Ok(()) => target.display().to_string(),
+        Err(error) => {
+            eprintln!("{path}: {error}");
+            String::new()
+        }
+    }
+}
+
+/// State of an ImageBox; `set_file` prepares another picture.
+#[allow(dead_code)]
+pub struct Picture {
+    pub file: String,
+    pub gamma: f64,
+    pub opacity: f64,
+    prepared: String,
+}
+
+#[allow(dead_code)]
+impl Picture {
+    pub fn new(file: &str, gamma: f64, opacity: f64) -> Self {
+        let mut picture = Self {
+            file: String::new(),
+            gamma,
+            opacity,
+            prepared: String::new(),
+        };
+        picture.set_file(file);
+        picture
+    }
+
+    pub fn set_file(&mut self, file: &str) {
+        self.file = file.to_owned();
+        self.prepared = freya_png_file(file, self.gamma, self.opacity);
+    }
+}
+
+impl FreyaValue for Picture {
+    fn put(&self, control: &mut crate::api::FreyaControl) {
+        control.text.clone_from(&self.prepared);
+    }
+}
+
+/// State of an ImageScrollBox; the paths are the control's `items`,
+/// `load` prepares their pictures.
+#[allow(dead_code)]
+pub struct Gallery {
+    pub selected: Option<usize>,
+    pub gamma: f64,
+    pub opacity: f64,
+    prepared: Vec<String>,
+}
+
+#[allow(dead_code)]
+impl Gallery {
+    pub fn new(gamma: f64, opacity: f64) -> Self {
+        Self {
+            selected: None,
+            gamma,
+            opacity,
+            prepared: Vec::new(),
+        }
+    }
+
+    /// Prepares the pictures of `paths`; the selection starts over.
+    pub fn load(&mut self, paths: &[String]) {
+        self.selected = None;
+        self.prepared = paths
+            .iter()
+            .map(|path| freya_png_file(path, self.gamma, self.opacity))
+            .collect();
+    }
+
+    /// Same as `load`, for the initial state.
+    pub fn loaded(mut self, paths: &[&str]) -> Self {
+        self.load(&paths.iter().map(|p| p.to_string()).collect::<Vec<_>>());
+        self
+    }
+}
+
+impl FreyaValue for Gallery {
+    fn put(&self, control: &mut crate::api::FreyaControl) {
+        control.items.clone_from(&self.prepared);
+        control.index = self.selected.map_or(-1, |i| i as i32);
+    }
+    fn take(&mut self, input: &crate::api::FreyaInput) {
+        if let Some(index) = input.index {
+            self.selected = usize::try_from(index).ok().filter(|i| *i < self.prepared.len());
+        }
+    }
+}
+{%- endif %}

@@ -1996,6 +1996,7 @@ fn app_file(
             forms => forms.iter().map(|f| form_data(f, generated)).collect::<Vec<_>>(),
             app => "app",
             runtime => runtime_var,
+            pictures => uses_pictures(forms),
         };
         let mut issues = Vec::new();
         let rendered = render(env, "run", template, &context, &mut issues).filter(|text| {
@@ -2043,6 +2044,8 @@ fn app_file(
                 forms => forms.iter().map(|f| form_data(f, generated)).collect::<Vec<_>>(),
                 app => "app",
                 runtime => runtime_var,
+                // Bilder im Projekt: `crate::app::freya_image` steht bereit.
+                pictures => uses_pictures(forms),
             };
             let mut issues = Vec::new();
             let rendered = render(env, "app", template, &context, &mut issues).filter(|text| {
@@ -2117,20 +2120,25 @@ fn app_file(
     }
     // Bilder (ImageBox, ImageScrollBox) bereitet der Kern einmal auf: alle
     // Backends zeigen Gamma und Transparenz gleich.
-    let pictures = [
-        crate::builtin::image_box(),
-        crate::builtin::image_scroll_box(),
-    ];
-    if forms.iter().any(|f| {
-        f.widgets()
-            .iter()
-            .any(|w| pictures.contains(&w.component.type_ref))
-    }) {
+    if uses_pictures(forms) {
         code.push('\n');
         code.push_str(FREYA_IMAGE);
     }
     let content = generated_file("the project", &format_rust(APP, &code, out));
     file(APP, FileKind::Generated, content, source)
+}
+
+/// Whether a form shows pictures (`core/ImageBox`, `core/ImageScrollBox`).
+fn uses_pictures(forms: &[Form]) -> bool {
+    let pictures = [
+        crate::builtin::image_box(),
+        crate::builtin::image_scroll_box(),
+    ];
+    forms.iter().any(|f| {
+        f.widgets()
+            .iter()
+            .any(|w| pictures.contains(&w.component.type_ref))
+    })
 }
 
 /// Picture preparation in `app.gen.rs` for `core/ImageBox` and

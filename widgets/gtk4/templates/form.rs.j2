@@ -299,6 +299,23 @@ impl {{ form.struct }} {
                 let index = row.map_or(-1, |row| row.index());
                 Self::freya_call(&weak, |f| f.{{ handler }}(index));
             });
+        {%- elif key == "core/ImageBox.on_click" %}
+            let click = gtk4::GestureClick::new();
+            click.connect_released(move |_, _, _, _| Self::freya_call(&weak, |f| f.{{ handler }}()));
+            form.{{ w.name }}.add_controller(click);
+        {%- elif key == "core/ImageScrollBox.on_select" %}
+            let flow = form.{{ w.name }}
+                .child()
+                .and_then(|viewport| viewport.downcast::<gtk4::Viewport>().ok())
+                .and_then(|viewport| viewport.child())
+                .and_then(|flow| flow.downcast::<gtk4::FlowBox>().ok());
+            if let Some(flow) = flow {
+                flow.connect_child_activated(move |_, child| {
+                    let index = child.index() as usize;
+                    let path = child.widget_name();
+                    Self::freya_call(&weak, |f| f.{{ handler }}(index, &path));
+                });
+            }
         {%- elif key == "backend:gtk4/Notebook.on_page" %}
             form.{{ w.name }}.connect_switch_page(move |_, _, page| {
                 Self::freya_call(&weak, |f| f.{{ handler }}(page));
@@ -562,7 +579,7 @@ mod freya_percent {
     glib::wrapper! {
         pub struct Percent(ObjectSubclass<imp::Percent>)
             @extends gtk4::Widget,
-            @implements gtk4::Buildable, gtk4::ConstraintTarget;
+            @implements gtk4::Accessible, gtk4::Buildable, gtk4::ConstraintTarget;
     }
 
     impl Percent {

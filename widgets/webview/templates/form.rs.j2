@@ -105,6 +105,11 @@ align-self:{{ css_align }};
 <progress id="{{ c.name }}" data-kind="progress" max="1" style="{{ st }}"></progress>
 {%- elif t == "backend:webview/ComboBox" -%}
 <select id="{{ c.name }}" data-kind="select" style="{{ st }}"></select>
+{%- elif t == "core/ImageBox" -%}
+<div id="{{ c.name }}" data-kind="picture" style="min-width:96px;height:96px;{{ st }}"><img alt="" style="object-fit:{{ {"Cover": "cover", "Stretch": "fill", "Contain": "contain", "Center": "none"}[c.props.fit] }}"></div>
+{%- elif t == "core/ImageScrollBox" -%}
+{%- set o = c.props.orientation %}
+<div id="{{ c.name }}" data-kind="gallery" style="display:flex;flex-direction:{{ 'column' if o == 'Vertical' else 'row' }};{% if o == 'Grid' %}flex-wrap:wrap;{% endif %}gap:{{ c.props.spacing }}px;min-width:240px;height:128px;--freya-thumb-w:{{ c.props.thumb_size.width }}px;--freya-thumb-h:{{ c.props.thumb_size.height }}px;--freya-fit:{{ {"Cover": "cover", "Stretch": "fill", "Contain": "contain", "Center": "none"}[c.props.fit] }};{{ st }}"></div>
 {%- elif t == "backend:webview/ListBox" -%}
 <select id="{{ c.name }}" data-kind="select" size="{{ c.props.rows }}" style="{{ st }}"></select>
 {%- elif t == "backend:webview/TextEdit" -%}
@@ -206,7 +211,7 @@ impl {{ form.struct }} {
                 match event {
                 {%- for event, handler in c.events | items if handler %}
                 {%- set key = t ~ "." ~ event %}
-                {%- if key in ["core/Button.on_click", "core/Edit.on_submit"] %}
+                {%- if key in ["core/Button.on_click", "core/Edit.on_submit", "core/ImageBox.on_click"] %}
                     "{{ event }}" => self.{{ handler }}(),
                 {%- elif key in ["core/Edit.on_change", "backend:webview/TextEdit.on_change"] %}
                     "{{ event }}" => {
@@ -227,6 +232,13 @@ impl {{ form.struct }} {
                     "{{ event }}" => {
                         let index = self.{{ c.name }}.value;
                         self.{{ handler }}(index);
+                    }
+                {%- elif key == "core/ImageScrollBox.on_select" %}
+                    "{{ event }}" => {
+                        if let Some(index) = self.{{ c.name }}.value.selected {
+                            let path = self.{{ c.name }}.items.get(index).cloned().unwrap_or_default();
+                            self.{{ handler }}(index, &path);
+                        }
                     }
                 {%- elif key == "backend:webview/Tabs.on_page" %}
                     "{{ event }}" => {

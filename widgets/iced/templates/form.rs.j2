@@ -82,6 +82,95 @@ iced::widget::row(vec![
 }
 {%- elif t == "backend:iced/PickList" -%}
 iced::widget::pick_list(self.{{ c.name }}.items.as_slice(), self.{{ c.name }}.items.get(self.{{ c.name }}.value), Message::{{ c.name }}_select){% if fill %}.width(iced::Fill){% endif %}
+{%- elif t == "core/ImageBox" -%}
+{%- set p = c.placement if c.placement and c.placement.kind == "layout" else none %}
+{
+    let picture: iced::Element<'_, Message> = match &self.{{ c.name }}.value.handle {
+        Some(handle) => iced::widget::image(handle.clone())
+            .content_fit(crate::app::content_fit(&self.{{ c.name }}.value.fit))
+            .width(iced::Fill)
+            .height(iced::Fill)
+            .into(),
+        None => iced::widget::space().into(),
+    };
+    let area = iced::widget::mouse_area(
+        iced::widget::container(picture)
+            .width({% if fill or (p and (p.width > 0 or p.width_percent > 0)) %}iced::Fill{% else %}96{% endif %})
+            .height({% if p and (p.height > 0 or p.height_percent > 0) %}iced::Fill{% else %}96{% endif %}),
+    );
+    if self.{{ c.name }}.enabled {
+        area.on_press(Message::{{ c.name }}_click)
+    } else {
+        area
+    }
+}
+{%- elif t == "core/ImageScrollBox" -%}
+{%- set p = c.placement if c.placement and c.placement.kind == "layout" else none %}
+{
+    let gallery = &self.{{ c.name }}.value;
+    let (w, h) = gallery.thumb;
+    let thumbs: Vec<iced::Element<'_, Message>> = gallery
+        .handles
+        .iter()
+        .enumerate()
+        .map(|(index, handle)| {
+            let picture: iced::Element<'_, Message> = match handle {
+                Some(handle) => iced::widget::image(handle.clone())
+                    .content_fit(crate::app::content_fit(&gallery.fit))
+                    .width(iced::Fill)
+                    .height(iced::Fill)
+                    .into(),
+                None => iced::widget::space().into(),
+            };
+            let selected = gallery.selected == Some(index);
+            let area = iced::widget::mouse_area(
+                iced::widget::container(picture)
+                    .width(w)
+                    .height(h)
+                    .padding(2)
+                    .style(move |theme: &iced::Theme| {
+                        if selected {
+                            iced::widget::container::Style {
+                                border: iced::Border {
+                                    color: theme.palette().primary,
+                                    width: 2.0,
+                                    radius: 2.0.into(),
+                                },
+                                ..Default::default()
+                            }
+                        } else {
+                            iced::widget::container::Style::default()
+                        }
+                    }),
+            );
+            if self.{{ c.name }}.enabled {
+                area.on_press(Message::{{ c.name }}_pick(index)).into()
+            } else {
+                area.into()
+            }
+        })
+        .collect();
+    let content: iced::Element<'_, Message> = match gallery.orientation.as_str() {
+        "Horizontal" => iced::widget::scrollable(iced::widget::row(thumbs).spacing(gallery.spacing))
+            .direction(iced::widget::scrollable::Direction::Horizontal(Default::default()))
+            .width(iced::Fill)
+            .into(),
+        "Vertical" => iced::widget::scrollable(iced::widget::column(thumbs).spacing(gallery.spacing))
+            .height(iced::Fill)
+            .into(),
+        _ => iced::widget::scrollable(
+            iced::widget::row(thumbs)
+                .spacing(gallery.spacing)
+                .wrap()
+                .vertical_spacing(gallery.spacing),
+        )
+        .height(iced::Fill)
+        .into(),
+    };
+    iced::widget::container(content)
+        .width({% if fill or (p and (p.width > 0 or p.width_percent > 0)) %}iced::Fill{% else %}240{% endif %})
+        .height({% if p and (p.height > 0 or p.height_percent > 0) %}iced::Fill{% else %}128{% endif %})
+}
 {%- elif t == "backend:iced/ListBox" -%}
 {
     let rows: Vec<iced::Element<'_, Message>> = self
@@ -220,8 +309,10 @@ use iced::widget::text_editor;
 pub enum Message {
 {%- for c in widgets if c.field %}
 {%- set t = c.type %}
-{%- if t == "core/Button" %}
+{%- if t in ["core/Button", "core/ImageBox"] %}
     {{ c.name }}_click,
+{%- elif t == "core/ImageScrollBox" %}
+    {{ c.name }}_pick(usize),
 {%- elif t == "core/Edit" %}
     {{ c.name }}_input(String),
     {{ c.name }}_submit,
@@ -334,7 +425,21 @@ impl {{ form.struct }} {
         {%- for c in widgets if c.field %}
         {%- set t = c.type %}
         {%- set e = c.events %}
-        {%- if t == "core/Button" %}
+        {%- if t == "core/ImageBox" %}
+            Message::{{ c.name }}_click => {
+            {%- if e.on_click %}
+                self.{{ e.on_click }}();
+            {%- endif %}
+            }
+        {%- elif t == "core/ImageScrollBox" %}
+            Message::{{ c.name }}_pick(index) => {
+                self.{{ c.name }}.value.selected = Some(index);
+            {%- if e.on_select %}
+                let path = self.{{ c.name }}.items.get(index).cloned().unwrap_or_default();
+                self.{{ e.on_select }}(index, &path);
+            {%- endif %}
+            }
+        {%- elif t == "core/Button" %}
             Message::{{ c.name }}_click => {
             {%- if e.on_click %}
                 if self.{{ c.name }}.enabled {
