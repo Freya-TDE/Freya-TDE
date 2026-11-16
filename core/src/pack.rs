@@ -83,6 +83,8 @@
 //! [extend.properties.small]
 //! type = "bool"
 //! [extend.codegen]                      # … and/or say how the backend generates the type
+//! [extend.list]                         # … and/or how it fills a core list widget
+//!                                       #     (set-items, selected; like [component.list])
 //! type = "MyButton"
 //! init = "MyButton::new({{ rust.caption }})"
 //!
@@ -450,6 +452,8 @@ struct RawExtend {
     #[serde(default)]
     properties: IndexMap<String, RawProperty>,
     codegen: Option<RawCodegen>,
+    /// Fills a core list widget (e.g. `core/ImageScrollBox`) from a data source.
+    list: Option<RawList>,
 }
 
 // --- Public model ----------------------------------------------------------------------
@@ -491,6 +495,8 @@ pub struct Extension {
     pub properties: Vec<PropertyDef>,
     /// How the backend generates code for the type.
     pub codegen: Option<CodegenSpec>,
+    /// How the backend fills the (list) widget from a data source.
+    pub list: Option<crate::component_type::ListSpec>,
 }
 
 /// A loaded, validated pack.
@@ -1594,10 +1600,21 @@ impl Pack {
                 .codegen
                 .as_ref()
                 .and_then(|c| checker.codegen(&format!("{location}, codegen"), kind, c));
+            let list = extend.list.as_ref().map(|list| {
+                checker.check_templates(
+                    &format!("{location}, list"),
+                    &[("set-items", &list.set_items), ("selected", &list.selected)],
+                );
+                crate::component_type::ListSpec {
+                    set_items: list.set_items.clone(),
+                    selected: list.selected.clone(),
+                }
+            });
             extensions.push(Extension {
                 type_ref,
                 properties,
                 codegen,
+                list,
             });
         }
 
@@ -1693,6 +1710,9 @@ impl Pack {
             )?;
             if let Some(codegen) = &extension.codegen {
                 staged.extend_codegen(self.info.name.clone(), type_ref, codegen.clone())?;
+            }
+            if let Some(list) = &extension.list {
+                staged.extend_list(self.info.name.clone(), type_ref, list.clone())?;
             }
         }
         if let Some(backend) = &self.backend {

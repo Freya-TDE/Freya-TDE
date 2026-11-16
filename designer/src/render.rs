@@ -44,11 +44,14 @@ pub enum Primitive {
     /// the UI draws a symbol for it, or a placeholder.
     Icon { rect: Rect, name: String },
     /// A picture file (relative to the project), e.g. a form's background.
-    /// `fit`: `Cover`, `Stretch`, `Contain` or `Center`.
+    /// `fit`: `Cover`, `Stretch`, `Contain` or `Center`; `opacity` 0…1,
+    /// `gamma` 1 = unchanged (above 1 lighter).
     Image {
         rect: Rect,
         path: String,
         fit: String,
+        opacity: f64,
+        gamma: f64,
     },
 }
 
@@ -146,6 +149,45 @@ impl Painter<'_> {
                 rect: r,
                 path: path.trim().to_owned(),
                 fit,
+                opacity: 1.0,
+                gamma: 1.0,
+            });
+        }
+    }
+
+    /// Fit, opacity and gamma of a picture widget.
+    fn picture_tone(&self, widget: &Widget, default_fit: &str) -> (String, f64, f64) {
+        let fit = match self.props.value(widget, "fit") {
+            Some(Value::Enum(fit)) => fit,
+            _ => default_fit.to_owned(),
+        };
+        (
+            fit,
+            self.props.float(widget, "opacity", 1.0).clamp(0.0, 1.0),
+            self.props.float(widget, "gamma", 1.0).clamp(0.1, 5.0),
+        )
+    }
+
+    /// A dashed frame with an icon where a picture will be.
+    fn picture_placeholder(&mut self, r: Rect, icon: &str) {
+        self.out.push(Primitive::Rect {
+            rect: r,
+            fill: None,
+            stroke: Some(self.colors.container_border),
+            radius: 0,
+            dashed: true,
+        });
+        let size = r.width.min(r.height).min(48) - 8;
+        if size > 8 {
+            let at = Rect::new(
+                r.x + (r.width - size) / 2,
+                r.y + (r.height - size) / 2,
+                size,
+                size,
+            );
+            self.out.push(Primitive::Icon {
+                rect: at,
+                name: icon.into(),
             });
         }
     }
@@ -403,6 +445,72 @@ impl Painter<'_> {
                         rect: at,
                         name: "image".into(),
                     });
+                }
+            }
+            "imagebox" => {
+                let file = self.props.text(widget, "file").unwrap_or_default();
+                if file.trim().is_empty() {
+                    self.picture_placeholder(r, "imagebox");
+                } else {
+                    let (fit, opacity, gamma) = self.picture_tone(widget, "Contain");
+                    self.out.push(Primitive::Image {
+                        rect: r,
+                        path: file.trim().to_owned(),
+                        fit,
+                        opacity,
+                        gamma,
+                    });
+                }
+            }
+            "gallery" => {
+                self.out
+                    .push(rect(r, Some(c.input), Some(c.control_border), radius));
+                let thumb = match self.props.value(widget, "thumb_size") {
+                    Some(Value::Size(s)) => (s.width.max(8), s.height.max(8)),
+                    _ => (96, 96),
+                };
+                let gap = self.props.int(widget, "spacing", 8).clamp(0, 200) as i32;
+                let orientation = match self.props.value(widget, "orientation") {
+                    Some(Value::Enum(o)) => o,
+                    _ => "Grid".to_owned(),
+                };
+                let images: Vec<String> = self
+                    .props
+                    .texts(widget, "images")
+                    .into_iter()
+                    .filter(|p| !p.trim().is_empty())
+                    .collect();
+                let (fit, opacity, gamma) = self.picture_tone(widget, "Cover");
+                // Ohne Bilder drei Platzhalter, damit Größe und Raster sichtbar sind.
+                let count = if images.is_empty() { 3 } else { images.len() };
+                let (mut x, mut y) = (r.x + gap, r.y + gap);
+                for i in 0..count {
+                    if x + thumb.0 > r.right() - gap {
+                        if orientation != "Grid" || i == 0 {
+                            break;
+                        }
+                        x = r.x + gap;
+                        y += thumb.1 + gap;
+                    }
+                    if y + thumb.1 > r.bottom() - gap {
+                        break;
+                    }
+                    let at = Rect::new(x, y, thumb.0, thumb.1);
+                    match images.get(i) {
+                        Some(path) => self.out.push(Primitive::Image {
+                            rect: at,
+                            path: path.trim().to_owned(),
+                            fit: fit.clone(),
+                            opacity,
+                            gamma,
+                        }),
+                        None => self.picture_placeholder(at, "imagescrollbox"),
+                    }
+                    if orientation == "Vertical" {
+                        y += thumb.1 + gap;
+                    } else {
+                        x += thumb.0 + gap;
+                    }
                 }
             }
             "frame" => {

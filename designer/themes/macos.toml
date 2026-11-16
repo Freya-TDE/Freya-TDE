@@ -96,6 +96,16 @@ min-width = 120
 padding-x = 0
 header = 22
 
+[widgets."core/ImageBox"]
+height = 96
+min-width = 96
+padding-x = 0
+
+[widgets."core/ImageScrollBox"]
+height = 128
+min-width = 240
+padding-x = 0
+
 [widgets."backend:gtk4/Image"]
 height = 64
 min-width = 64

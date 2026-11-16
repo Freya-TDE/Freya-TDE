@@ -5,7 +5,7 @@
 use std::collections::BTreeMap;
 
 use crate::backend::BackendDescriptor;
-use crate::component_type::{CodegenSpec, ComponentType};
+use crate::component_type::{CodegenSpec, ComponentType, ListSpec};
 use crate::error::ModelError;
 use crate::property::PropertyDef;
 use crate::type_ref::TypeRef;
@@ -18,6 +18,9 @@ pub struct TypeRegistry {
     /// (backend, type) → how this backend generates code for the type
     /// (e.g. egui's code for `core/Button`).
     codegen: BTreeMap<(String, TypeRef), CodegenSpec>,
+    /// (backend, type) → how this backend fills a list widget of the core
+    /// (e.g. its code for `core/ImageScrollBox`).
+    lists: BTreeMap<(String, TypeRef), ListSpec>,
     backends: BTreeMap<String, BackendDescriptor>,
 }
 
@@ -91,6 +94,31 @@ impl TypeRegistry {
         self.codegen
             .get(&(backend.to_owned(), type_ref.clone()))
             .or_else(|| self.types.get(type_ref)?.codegen.as_ref())
+    }
+
+    /// Sets how `backend` fills an existing list widget from a data source
+    /// (usually a core widget). Replaces an earlier spec of the same backend.
+    pub fn extend_list(
+        &mut self,
+        backend: impl Into<String>,
+        type_ref: &TypeRef,
+        spec: ListSpec,
+    ) -> Result<(), ModelError> {
+        if !self.types.contains_key(type_ref) {
+            return Err(ModelError::UnknownType(type_ref.clone()));
+        }
+        self.lists.insert((backend.into(), type_ref.clone()), spec);
+        Ok(())
+    }
+
+    /// How `type_ref` is filled from a data source under `backend`: the
+    /// backend's extension, else the type's own (`None` for a type without
+    /// a usable list spec, e.g. a core list widget the backend left out).
+    pub fn list(&self, type_ref: &TypeRef, backend: &str) -> Option<&ListSpec> {
+        self.lists
+            .get(&(backend.to_owned(), type_ref.clone()))
+            .or_else(|| self.types.get(type_ref)?.list.as_ref())
+            .filter(|l| !l.set_items.trim().is_empty())
     }
 
     /// Registers a UI backend; its name must be unique.

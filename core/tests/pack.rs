@@ -60,8 +60,8 @@ fn real_packs_load() {
     );
 
     let registry = registry();
-    // 6 Kern-Typen, 10 aus den Packs (tokio 1, sqlx 2, axum 1, redis 2, ws 2, http 2).
-    assert_eq!(registry.len(), 6 + 10);
+    // 8 Kern-Typen, 10 aus den Packs (tokio 1, sqlx 2, axum 1, redis 2, ws 2, http 2).
+    assert_eq!(registry.len(), 8 + 10);
     let pool = registry.get(&TypeRef::pack("sqlx", "Pool")).unwrap();
     // Property order follows the file (object inspector).
     let names: Vec<&str> = pool.properties.iter().map(|p| p.name.as_str()).collect();

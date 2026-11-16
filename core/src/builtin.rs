@@ -8,14 +8,19 @@
 //! | `core/Button` | widget | `on_click` |
 //! | `core/Edit` | widget | `on_change`, `on_submit` |
 //! | `core/CheckBox` | widget | `on_toggle` |
+//! | `core/ImageBox` | widget | `on_click` |
+//! | `core/ImageScrollBox` | widget (list) | `on_select` |
 //!
 //! Icons: the lower-case type name (`form`, `container`, `label`, `button`,
-//! `edit`, `checkbox`).
+//! `edit`, `checkbox`, `imagebox`, `imagescrollbox`).
+//!
+//! Pictures (`ImageBox`, `ImageScrollBox`) are prepared once by the generated
+//! `crate::app::freya_image` (gamma, opacity), so every backend shows them alike.
 //!
 //! Every backend brings its own palette on top of these; backends may also
 //! add backend-specific properties to them ([`crate::TypeRegistry::extend`]).
 
-use crate::component_type::{ComponentType, TypeKind};
+use crate::component_type::{CargoDependency, ComponentType, TypeKind};
 use crate::event::EventDef;
 use crate::property::PropertyDef;
 use crate::type_ref::TypeRef;
@@ -43,6 +48,67 @@ pub fn edit() -> TypeRef {
 
 pub fn check_box() -> TypeRef {
     TypeRef::core("CheckBox")
+}
+
+pub fn image_box() -> TypeRef {
+    TypeRef::core("ImageBox")
+}
+
+pub fn image_scroll_box() -> TypeRef {
+    TypeRef::core("ImageScrollBox")
+}
+
+/// The ways a picture fills its area (also `background_fit`): Cover fills
+/// and keeps proportions, Stretch fills and distorts, Contain shows the
+/// whole picture, Center keeps the original size.
+pub const FITS: [&str; 4] = ["Cover", "Stretch", "Contain", "Center"];
+
+fn fit(default: &str) -> PropertyDef {
+    PropertyDef::new(
+        "fit",
+        PropertyType::Enum(FITS.iter().map(|f| (*f).to_owned()).collect()),
+        Value::Enum(default.into()),
+    )
+    .with_category("Appearance")
+    .with_description(
+        "Contain: whole picture; Cover: fill, keep proportions; Stretch: fill, distort; Center: original size",
+    )
+}
+
+/// The crate that decodes pictures for `crate::app::freya_image`.
+fn image_crate() -> CargoDependency {
+    let mut dep = CargoDependency::new("image", "0.25");
+    dep.default_features = false;
+    dep.features = ["png", "jpeg", "gif", "webp", "bmp"]
+        .map(String::from)
+        .to_vec();
+    dep
+}
+
+/// Opacity and gamma of pictures.
+fn picture_tone() -> [PropertyDef; 2] {
+    [
+        PropertyDef::new(
+            "opacity",
+            PropertyType::Float {
+                min: Some(0.0),
+                max: Some(1.0),
+            },
+            Value::Float(1.0),
+        )
+        .with_category("Appearance")
+        .with_description("0 = invisible, 1 = opaque"),
+        PropertyDef::new(
+            "gamma",
+            PropertyType::Float {
+                min: Some(0.1),
+                max: Some(5.0),
+            },
+            Value::Float(1.0),
+        )
+        .with_category("Appearance")
+        .with_description("Brightness curve: 1 = unchanged, above 1 lighter, below 1 darker"),
+    ]
 }
 
 /// Properties every widget has (core widgets and widgets of backend packs).
@@ -94,12 +160,7 @@ fn background_image() -> [PropertyDef; 2] {
             .with_description("Picture behind the content (path relative to the project; PNG, JPEG)"),
         PropertyDef::new(
             "background_fit",
-            PropertyType::Enum(vec![
-                "Cover".into(),
-                "Stretch".into(),
-                "Contain".into(),
-                "Center".into(),
-            ]),
+            PropertyType::Enum(FITS.iter().map(|f| (*f).to_owned()).collect()),
             Value::Enum("Cover".into()),
         )
         .with_category("Appearance")
@@ -260,5 +321,90 @@ pub fn types() -> Vec<ComponentType> {
                 PropertyDef::new("checked", PropertyType::Bool, false).with_category("Behavior"),
             )
             .with_event(EventDef::new("on_toggle").with_param("checked", "bool")),
+        widget(
+            image_box(),
+            false,
+            "A picture from a file (PNG, JPEG, GIF, WebP, BMP)",
+        )
+        .with_look("imagebox")
+        .with_property(
+            PropertyDef::new("file", PropertyType::Text, "")
+                .with_category("Appearance")
+                .with_description("Path of the picture, relative to the project"),
+        )
+        .with_property(fit("Contain"))
+        .with_properties(picture_tone())
+        .with_cargo(image_crate())
+        .with_event(EventDef::new("on_click")),
+        image_scroll_box_type(),
     ]
+}
+
+/// A scrollable row, column or grid of pictures; filled from `images` or a
+/// data source (`display_field` = column with the path).
+fn image_scroll_box_type() -> ComponentType {
+    let mut ty = widget(
+        image_scroll_box(),
+        false,
+        "Scrollable pictures in a row, a column or a grid",
+    )
+    .with_look("gallery")
+    .with_property(
+        PropertyDef::new(
+            "images",
+            PropertyType::List(Box::new(PropertyType::Text)),
+            Value::List(Vec::new()),
+        )
+        .with_category("Appearance")
+        .with_description("Paths of the pictures, relative to the project (without a data source)"),
+    )
+    .with_property(
+        PropertyDef::new(
+            "orientation",
+            PropertyType::Enum(vec!["Horizontal".into(), "Vertical".into(), "Grid".into()]),
+            Value::Enum("Grid".into()),
+        )
+        .with_category("Layout")
+        .with_description("Horizontal: one row; Vertical: one column; Grid: rows that wrap"),
+    )
+    .with_property(
+        PropertyDef::new(
+            "thumb_size",
+            PropertyType::Size,
+            Size {
+                width: 96,
+                height: 96,
+            },
+        )
+        .with_category("Layout")
+        .with_description("Size of each picture"),
+    )
+    .with_property(
+        PropertyDef::new(
+            "spacing",
+            PropertyType::Int {
+                min: Some(0),
+                max: Some(200),
+            },
+            8i64,
+        )
+        .with_category("Layout"),
+    )
+    .with_property(fit("Cover"))
+    .with_properties(picture_tone())
+    .with_cargo(image_crate())
+    .with_event(
+        EventDef::new("on_select")
+            .with_param("index", "usize")
+            .with_param("path", "&str")
+            .with_description("A picture was chosen"),
+    );
+    // Listenbindung: jedes Backend liefert sein set-items/selected per
+    // [[extend]]; die Eigenschaften (data_source, display_field …) kommen hier.
+    ty.list = Some(crate::component_type::ListSpec {
+        set_items: String::new(),
+        selected: String::new(),
+    });
+    crate::data::complete(&mut ty);
+    ty
 }

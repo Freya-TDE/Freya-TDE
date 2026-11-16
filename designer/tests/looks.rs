@@ -337,3 +337,76 @@ fn appearance_is_drawn_and_passed_on() {
         "{wide}"
     );
 }
+
+#[test]
+fn image_box_and_gallery_draw_pictures() {
+    let registry = TypeRegistry::with_builtins();
+    let mut form = Form::new(
+        name("main_form"),
+        "none",
+        Widget::from_component(Component::new(name("window"), builtin::form())),
+    );
+    let picture = |n: &str, file: &str| {
+        Widget::from_component(
+            Component::new(name(n), builtin::image_box())
+                .with("file", file)
+                .with("opacity", Value::Float(0.5))
+                .with("gamma", Value::Float(2.0)),
+        )
+    };
+    form.add_widget(&name("window"), picture("logo", "bilder/logo.png"))
+        .unwrap();
+    form.add_widget(&name("window"), picture("leer", ""))
+        .unwrap();
+    form.add_widget(
+        &name("window"),
+        Widget::from_component(
+            Component::new(name("galerie"), builtin::image_scroll_box())
+                .with(
+                    "images",
+                    Value::List(vec![
+                        Value::Text("a.png".into()),
+                        Value::Text("b.png".into()),
+                    ]),
+                )
+                .with("orientation", Value::Enum("Horizontal".into()))
+                .with(
+                    "thumb_size",
+                    Value::Size(Size {
+                        width: 40,
+                        height: 30,
+                    }),
+                ),
+        ),
+    )
+    .unwrap();
+    let theme = theme();
+    let laid = layout(&form, &registry, &theme);
+    let primitives = render(&form, &laid, &registry, &theme);
+    // ImageBox: das Bild mit Einpassung, Deckkraft und Gamma.
+    assert!(primitives.iter().any(|p| matches!(p,
+        Primitive::Image { path, fit, opacity, gamma, .. }
+            if path == "bilder/logo.png" && fit == "Contain" && *opacity == 0.5 && *gamma == 2.0)));
+    // Ohne Datei: Platzhalter mit Symbol.
+    assert!(primitives.iter().any(|p| matches!(p,
+        Primitive::Icon { name, .. } if name == "imagebox")));
+    // Galerie: Vorschauen in der Vorschaugröße, nebeneinander.
+    let thumbs: Vec<_> = primitives
+        .iter()
+        .filter_map(|p| match p {
+            Primitive::Image {
+                path, rect, fit, ..
+            } if path.ends_with(".png") && path.len() == 5 => {
+                Some((rect.width, rect.height, rect.y, fit.clone()))
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(thumbs.len(), 2, "{primitives:#?}");
+    assert!(
+        thumbs
+            .iter()
+            .all(|t| t.0 == 40 && t.1 == 30 && t.3 == "Cover")
+    );
+    assert_eq!(thumbs[0].2, thumbs[1].2, "eine Zeile");
+}

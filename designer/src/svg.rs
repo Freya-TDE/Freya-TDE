@@ -100,9 +100,16 @@ pub fn to_svg(primitives: &[Primitive], width: i32, height: i32) -> String {
                 rect.height,
                 escape(name)
             ),
-            Primitive::Image { rect, path, fit } => writeln!(
+            // Gamma hat in SVG keine einfache Entsprechung; die Deckkraft schon.
+            Primitive::Image {
+                rect,
+                path,
+                fit,
+                opacity,
+                ..
+            } => writeln!(
                 out,
-                "<image x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" href=\"{}\" preserveAspectRatio=\"{}\"/>",
+                "<image x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" href=\"{}\" preserveAspectRatio=\"{}\" opacity=\"{}\"/>",
                 rect.x,
                 rect.y,
                 rect.width,
@@ -112,7 +119,8 @@ pub fn to_svg(primitives: &[Primitive], width: i32, height: i32) -> String {
                     "Stretch" => "none",
                     "Contain" => "xMidYMid meet",
                     _ => "xMidYMid slice",
-                }
+                },
+                opacity
             ),
         };
     }

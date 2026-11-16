@@ -445,7 +445,7 @@ fn editing_operations() {
 #[test]
 fn builtin_types_are_consistent() {
     let registry = TypeRegistry::with_builtins();
-    assert_eq!(registry.len(), 6);
+    assert_eq!(registry.len(), 8);
     for ty in registry.types() {
         assert!(ty.kind.is_widget(), "{}", ty.type_ref);
         for def in &ty.properties {

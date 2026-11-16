@@ -69,8 +69,14 @@ pub fn shapes(
                 image: super::icons::icon_or_fallback(Some(name)),
                 fit: ruf::ImageFit::Contain,
             }),
-            Primitive::Image { rect: r, path, fit } => {
-                if let Some(image) = picture(project, path) {
+            Primitive::Image {
+                rect: r,
+                path,
+                fit,
+                opacity,
+                gamma,
+            } => {
+                if let Some(image) = picture(project, path, *gamma as f32, *opacity as f32) {
                     out.push(Shape::Image {
                         rect: rect(*r),
                         image,
@@ -91,29 +97,42 @@ pub fn shapes(
 /// A loaded picture with the modification time of its file.
 type Picture = (Option<std::time::SystemTime>, Option<ruf::Image>);
 
+/// Key of a picture: file, gamma and opacity (as bits).
+type PictureKey = (std::path::PathBuf, u32, u32);
+
 thread_local! {
-    /// Pictures of the design surface by file.
-    static PICTURES: std::cell::RefCell<std::collections::HashMap<std::path::PathBuf, Picture>> =
+    /// Pictures of the design surface by file and tone (one decoded image
+    /// each in RUF, not one per redraw).
+    static PICTURES: std::cell::RefCell<std::collections::HashMap<PictureKey, Picture>> =
         Default::default();
 }
 
-/// A picture file (relative to the project), loaded again when it changed.
-fn picture(project: Option<&std::path::Path>, path: &str) -> Option<ruf::Image> {
+/// A picture file (relative to the project) with gamma and opacity, loaded
+/// again when it changed.
+fn picture(
+    project: Option<&std::path::Path>,
+    path: &str,
+    gamma: f32,
+    opacity: f32,
+) -> Option<ruf::Image> {
     let path = std::path::Path::new(path);
     let file = match project {
         Some(dir) if path.is_relative() => dir.join(path),
         _ => path.to_path_buf(),
     };
     let modified = std::fs::metadata(&file).and_then(|m| m.modified()).ok();
+    let key = (file, gamma.to_bits(), opacity.to_bits());
     PICTURES.with(|cache| {
         let mut cache = cache.borrow_mut();
-        if let Some((time, image)) = cache.get(&file)
+        if let Some((time, image)) = cache.get(&key)
             && *time == modified
         {
             return image.clone();
         }
-        let image = std::fs::read(&file).ok().map(ruf::Image::from_bytes);
-        cache.insert(file, (modified, image.clone()));
+        let image = std::fs::read(&key.0)
+            .ok()
+            .map(|bytes| ruf::Image::from_bytes(bytes).with_tone(gamma, opacity));
+        cache.insert(key, (modified, image.clone()));
         image
     })
 }

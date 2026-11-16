@@ -37,6 +37,14 @@ ICONS = {
     "edit": rect(4, 14, 40, 20, 3, stroke=BLUE) + text(9, 29, "ab", 12, anchor="start") + line(29, 18, 29, 30, INK, 2),
     "checkbox": rect(5, 13, 20, 20, 4, fill=BLUE, stroke=BLUE) + "<path d='M9.5 23l4.5 4.5 7.5-9' fill='none' stroke='#fff' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/>"
                 + line(30, 23, 43, 23),
+    # ImageBox: Bild im Rahmen mit Anfassern (Größe frei, px oder %).
+    "imagebox": rect(7, 9, 34, 30, 2, fill=PALE) + f"<circle cx='31' cy='17' r='3.5' fill='#f2b632'/>"
+                + f"<path d='M9 37l10-12 7 8 4-4 9 8z' fill='{BLUE}' stroke='{LINE}' stroke-width='1.5' stroke-linejoin='round'/>"
+                + "".join(rect(x - 2.5, y - 2.5, 5, 5, 1, fill=BODY, stroke=BLUE, sw=1.5) for x, y in ((7, 9), (41, 9), (7, 39), (41, 39))),
+    # ImageScrollBox: drei Bilder in einer Reihe mit Bildlaufleiste.
+    "imagescrollbox": "".join(rect(x, 10, 12, 20, 2, fill=PALE) + f"<path d='M{x + 1} 29l4-6 3 3 2-2 2 5z' fill='{BLUE}'/>"
+                              for x in (4, 18, 32))
+                      + rect(4, 35, 40, 6, 3, fill=SOFT) + rect(6, 36.5, 16, 3, 1.5, fill=BLUE, stroke=BLUE, sw=1),
     # --- GTK 4 palette ---------------------------------------------------------
     "radio": f"<circle cx='15' cy='23' r='10' fill='{BODY}' stroke='{BLUE}' stroke-width='2'/><circle cx='15' cy='23' r='5' fill='{BLUE}'/>" + line(30, 23, 43, 23),
     "dropdown": rect(4, 14, 40, 20, 3) + line(9, 24, 25, 24) + f"<path d='M33 21l4 5 4-5' fill='none' stroke='{INK}' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'/>"

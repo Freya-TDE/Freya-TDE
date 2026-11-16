@@ -1377,7 +1377,15 @@ pub fn generate(
     } else {
         start(backend, &generated, &mut out)
     };
-    let bindings = data_bindings(forms, &generated, registry, &env, &start, &mut out);
+    let bindings = data_bindings(
+        forms,
+        &generated,
+        registry,
+        &project.backend,
+        &env,
+        &start,
+        &mut out,
+    );
     let states = form_states(forms, &generated, &mut out);
     let mut cargo = analysis.cargo.clone();
     if let Some(backend) = backend {
@@ -2107,9 +2115,94 @@ fn app_file(
         code.push_str(&app_items);
         code.push('\n');
     }
+    // Bilder (ImageBox, ImageScrollBox) bereitet der Kern einmal auf: alle
+    // Backends zeigen Gamma und Transparenz gleich.
+    let pictures = [
+        crate::builtin::image_box(),
+        crate::builtin::image_scroll_box(),
+    ];
+    if forms.iter().any(|f| {
+        f.widgets()
+            .iter()
+            .any(|w| pictures.contains(&w.component.type_ref))
+    }) {
+        code.push('\n');
+        code.push_str(FREYA_IMAGE);
+    }
     let content = generated_file("the project", &format_rust(APP, &code, out));
     file(APP, FileKind::Generated, content, source)
 }
+
+/// Picture preparation in `app.gen.rs` for `core/ImageBox` and
+/// `core/ImageScrollBox` (crate `image`): decode, gamma, opacity, cache.
+const FREYA_IMAGE: &str = r#"
+/// A picture prepared for the user interface: RGBA, gamma and opacity applied.
+#[allow(dead_code)]
+#[derive(Clone)]
+pub struct FreyaImage {
+    pub width: u32,
+    pub height: u32,
+    pub rgba: std::sync::Arc<Vec<u8>>,
+}
+
+/// Loads the picture at `path` (relative to the working directory) with
+/// gamma (1 = unchanged, above 1 lighter) and opacity (0…1); cached.
+#[allow(dead_code)]
+pub fn freya_image(path: &str, gamma: f64, opacity: f64) -> Result<FreyaImage, String> {
+    use std::collections::HashMap;
+    use std::sync::{Mutex, OnceLock};
+    type Cache = Mutex<HashMap<(String, u64, u64), FreyaImage>>;
+    static CACHE: OnceLock<Cache> = OnceLock::new();
+    let gamma = gamma.clamp(0.1, 5.0);
+    let opacity = opacity.clamp(0.0, 1.0);
+    let key = (path.to_owned(), gamma.to_bits(), opacity.to_bits());
+    let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Some(found) = cache.lock().map_err(|e| e.to_string())?.get(&key) {
+        return Ok(found.clone());
+    }
+    let mut rgba = image::open(path)
+        .map_err(|e| format!("{path}: {e}"))?
+        .into_rgba8();
+    if (gamma - 1.0).abs() > f64::EPSILON {
+        let table: Vec<u8> = (0..=255u32)
+            .map(|c| ((c as f64 / 255.0).powf(1.0 / gamma) * 255.0).round() as u8)
+            .collect();
+        for pixel in rgba.pixels_mut() {
+            for channel in &mut pixel.0[..3] {
+                *channel = table[*channel as usize];
+            }
+        }
+    }
+    if opacity < 1.0 {
+        for pixel in rgba.pixels_mut() {
+            pixel.0[3] = (pixel.0[3] as f64 * opacity).round() as u8;
+        }
+    }
+    let (width, height) = rgba.dimensions();
+    let picture = FreyaImage {
+        width,
+        height,
+        rgba: std::sync::Arc::new(rgba.into_raw()),
+    };
+    cache
+        .lock()
+        .map_err(|e| e.to_string())?
+        .insert(key, picture.clone());
+    Ok(picture)
+}
+
+/// The prepared picture as PNG (for backends that show files or data URLs).
+#[allow(dead_code)]
+pub fn freya_image_png(picture: &FreyaImage) -> Result<Vec<u8>, String> {
+    let buffer = image::RgbaImage::from_raw(picture.width, picture.height, (*picture.rgba).clone())
+        .ok_or("picture buffer has the wrong size")?;
+    let mut png = std::io::Cursor::new(Vec::new());
+    buffer
+        .write_to(&mut png, image::ImageFormat::Png)
+        .map_err(|e| e.to_string())?;
+    Ok(png.into_inner())
+}
+"#;
 
 /// The generated components of `form`, in the form's element order.
 fn form_components<'g>(form: &Form, generated: &'g [Generated]) -> Vec<&'g Generated> {
@@ -2838,6 +2931,7 @@ fn data_bindings(
     forms: &[Form],
     generated: &[Generated],
     registry: &TypeRegistry,
+    backend: &str,
     env: &Environment<'static>,
     start: &Start,
     out: &mut Diagnostics,
@@ -2853,7 +2947,9 @@ fn data_bindings(
             let Some(ty) = registry.get(&widget.component.type_ref) else {
                 continue;
             };
-            let (show_template, selected_template, is_table) = match (&ty.list, &ty.table) {
+            // Kern-Listen (z. B. ImageScrollBox) füllt jedes Backend anders.
+            let list = registry.list(&widget.component.type_ref, backend);
+            let (show_template, selected_template, is_table) = match (list, &ty.table) {
                 (Some(l), _) => (&l.set_items, &l.selected, false),
                 (None, Some(t)) => (&t.set_rows, &t.selected, true),
                 (None, None) => continue,
