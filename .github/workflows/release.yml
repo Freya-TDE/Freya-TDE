@@ -1,0 +1,276 @@
+# Release-Pakete von Freya TDE für Linux, Windows und macOS, dazu das signierte
+# Skill-Paket der KI.
+# Release packages of Freya TDE for Linux, Windows and macOS plus the signed
+# AI skill pack.
+#
+# Auslöser / triggers:
+#   - ein Tag `v*`: baut alles, hängt es an ein GitHub-Release, aktualisiert die
+#     Homebrew-Formel und meldet die Version dem Katalog (DS-Catalog)
+#   - von Hand (Actions → Release → Run workflow): baut nur (Artefakte am Lauf)
+#
+# Paketaufbau (alle Systeme): <oberster Ordner>/bin/{freya-tde,freya-tde-db,ct-editor}
+# und share/freya-tde/{components,widgets}; Linux zusätzlich share/applications
+# und share/icons, Windows die GTK-Laufzeit (RUF/tools/bundle-windows.sh).
+#
+# Secrets (fehlt eines, wird der Schritt übersprungen):
+#   SKILLS_SIGN_KEY      geheimer Schlüssel der Skill-Pakete (Hex, `ds-sign keygen`)
+#   HOMEBREW_TAP_TOKEN   Contents read/write auf Freya-TDE/homebrew-tap
+#   CATALOG_TOKEN        Contents read/write auf Dragon-InterActive/DS-Catalog
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  SKILLS_PUBLIC_KEY: 307901502adabb564b8fb10555a47a102595e3b0fbf0fe20e9a2b5d6fcc0b759
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    env:
+      SKILLS_KEY: ${{ secrets.SKILLS_SIGN_KEY }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+      - name: GTK 4 und GtkSourceView 5
+        run: sudo apt-get update && sudo apt-get install -y libgtk-4-dev libgtksourceview-5-dev
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            CT-Editor
+      - name: Bauen
+        run: |
+          cargo build --release --locked -p freya-tde -p freya-tde-db
+          cargo build --release --locked --manifest-path CT-Editor/Cargo.toml
+      - name: Paket
+        run: |
+          version=$(cargo pkgid -p freya-tde | sed 's/.*[#@]//')
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          dir=freya-tde-$version-linux-x86_64
+          install -Dm755 target/release/freya-tde $dir/bin/freya-tde
+          install -Dm755 target/release/freya-tde-db $dir/bin/freya-tde-db
+          install -Dm755 CT-Editor/target/release/ct-editor $dir/bin/ct-editor
+          mkdir -p $dir/share/freya-tde
+          cp -r components widgets $dir/share/freya-tde/
+          install -Dm644 ide/assets/freya-tde.desktop $dir/share/applications/freya-tde.desktop
+          for icon in ide/assets/icons/freya-tde-*.png; do
+            size=${icon##*-}; size=${size%.png}
+            install -Dm644 $icon $dir/share/icons/hicolor/${size}x${size}/apps/freya-tde.png
+          done
+          install -Dm644 ide/assets/freya-tde.svg $dir/share/icons/hicolor/scalable/apps/freya-tde.svg
+          mkdir -p $dir/share/doc/freya-tde
+          cp -r README.md LICENSE-MIT LICENSE-APACHE docs $dir/share/doc/freya-tde/
+          tar czf $dir.tar.gz $dir
+      # Skill-Paket: dieselben Skills wie eingebaut (ide/skills, RUF, CT-Editor),
+      # signiert mit dem Skill-Schlüssel; Freya TDE prüft es (ide/src/ai/skills.rs).
+      - name: Skill-Paket
+        if: env.SKILLS_KEY != ''
+        env:
+          DS_SIGN_KEY: ${{ env.SKILLS_KEY }}
+        run: |
+          cargo install --locked --git https://github.com/Dragon-InterActive/DS-Catalog ds-sign
+          mkdir -p skills
+          for skill in ide/skills/*/ RUF/.agents/skills/*/ CT-Editor/.agents/skills/*/; do
+            name=$(basename "$skill")
+            mkdir -p skills/$name
+            cp "$skill/SKILL.md" skills/$name/
+          done
+          ds-sign skill-pack skills --version "$VERSION" --min-freya "$VERSION"
+          ds-sign verify --public "$SKILLS_PUBLIC_KEY" skills/pack.json
+          tar czf freya-tde-$VERSION-skills.tar.gz skills
+      - uses: actions/upload-artifact@v7
+        with:
+          name: linux
+          path: |
+            freya-tde-*-linux-x86_64.tar.gz
+            freya-tde-*-skills.tar.gz
+
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+      # Rust mit GNU-Host (passt zu MSYS2, wie im CT-Editor).
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable-x86_64-pc-windows-gnu
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          path-type: inherit
+          install: >-
+            mingw-w64-ucrt-x86_64-gtk4
+            mingw-w64-ucrt-x86_64-gtksourceview5
+            mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-adwaita-icon-theme
+            zip
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            CT-Editor
+      - name: Bauen
+        run: |
+          cargo build --release --locked -p freya-tde -p freya-tde-db
+          cargo build --release --locked --manifest-path CT-Editor/Cargo.toml
+      - name: Paket mit GTK-Laufzeit
+        run: |
+          version=$(cargo pkgid -p freya-tde | sed 's/.*[#@]//')
+          dir=freya-tde-$version-windows-x86_64
+          RUF/tools/bundle-windows.sh target/release/freya-tde.exe $dir \
+              docs LICENSE-MIT LICENSE-APACHE README.md
+          # Die Helfer nutzen dieselbe Laufzeit; das Skript ergänzt fehlende DLLs.
+          RUF/tools/bundle-windows.sh target/release/freya-tde-db.exe $dir
+          RUF/tools/bundle-windows.sh CT-Editor/target/release/ct-editor.exe $dir
+          mkdir -p $dir/share/freya-tde
+          cp -r components widgets $dir/share/freya-tde/
+          zip -qr $dir.zip $dir
+          echo "PACKAGE=$dir.zip" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows
+          path: ${{ env.PACKAGE }}
+
+  # macOS: für die Homebrew-Formel (fertiges Programm, gelinkt gegen die
+  # Homebrew-Bibliotheken unter /opt/homebrew; die Formel hängt von ihnen ab).
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+      - name: GTK 4
+        run: brew install gtk4 gtksourceview5 adwaita-icon-theme
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            CT-Editor
+      - name: Bauen
+        run: |
+          cargo build --release --locked -p freya-tde -p freya-tde-db
+          cargo build --release --locked --manifest-path CT-Editor/Cargo.toml
+      - name: Paket
+        run: |
+          version=$(cargo pkgid -p freya-tde | sed 's/.*[#@]//')
+          dir=freya-tde-$version-macos-aarch64
+          mkdir -p $dir/bin $dir/share/freya-tde $dir/share/doc/freya-tde
+          cp target/release/freya-tde target/release/freya-tde-db CT-Editor/target/release/ct-editor $dir/bin/
+          cp -r components widgets $dir/share/freya-tde/
+          cp -r README.md LICENSE-MIT LICENSE-APACHE $dir/share/doc/freya-tde/
+          tar czf $dir.tar.gz $dir
+          echo "PACKAGE=$dir.tar.gz" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: macos
+          path: ${{ env.PACKAGE }}
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [linux, windows, macos]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: packages
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v3
+        with:
+          files: packages/*
+          generate_release_notes: true
+
+  # Formel Freya-TDE/homebrew-tap/Formula/freya-tde.rb neu schreiben (fertiges
+  # Programm, Abhängigkeiten nur zur Laufzeit: GTK, GtkSourceView, git).
+  homebrew:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: release
+    runs-on: ubuntu-24.04
+    env:
+      TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+        if: env.TAP_TOKEN != ''
+        with:
+          repository: Freya-TDE/homebrew-tap
+          token: ${{ env.TAP_TOKEN }}
+          path: tap
+      - name: Formel schreiben
+        if: env.TAP_TOKEN != ''
+        run: |
+          version=${GITHUB_REF_NAME#v}
+          url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/freya-tde-${version}-macos-aarch64.tar.gz"
+          sha=$(curl -sSLf "$url" | sha256sum | cut -d' ' -f1)
+          mkdir -p tap/Formula
+          cat > tap/Formula/freya-tde.rb <<RUBY
+          class FreyaTde < Formula
+            desc "Visual development environment for Rust (RAD, Delphi/Lazarus style)"
+            homepage "https://github.com/Freya-TDE/Freya-TDE"
+            url "${url}"
+            sha256 "${sha}"
+            version "${version}"
+            license any_of: ["MIT", "Apache-2.0"]
+
+            depends_on arch: :arm64
+            depends_on "adwaita-icon-theme"
+            depends_on "git"
+            depends_on "gtk4"
+            depends_on "gtksourceview5"
+
+            def install
+              bin.install "bin/freya-tde", "bin/freya-tde-db", "bin/ct-editor"
+              (share/"freya-tde").install "share/freya-tde/components", "share/freya-tde/widgets"
+              doc.install Dir["share/doc/freya-tde/*"]
+            end
+
+            def caveats
+              <<~EOS
+                Freya TDE braucht eine Rust-Toolchain (rustup.rs oder \`brew install rustup\`)
+                sowie rust-analyzer, clippy und rustfmt. Der DS-Launcher prüft das und hilft.
+              EOS
+            end
+
+            test do
+              assert_predicate bin/"freya-tde", :executable?
+            end
+          end
+          RUBY
+          cd tap
+          git add Formula/freya-tde.rb
+          if git diff --cached --quiet; then echo "Formel ist schon aktuell"; exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "freya-tde ${version}"
+          git push
+
+  # Den Katalog neu bauen lassen (DS-Catalog, Workflow „Katalog“).
+  catalog:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: release
+    runs-on: ubuntu-24.04
+    env:
+      CATALOG_TOKEN: ${{ secrets.CATALOG_TOKEN }}
+    steps:
+      - name: Katalog anstoßen
+        if: env.CATALOG_TOKEN != ''
+        run: |
+          curl -fsS -X POST \
+            -H "Authorization: Bearer $CATALOG_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/Dragon-InterActive/DS-Catalog/dispatches \
+            -d "{\"event_type\":\"release\",\"client_payload\":{\"program\":\"freya-tde\",\"version\":\"${GITHUB_REF_NAME#v}\"}}"

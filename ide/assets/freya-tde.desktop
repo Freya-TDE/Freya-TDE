@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=Freya TDE
+GenericName=Rust IDE
+GenericName[de]=Rust-Entwicklungsumgebung
+Comment=Visual development environment for Rust (RAD)
+Comment[de]=Visuelle Entwicklungsumgebung für Rust im Delphi/Lazarus-Stil
+Exec=freya-tde %f
+Icon=freya-tde
+Terminal=false
+Categories=Development;IDE;
+Keywords=Rust;Cargo;RAD;Designer;GTK;
+StartupWMClass=freya-tde

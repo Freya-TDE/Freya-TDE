@@ -91,6 +91,11 @@ fn pack_dirs() -> Vec<PathBuf> {
     for base in [
         exe_dir.map(Path::to_path_buf),
         exe_dir.and_then(Path::parent).map(Path::to_path_buf),
+        // Installiert (Launcher, AUR, Homebrew): <prefix>/bin/freya-tde und
+        // <prefix>/share/freya-tde/{components,widgets}.
+        exe_dir
+            .and_then(Path::parent)
+            .map(|p| p.join("share").join("freya-tde")),
         // Entwicklung: das Repository.
         Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..")),
     ]
