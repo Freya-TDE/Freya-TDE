@@ -160,9 +160,13 @@ pub fn parse(text: &str) -> Result<(String, String, String), String> {
     Ok((name, description, body.to_owned()))
 }
 
-/// Public Ed25519 key of the skill packs (`None`: no key yet, every
-/// installed pack is refused with [`codes::SKILL_PACK_NO_KEY`]).
-pub const SKILL_PACK_KEY: Option<[u8; 32]> = None;
+/// Public Ed25519 key of the skill packs (`skills.pub`: 307901502adabb564b8fb10555a47a102595e3b0fbf0fe20e9a2b5d6fcc0b759; made
+/// with `ds-sign keygen` from DS-Launcher). `None` would refuse every
+/// installed pack with [`codes::SKILL_PACK_NO_KEY`].
+pub const SKILL_PACK_KEY: Option<[u8; 32]> = Some([
+    0x30, 0x79, 0x01, 0x50, 0x2a, 0xda, 0xbb, 0x56, 0x4b, 0x8f, 0xb1, 0x05, 0x55, 0xa4, 0x7a, 0x10,
+    0x25, 0x95, 0xe3, 0xb0, 0xfb, 0xf0, 0xfe, 0x20, 0xe9, 0xa2, 0xb5, 0xd6, 0xfc, 0xc0, 0xb7, 0x59,
+]);
 
 /// A checked skill pack.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -631,6 +635,12 @@ mod tests {
         std::fs::write(dir.join("pack.json"), &manifest).unwrap();
         std::fs::write(dir.join("pack.json.sig"), sig).unwrap();
         key.verifying_key().to_bytes()
+    }
+
+    #[test]
+    fn built_in_pack_key_is_valid() {
+        let key = SKILL_PACK_KEY.expect("Schlüssel der Skill-Pakete");
+        assert!(ed25519_dalek::VerifyingKey::from_bytes(&key).is_ok());
     }
 
     #[test]

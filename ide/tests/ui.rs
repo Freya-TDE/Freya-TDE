@@ -96,7 +96,7 @@ fn main() {
         std::env::set_var("GIT_AUTHOR_EMAIL", "test@example.com");
         std::env::set_var("GIT_COMMITTER_NAME", "Test");
         std::env::set_var("GIT_COMMITTER_EMAIL", "test@example.com");
-        // Ein installiertes Skill-Paket (ohne Schlüssel im Programm abgelehnt).
+        // Ein installiertes Skill-Paket ohne gültige Signatur (abgelehnt).
         std::env::set_var("FREYA_TDE_SKILL_PACK", home.join("skill-pack"));
         // Ohne Bildschirm (Xvfb) ist Software-Vulkan unzuverlässig.
         if std::env::var_os("GSK_RENDERER").is_none() {
@@ -116,7 +116,7 @@ fn main() {
     assert!(
         ide.problems().iter().any(|p| {
             p.source == freya_tde::problems::ProblemSource::Ai
-                && p.code.as_deref() == Some("skill_pack_no_key")
+                && p.code.as_deref() == Some("skill_pack_signature")
         }),
         "{:?}",
         ide.problems()
