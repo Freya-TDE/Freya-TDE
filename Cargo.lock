@@ -2143,7 +2143,7 @@ dependencies = [
 
 [[package]]
 name = "rncl"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "ruf",
 ]
@@ -2164,7 +2164,7 @@ dependencies = [
 
 [[package]]
 name = "ruf"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "gdk4-macos",
  "gdk4-win32",
