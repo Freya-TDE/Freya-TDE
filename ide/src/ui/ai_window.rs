@@ -18,6 +18,7 @@ use rncl::prelude::*;
 use ruf::dialog;
 
 use super::{Ide, with, with0};
+use crate::ai::skills::SkillOrigin;
 use crate::ai::{
     self, AiError, ChatResponse, Client, Conversation, Decision, Event, ModelInfo, Proposal,
     SkillTable, Turn, Workspace,
@@ -336,7 +337,12 @@ impl AiWindow {
                 .skills
                 .skills()
                 .iter()
-                .map(|s| format!("{}: {}", s.name, s.description))
+                .map(|s| match &s.origin {
+                    SkillOrigin::Pack { version } => {
+                        format!("{}: {} (Skill-Paket {version})", s.name, s.description)
+                    }
+                    _ => format!("{}: {}", s.name, s.description),
+                })
                 .collect::<Vec<_>>()
                 .join("\n"),
         );
@@ -554,6 +560,27 @@ impl Ide {
         self.ai_window.refresh(self);
     }
 
+    /// Problems with skills: a refused skill pack (always) and broken or
+    /// shadowed project skills (once the AI window loaded them).
+    pub(super) fn skill_problems(&self) -> Vec<crate::problems::Problem> {
+        let state = self.ai_window.state.borrow();
+        crate::ai::skills::installed_pack()
+            .as_ref()
+            .err()
+            .into_iter()
+            .chain(state.skills.issues())
+            .map(|issue| crate::problems::Problem {
+                code: Some(issue.code.to_owned()),
+                file: issue.path.clone(),
+                ..crate::problems::Problem::new(
+                    crate::problems::ProblemSource::Ai,
+                    crate::problems::ProblemSeverity::Warning,
+                    &issue.detail,
+                )
+            })
+            .collect()
+    }
+
     /// Loads the skills for the current project and starts over when the
     /// project changed.
     pub(super) fn ai_prepare(&self) {
@@ -565,7 +592,7 @@ impl Ide {
         if !changed {
             return;
         }
-        let mut skills = SkillTable::builtin();
+        let mut skills = SkillTable::trusted();
         if let (Some(ptdr), Some(dir)) = (&project, self.session().project_dir()) {
             let approved = self.settings.borrow().ai.approved_skills(ptdr);
             skills.load_project(&dir, &approved);
@@ -1088,7 +1115,7 @@ Die KI folgt ihren Anweisungen. Nur freigeben, wenn du ihnen vertraust:\n\n{}",
         // Neu laden (die Gesprächsrunde bleibt).
         let dir = self.session().project_dir();
         let approved = self.settings.borrow().ai.approved_skills(&project);
-        let mut skills = SkillTable::builtin();
+        let mut skills = SkillTable::trusted();
         if let Some(dir) = dir {
             skills.load_project(&dir, &approved);
         }

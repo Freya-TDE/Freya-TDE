@@ -1443,6 +1443,7 @@ impl Ide {
         for list in self.lsp_problems.borrow().values() {
             problems.extend(list.iter().cloned());
         }
+        problems.extend(self.skill_problems());
         crate::problems::sort(&mut problems);
         problems
     }

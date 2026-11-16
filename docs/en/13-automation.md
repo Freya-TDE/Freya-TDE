@@ -68,7 +68,16 @@ code tabs at once.
 - **Skills** in the open Agent Skills format: built in are the skills of Freya TDE (`ide/skills`), RUF and the
   CT-Editor. A project's own skills (`.agents/skills/`) apply only after approval; the approval remembers the
   SHA-256 of the content, so a changed skill needs a new one. The AI first sees only names and descriptions
-  and loads the text when needed (`load_skill`). Signed skill packs come with the launcher.
+  and loads the text when needed (`load_skill`).
+- **Skill packs** bring new skills between two releases. The launcher puts them into the write-protected
+  installation folder: `<program>/../share/freya-tde/skills` (Linux, Homebrew) or `<program folder>/skills`
+  (Windows); `FREYA_TDE_SKILL_PACK` comes first (tests). A pack consists of `pack.json` (`format`, `version`,
+  `min_freya`, the SHA-256 of every `<name>/SKILL.md`), `pack.json.sig` (Ed25519 signature over `pack.json`,
+  hex) and the skill folders. Freya TDE checks the signature against the built-in key, the minimum version and
+  every file; unlisted files are not allowed. Any error refuses the whole pack, the message appears under
+  "Probleme" (source KI, codes `skill_pack_no_key`, `skill_pack_signature`, `skill_pack_hash`,
+  `skill_pack_version`, `skill_pack_invalid`). A pack skill replaces the built-in one of the same name and is
+  trusted like it.
 
 A test against a real provider runs with
 `FREYA_TDE_TEST_AI="ollama|http://localhost:11434|qwen3:8b" cargo test -p freya-tde --test ai_live`

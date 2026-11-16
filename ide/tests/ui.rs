@@ -96,17 +96,32 @@ fn main() {
         std::env::set_var("GIT_AUTHOR_EMAIL", "test@example.com");
         std::env::set_var("GIT_COMMITTER_NAME", "Test");
         std::env::set_var("GIT_COMMITTER_EMAIL", "test@example.com");
+        // Ein installiertes Skill-Paket (ohne Schlüssel im Programm abgelehnt).
+        std::env::set_var("FREYA_TDE_SKILL_PACK", home.join("skill-pack"));
         // Ohne Bildschirm (Xvfb) ist Software-Vulkan unzuverlässig.
         if std::env::var_os("GSK_RENDERER").is_none() {
             std::env::set_var("GSK_RENDERER", "cairo");
         }
     }
+    std::fs::create_dir_all(home.join("skill-pack")).unwrap();
+    std::fs::write(home.join("skill-pack/pack.json"), "{}").unwrap();
     let _app = Application::new();
     // Unter Xvfb sind Dialoge unsichtbar und warteten ewig: automatisch mit
     // „Ja“ beantworten (die Frage steht dann in stderr).
     ruf::dialog::set_automatic(Some(true));
     let ide = freya_tde::Ide::start(None);
     let surface = ide.design_surface();
+
+    // Ein abgelehntes Skill-Paket steht unter „Probleme“ (Quelle KI).
+    assert!(
+        ide.problems().iter().any(|p| {
+            p.source == freya_tde::problems::ProblemSource::Ai
+                && p.code.as_deref() == Some("skill_pack_no_key")
+        }),
+        "{:?}",
+        ide.problems()
+    );
+    println!("test skill_pack_problem ... ok");
 
     // Palette bewaffnen und in das Formular klicken: Button wird platziert.
     ide.arm(Some(builtin::button()));

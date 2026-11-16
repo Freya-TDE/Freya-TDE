@@ -39,6 +39,8 @@ proc-macro2 = { version = "1.0.107", features = ["span-locations"] }
 ureq = { version = "3.5.2", features = ["json"] }
 # Prüfsummen freigegebener Projekt-Skills. / Checksums of approved project skills.
 sha2 = "0.11.1"
+# Signatur der Skill-Pakete prüfen (Ed25519). / Verify signed skill packs.
+ed25519-dalek = { version = "3.0.0", default-features = false, features = ["fast"] }
 
 [[test]]
 name = "ui"

@@ -69,7 +69,16 @@ laufen im Hintergrund, `cargo` ebenso; Änderungen der KI gehen über dieselben 
 - **Skills** im offenen Format Agent Skills: eingebaut sind die Skills von Freya TDE (`ide/skills`), RUF und
   CT-Editor. Eigene Skills eines Projekts (`.agents/skills/`) gelten erst nach Freigabe; die Freigabe merkt
   sich die SHA-256 des Inhalts, ein geänderter Skill braucht eine neue. Die KI sieht zuerst nur Namen und
-  Beschreibungen und lädt den Text bei Bedarf (`load_skill`). Signierte Skill-Pakete kommen mit dem Launcher.
+  Beschreibungen und lädt den Text bei Bedarf (`load_skill`).
+- **Skill-Pakete** bringen neue Skills zwischen zwei Releases. Der Launcher legt sie im schreibgeschützten
+  Installationsordner ab: `<Programm>/../share/freya-tde/skills` (Linux, Homebrew) bzw. `<Programmordner>/skills`
+  (Windows); `FREYA_TDE_SKILL_PACK` geht vor (Tests). Ein Paket besteht aus `pack.json` (`format`, `version`,
+  `min_freya`, je Datei `<name>/SKILL.md` die SHA-256), `pack.json.sig` (Ed25519-Signatur über `pack.json`, hex)
+  und den Skill-Ordnern. Freya TDE prüft die Signatur gegen den eingebauten Schlüssel, die Mindestversion und
+  jede Datei; nicht gelistete Dateien sind verboten. Ein Fehler verwirft das ganze Paket, die Meldung steht
+  unter „Probleme“ (Quelle KI, Codes `skill_pack_no_key`, `skill_pack_signature`, `skill_pack_hash`,
+  `skill_pack_version`, `skill_pack_invalid`). Ein Paket-Skill ersetzt den eingebauten gleichen Namens und gilt
+  wie dieser als geprüft.
 
 Ein Test gegen einen echten Anbieter läuft mit
 `FREYA_TDE_TEST_AI="ollama|http://localhost:11434|qwen3:8b" cargo test -p freya-tde --test ai_live`

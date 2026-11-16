@@ -163,7 +163,7 @@ Protokolle (Anthropic, OpenAI-kompatibel, Gemini) über `ureq` (synchron, rustls
 `tools` (Werkzeuge mit `Access` Read/Write/Run, `specs`, `read`, `plan` → `Proposal` mit Vorschau, `apply`;
 Trait `Workspace`, umgesetzt auf `Session`), `Conversation` (Zustandsautomat: `say`, `request`, `receive` →
 `Turn`, `decide`), `run` (blockierend), `skills::SkillTable` (eingebaut über `build.rs` aus `ide/skills`, RUF,
-CT-Editor; Projekt-Skills nach Freigabe mit SHA-256), `system_prompt`. Codes in `ai::codes` (`auth_failed`,
+CT-Editor; `SkillTable::trusted` dazu das signierte Skill-Paket aus `skills::installed_pack`, Ed25519-Schlüssel `SKILL_PACK_KEY`; Projekt-Skills nach Freigabe mit SHA-256), `system_prompt`. Codes in `ai::codes` (`auth_failed`,
 `rate_limited`, `not_found`, `unreachable`, `timeout`, `tls_failed`, `bad_response`, `key_missing`,
 `model_missing`, `insecure_key_transport`, `too_many_steps` …). Rechte je Projekt in den Einstellungen
 (`AiPermission`, `AiSettings::permission_for`), Freigaben `AiSettings::approve_skill`; vor „OK“ liefert

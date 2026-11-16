@@ -44,6 +44,8 @@ pub enum ProblemSource {
     Codegen,
     Build,
     RustAnalyzer,
+    /// Skills of the AI (skill packs, project skills).
+    Ai,
 }
 
 impl ProblemSource {
@@ -53,6 +55,7 @@ impl ProblemSource {
             Self::Codegen => "Code",
             Self::Build => "Build",
             Self::RustAnalyzer => "rust-analyzer",
+            Self::Ai => "KI",
         }
     }
 }
