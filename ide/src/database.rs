@@ -28,24 +28,28 @@ pub const HELPER: &str = "freya-tde-db";
 /// helper).
 pub const TIMEOUT: Duration = Duration::from_secs(30);
 
-/// The helper program: `FREYA_TDE_DB`, next to the running program, or from
-/// the `PATH`.
+/// The helper program: `FREYA_TDE_DB`, next to the running program, in the
+/// repository's `target` (development and tests) or from the `PATH`.
 pub fn helper_program() -> PathBuf {
     if let Some(path) = std::env::var_os("FREYA_TDE_DB") {
         return PathBuf::from(path);
     }
     let file = format!("{HELPER}{}", std::env::consts::EXE_SUFFIX);
-    if let Ok(exe) = std::env::current_exe() {
-        // Neben freya-tde; bei Tests liegt das Programm eine Ebene höher
-        // (target/debug/deps → target/debug).
-        for dir in exe.ancestors().skip(1).take(2) {
-            let candidate = dir.join(&file);
-            if candidate.is_file() {
-                return candidate;
-            }
-        }
+    let beside = std::env::current_exe()
+        .ok()
+        .and_then(|e| e.parent().map(|d| d.join(&file)))
+        .filter(|p| p.is_file());
+    if let Some(beside) = beside {
+        return beside;
     }
-    PathBuf::from(file)
+    // Entwicklung und Tests: Test-Programme liegen nicht neben dem Helfer
+    // (seit Cargo 1.100 unter target/debug/build/<paket>/<hash>/out).
+    let target = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../target");
+    ["debug", "release"]
+        .into_iter()
+        .map(|profile| target.join(profile).join(&file))
+        .find(|p| p.is_file())
+        .unwrap_or_else(|| PathBuf::from(file))
 }
 
 /// A running helper.
