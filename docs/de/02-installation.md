@@ -2,11 +2,27 @@
 
 [Inhalt](README.md) · zurück: [1 Was ist was?](01-ueberblick.md) · weiter: [3 Erste Schritte](03-erste-schritte.md)
 
-Freya TDE gibt es derzeit nur als Quellcode; ein eigener Installer bzw. Launcher ist geplant. Gebaut wird
-mit Cargo – auf dem System, für das das Programm gedacht ist (GTK braucht die Bibliotheken des Zielsystems,
-ein Cross-Build ist nicht vorgesehen).
+## Installieren
 
-## Voraussetzungen
+- **Linux und Windows:** über den DS-Launcher (Programmkatalog von Dragon Software). Er installiert den
+  CT-Editor mit, wenn er noch fehlt, und hält beide aktuell.
+- **macOS (Apple Silicon):** `brew install freya-tde/tap/freya-tde` – der CT-Editor kommt als Abhängigkeit
+  mit.
+- **Von Hand:** die Archive der [GitHub-Releases](https://github.com/Freya-TDE/Freya-TDE/releases)
+  entpacken (`bin/`, `share/`; Windows mit GTK-Laufzeit). Den CT-Editor bringt das Archiv seit 0.1.1 nicht
+  mehr mit – ihn aus den [CT-E-Releases](https://github.com/Freya-TDE/CT-E/releases) dazuholen und in den
+  `PATH` legen (oder `FREYA_TDE_CT_EDITOR` setzen). Ohne ihn lässt sich `Cargo.toml` nicht aus dem
+  Projektfenster öffnen.
+
+Freya TDE sucht den CT-Editor in dieser Reihenfolge: `FREYA_TDE_CT_EDITOR`, neben `freya-tde`, als eigenes
+Programm neben dem Freya-Ordner (so legt der DS-Launcher beide ab), im `PATH`.
+
+## Aus den Quellen bauen
+
+Gebaut wird mit Cargo – auf dem System, für das das Programm gedacht ist (GTK braucht die Bibliotheken des
+Zielsystems, ein Cross-Build ist nicht vorgesehen).
+
+### Voraussetzungen
 
 | Was | Wofür | Pflicht? |
 |---|---|---|
@@ -21,7 +37,7 @@ ein Cross-Build ist nicht vorgesehen).
 | Flutter (aktuelle stabile Version, Dart ≥ 3.9) | Zielprojekte mit dem Flutter-Backend | optional |
 | `sqlx-cli` | Werkzeugleiste „SQLx“ (`cargo sqlx prepare`) | optional |
 
-### Linux
+#### Linux
 
 ```bash
 # Arch / CachyOS
@@ -32,7 +48,7 @@ sudo apt install libgtk-4-dev libgtksourceview-5-dev pkg-config git lldb
 sudo dnf install gtk4-devel gtksourceview5-devel git lldb
 ```
 
-### Windows
+#### Windows
 
 In der MSYS2-Shell „UCRT64“ (<https://www.msys2.org>):
 
@@ -42,14 +58,14 @@ pacman -S --needed mingw-w64-ucrt-x86_64-gtk4 mingw-w64-ucrt-x86_64-gtksourcevie
 rustup target add x86_64-pc-windows-gnu
 ```
 
-### macOS
+#### macOS
 
 ```bash
 xcode-select --install
 brew install gtk4 gtksourceview5
 ```
 
-## Quellen holen und bauen
+### Quellen holen und bauen
 
 RUF und der CT-Editor sind Submodule – beim Klonen gleich mitholen:
 

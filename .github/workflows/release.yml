@@ -8,9 +8,11 @@
 #     Homebrew-Formel und meldet die Version dem Katalog (DS-Catalog)
 #   - von Hand (Actions → Release → Run workflow): baut nur (Artefakte am Lauf)
 #
-# Paketaufbau (alle Systeme): <oberster Ordner>/bin/{freya-tde,freya-tde-db,ct-editor}
+# Paketaufbau (alle Systeme): <oberster Ordner>/bin/{freya-tde,freya-tde-db}
 # und share/freya-tde/{components,widgets}; Linux zusätzlich share/applications
 # und share/icons, Windows die GTK-Laufzeit (RUF/tools/bundle-windows.sh).
+# Den CT-Editor bringt Freya nicht mehr selbst mit: der DS-Launcher installiert ihn
+# mit (Katalog `requires`), Homebrew über die Abhängigkeit freya-tde/tap/ct-editor.
 #
 # Secrets (fehlt eines, wird der Schritt übersprungen):
 #   SKILLS_SIGN_KEY      geheimer Schlüssel der Skill-Pakete (Hex, `ds-sign keygen`)
@@ -45,13 +47,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: |
-            .
-            CT-Editor
+          workspaces: .
       - name: Bauen
         run: |
           cargo build --release --locked -p freya-tde -p freya-tde-db
-          cargo build --release --locked --manifest-path CT-Editor/Cargo.toml
       - name: Paket
         run: |
           version=$(cargo pkgid -p freya-tde | sed 's/.*[#@]//')
@@ -59,7 +58,6 @@ jobs:
           dir=freya-tde-$version-linux-x86_64
           install -Dm755 target/release/freya-tde $dir/bin/freya-tde
           install -Dm755 target/release/freya-tde-db $dir/bin/freya-tde-db
-          install -Dm755 CT-Editor/target/release/ct-editor $dir/bin/ct-editor
           mkdir -p $dir/share/freya-tde
           cp -r components widgets $dir/share/freya-tde/
           install -Dm644 ide/assets/freya-tde.desktop $dir/share/applications/freya-tde.desktop
@@ -121,13 +119,10 @@ jobs:
             zip
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: |
-            .
-            CT-Editor
+          workspaces: .
       - name: Bauen
         run: |
           cargo build --release --locked -p freya-tde -p freya-tde-db
-          cargo build --release --locked --manifest-path CT-Editor/Cargo.toml
       - name: Paket mit GTK-Laufzeit
         run: |
           version=$(cargo pkgid -p freya-tde | sed 's/.*[#@]//')
@@ -136,7 +131,6 @@ jobs:
               docs LICENSE-MIT LICENSE-APACHE README.md
           # Die Helfer nutzen dieselbe Laufzeit; das Skript ergänzt fehlende DLLs.
           RUF/tools/bundle-windows.sh target/release/freya-tde-db.exe $dir
-          RUF/tools/bundle-windows.sh CT-Editor/target/release/ct-editor.exe $dir
           mkdir -p $dir/share/freya-tde
           cp -r components widgets $dir/share/freya-tde/
           zip -qr $dir.zip $dir
@@ -159,19 +153,16 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: |
-            .
-            CT-Editor
+          workspaces: .
       - name: Bauen
         run: |
           cargo build --release --locked -p freya-tde -p freya-tde-db
-          cargo build --release --locked --manifest-path CT-Editor/Cargo.toml
       - name: Paket
         run: |
           version=$(cargo pkgid -p freya-tde | sed 's/.*[#@]//')
           dir=freya-tde-$version-macos-aarch64
           mkdir -p $dir/bin $dir/share/freya-tde $dir/share/doc/freya-tde
-          cp target/release/freya-tde target/release/freya-tde-db CT-Editor/target/release/ct-editor $dir/bin/
+          cp target/release/freya-tde target/release/freya-tde-db $dir/bin/
           cp -r components widgets $dir/share/freya-tde/
           cp -r README.md LICENSE-MIT LICENSE-APACHE $dir/share/doc/freya-tde/
           tar czf $dir.tar.gz $dir
@@ -228,12 +219,13 @@ jobs:
             # brew style sortiert alphabetisch, „arch“ zählt als Name.
             depends_on "adwaita-icon-theme"
             depends_on arch: :arm64
+            depends_on "freya-tde/tap/ct-editor"
             depends_on "git"
             depends_on "gtk4"
             depends_on "gtksourceview5"
 
             def install
-              bin.install "bin/freya-tde", "bin/freya-tde-db", "bin/ct-editor"
+              bin.install "bin/freya-tde", "bin/freya-tde-db"
               (share/"freya-tde").install "share/freya-tde/components", "share/freya-tde/widgets"
               doc.install Dir["share/doc/freya-tde/*"]
             end

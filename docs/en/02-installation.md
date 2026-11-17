@@ -2,11 +2,25 @@
 
 [Contents](README.md) · back: [1 What is what?](01-overview.md) · next: [3 First steps](03-first-steps.md)
 
-Freya TDE is currently available as source code only; an installer/launcher of its own is planned. It is
-built with Cargo – on the system the program is meant for (GTK needs the target system's libraries; cross
-builds are not intended).
+## Installing
 
-## Requirements
+- **Linux and Windows:** with the DS-Launcher (Dragon Software's program catalog). It installs the
+  CT-Editor along if it is missing and keeps both up to date.
+- **macOS (Apple Silicon):** `brew install freya-tde/tap/freya-tde` – the CT-Editor comes as a dependency.
+- **By hand:** unpack the archives of the [GitHub releases](https://github.com/Freya-TDE/Freya-TDE/releases)
+  (`bin/`, `share/`; Windows with the GTK runtime). Since 0.1.1 the archive no longer contains the CT-Editor
+  – get it from the [CT-E releases](https://github.com/Freya-TDE/CT-E/releases) and put it in the `PATH` (or
+  set `FREYA_TDE_CT_EDITOR`). Without it `Cargo.toml` cannot be opened from the project window.
+
+Freya TDE looks for the CT-Editor in this order: `FREYA_TDE_CT_EDITOR`, next to `freya-tde`, as its own
+program next to Freya's folder (that is how the DS-Launcher installs both), in the `PATH`.
+
+## Building from source
+
+It is built with Cargo – on the system the program is meant for (GTK needs the target system's libraries;
+cross builds are not intended).
+
+### Requirements
 
 | What | For | Required? |
 |---|---|---|
@@ -21,7 +35,7 @@ builds are not intended).
 | Flutter (current stable, Dart ≥ 3.9) | target projects with the Flutter backend | optional |
 | `sqlx-cli` | tool bar "SQLx" (`cargo sqlx prepare`) | optional |
 
-### Linux
+#### Linux
 
 ```bash
 # Arch / CachyOS
@@ -32,7 +46,7 @@ sudo apt install libgtk-4-dev libgtksourceview-5-dev pkg-config git lldb
 sudo dnf install gtk4-devel gtksourceview5-devel git lldb
 ```
 
-### Windows
+#### Windows
 
 In the MSYS2 shell "UCRT64" (<https://www.msys2.org>):
 
@@ -42,14 +56,14 @@ pacman -S --needed mingw-w64-ucrt-x86_64-gtk4 mingw-w64-ucrt-x86_64-gtksourcevie
 rustup target add x86_64-pc-windows-gnu
 ```
 
-### macOS
+#### macOS
 
 ```bash
 xcode-select --install
 brew install gtk4 gtksourceview5
 ```
 
-## Getting the sources and building
+### Getting the sources and building
 
 RUF and the CT-Editor are submodules – fetch them while cloning:
 

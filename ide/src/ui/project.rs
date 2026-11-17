@@ -116,20 +116,19 @@ fn warnings(plan: &Plan) -> String {
         .collect()
 }
 
-/// The CT-Editor program: `FREYA_TDE_CT_EDITOR`, next to Freya TDE, in the
-/// repository (development: the newer of the release and debug build, so an
-/// old build never wins) or in the `PATH`.
+/// The CT-Editor program: `FREYA_TDE_CT_EDITOR`, next to Freya TDE, installed
+/// next to it by the DS-Launcher, in the repository (development: the newer of
+/// the release and debug build, so an old build never wins) or in the `PATH`.
 fn ct_editor() -> PathBuf {
     if let Some(path) = std::env::var_os("FREYA_TDE_CT_EDITOR").filter(|p| !p.is_empty()) {
         return PathBuf::from(path);
     }
     let file = format!("ct-editor{}", std::env::consts::EXE_SUFFIX);
-    let beside = std::env::current_exe()
+    let found = std::env::current_exe()
         .ok()
-        .and_then(|e| e.parent().map(|d| d.join(&file)))
-        .filter(|p| p.is_file());
-    if let Some(beside) = beside {
-        return beside;
+        .and_then(|exe| installed_ct_editor(&exe, &file));
+    if let Some(found) = found {
+        return found;
     }
     let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../CT-Editor/target");
     newest(&[
@@ -137,6 +136,23 @@ fn ct_editor() -> PathBuf {
         repo.join("debug").join(&file),
     ])
     .unwrap_or_else(|| PathBuf::from(file))
+}
+
+/// The CT-Editor next to Freya TDE (`exe`): in the same folder, or as its own
+/// program beside Freya's folder – the DS-Launcher installs into
+/// `<prefix>/<id>/bin` (Linux: `/opt/dragon-software/ct-editor`) or
+/// `<prefix>\<name>\bin` (Windows: `…\Dragon Software\CT-Editor`).
+fn installed_ct_editor(exe: &std::path::Path, file: &str) -> Option<PathBuf> {
+    let bin = exe.parent()?;
+    let beside = bin.join(file);
+    if beside.is_file() {
+        return Some(beside);
+    }
+    let prefix = bin.parent()?.parent()?;
+    ["ct-editor", "CT-Editor"]
+        .iter()
+        .map(|dir| prefix.join(dir).join("bin").join(file))
+        .find(|p| p.is_file())
 }
 
 /// The most recently built of `candidates` that exist.
@@ -530,7 +546,8 @@ impl ProjectWindow {
         {
             Ok(_) => ide.set_status(&format!("CT-Editor geöffnet: {}", dir.display())),
             Err(e) => ide.set_status(&format!(
-                "CT-Editor nicht gestartet ({}): {e}",
+                "CT-Editor nicht gestartet ({}): {e} – installieren über den DS-Launcher \
+                 oder `brew install freya-tde/tap/ct-editor`",
                 program.display()
             )),
         }
@@ -616,4 +633,33 @@ pub fn connect(ide: &Rc<Ide>) {
         .timer
         .on_timeout(with0(ide, |ide| ide.files_changed_outside()));
     project.timer.start(RESCAN);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn finds_ct_editor_beside_or_installed_next_to_freya() {
+        let base = std::env::temp_dir().join(format!("freya-ct-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let exe = base.join("freya-tde/bin/freya-tde");
+        std::fs::create_dir_all(exe.parent().unwrap()).unwrap();
+        assert_eq!(installed_ct_editor(&exe, "ct-editor"), None);
+
+        // Vom DS-Launcher daneben installiert (Linux: <id>, Windows: <Name>).
+        for dir in ["ct-editor", "CT-Editor"] {
+            let ct = base.join(dir).join("bin/ct-editor");
+            std::fs::create_dir_all(ct.parent().unwrap()).unwrap();
+            std::fs::write(&ct, "").unwrap();
+            assert_eq!(installed_ct_editor(&exe, "ct-editor"), Some(ct));
+            std::fs::remove_dir_all(base.join(dir)).unwrap();
+        }
+
+        // Im selben Ordner geht vor.
+        let beside = base.join("freya-tde/bin/ct-editor");
+        std::fs::write(&beside, "").unwrap();
+        assert_eq!(installed_ct_editor(&exe, "ct-editor"), Some(beside));
+        let _ = std::fs::remove_dir_all(&base);
+    }
 }
