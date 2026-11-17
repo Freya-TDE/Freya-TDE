@@ -37,6 +37,14 @@ const BUILTIN: &[(&str, &[u8])] = &[
     ("frame", include_bytes!("../../assets/palette/frame.png")),
     ("globe", include_bytes!("../../assets/palette/globe.png")),
     ("image", include_bytes!("../../assets/palette/image.png")),
+    (
+        "imagebox",
+        include_bytes!("../../assets/palette/imagebox.png"),
+    ),
+    (
+        "imagescrollbox",
+        include_bytes!("../../assets/palette/imagescrollbox.png"),
+    ),
     ("label", include_bytes!("../../assets/palette/label.png")),
     ("link", include_bytes!("../../assets/palette/link.png")),
     ("list", include_bytes!("../../assets/palette/list.png")),
@@ -148,6 +156,8 @@ mod tests {
             "button",
             "edit",
             "checkbox",
+            "imagebox",
+            "imagescrollbox",
             "cpu",
             "database",
             "table",
@@ -155,6 +165,21 @@ mod tests {
             FALLBACK,
         ] {
             assert!(builtin_names().contains(&name), "{name}");
+        }
+    }
+
+    /// Jedes Symbol in `assets/palette/` steht in der Tabelle (sonst zeigen
+    /// Palette und Designer still das Ersatzsymbol).
+    #[test]
+    fn every_palette_png_is_builtin() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/palette");
+        let names = builtin_names();
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.extension().is_some_and(|e| e == "png") {
+                let name = path.file_stem().unwrap().to_str().unwrap();
+                assert!(names.contains(&name), "{name}.png fehlt in BUILTIN");
+            }
         }
     }
 }
