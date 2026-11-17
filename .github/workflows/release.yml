@@ -222,8 +222,8 @@ jobs:
             desc "Visual development environment for Rust (RAD, Delphi/Lazarus style)"
             homepage "https://github.com/Freya-TDE/Freya-TDE"
             url "${url}"
-            sha256 "${sha}"
             version "${version}"
+            sha256 "${sha}"
             license any_of: ["MIT", "Apache-2.0"]
 
             depends_on arch: :arm64
