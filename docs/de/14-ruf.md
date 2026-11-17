@@ -17,7 +17,9 @@ lässt sich für jedes Desktop-Programm in Rust nutzen.
   die Logik-Ebene der Komponenten.
 - **RNCL** (Rust native Component Library) liefert darauf die Komponenten: `RnclWindow`, `RnclButton`,
   `RnclTextField`, `RnclComboBox`, `RnclListBox`, `RnclTreeView`, `RnclTabView`, `RnclScrollView`,
-  `RnclCodeEditor` (GtkSourceView mit Faltung, Marken, Haltepunkten), `RnclCanvas` (Zeichenfläche) und mehr.
+  `RnclCodeEditor` (GtkSourceView mit Faltung, Marken, Haltepunkten), `RnclCanvas` (Zeichenfläche),
+  `RnclImageBox` und `RnclImageScrollBox` (Bild und Bildergalerie mit Einpassung, Gamma und Deckkraft, seit
+  0.3) und mehr.
   Eigene Komponenten lassen sich nach demselben Muster schreiben und registrieren.
 
 ```rust

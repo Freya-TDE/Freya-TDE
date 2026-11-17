@@ -15,7 +15,9 @@ a submodule `RUF/` in Freya-TDE) and can be used for any desktop program in Rust
   the logic layer of the components.
 - **RNCL** (Rust native Component Library) provides the components on top: `RnclWindow`, `RnclButton`,
   `RnclTextField`, `RnclComboBox`, `RnclListBox`, `RnclTreeView`, `RnclTabView`, `RnclScrollView`,
-  `RnclCodeEditor` (GtkSourceView with folding, marks, breakpoints), `RnclCanvas` (drawing surface) and more.
+  `RnclCodeEditor` (GtkSourceView with folding, marks, breakpoints), `RnclCanvas` (drawing surface),
+  `RnclImageBox` and `RnclImageScrollBox` (picture and gallery with fit, gamma and opacity, since 0.3) and
+  more.
   Components of your own follow the same pattern and can be registered.
 
 ```rust
