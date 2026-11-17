@@ -222,12 +222,12 @@ jobs:
             desc "Visual development environment for Rust (RAD, Delphi/Lazarus style)"
             homepage "https://github.com/Freya-TDE/Freya-TDE"
             url "${url}"
-            version "${version}"
             sha256 "${sha}"
             license any_of: ["MIT", "Apache-2.0"]
 
-            depends_on arch: :arm64
+            # brew style sortiert alphabetisch, „arch“ zählt als Name.
             depends_on "adwaita-icon-theme"
+            depends_on arch: :arm64
             depends_on "git"
             depends_on "gtk4"
             depends_on "gtksourceview5"
