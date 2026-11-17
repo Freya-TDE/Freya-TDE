@@ -17,8 +17,8 @@ path = "src/main.rs"
 [dependencies]
 tdr-core.workspace = true
 tdr-designer.workspace = true
-ruf = { path = "../RUF/crates/ruf", version = "0.3.0" }
-rncl = { path = "../RUF/crates/rncl", version = "0.3.0" }
+ruf = { path = "../RUF/crates/ruf", version = "0.3.1" }
+rncl = { path = "../RUF/crates/rncl", version = "0.3.1" }
 serde.workspace = true
 toml.workspace = true
 serde_json.workspace = true
