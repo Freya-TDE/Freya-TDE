@@ -17,6 +17,13 @@ const STATUS: i32 = 24;
 const BRANCH: i32 = 200;
 const TOOL_W: i32 = 96;
 const TOOL_H: i32 = ROW;
+/// Generous height of the palette's tab row (differs between systems;
+/// on Windows it is higher than on Linux).
+const TAB_HEADER: i32 = 36;
+/// Least height of the window's content: tools, tab row, one row of palette
+/// buttons, status line. Below it the palette page gets no size at all, so
+/// its own growing (`build_palette`) never starts – seen on Windows.
+const MIN_HEIGHT: i32 = MARGIN + TOOL_H + 4 + TAB_HEADER + ROW + 8 + MARGIN + STATUS;
 
 /// The palette tab "Snippets": drop-down with all snippets, buttons, and the
 /// snippets the user put on the tab.
@@ -494,6 +501,18 @@ pub fn connect(ide: &Rc<Ide>) {
     main.window.on_resized(move |w, h| {
         if let Some(ide) = weak.upgrade() {
             ide.main.layout(w, h);
+            if h < MIN_HEIGHT {
+                // Nach dem Ereignis wachsen (nicht mitten in der Größenänderung).
+                let weak = Rc::downgrade(&ide);
+                ruf::Timer::single_shot(0, move || {
+                    if let Some(ide) = weak.upgrade() {
+                        let size = ide.main.window.size();
+                        ide.main
+                            .window
+                            .set_size(size.width, size.height + MIN_HEIGHT - h);
+                    }
+                });
+            }
         }
     });
     main.window
