@@ -117,7 +117,7 @@ impl Adapter {
     }
 
     /// `$FREYA_TDE_DAP`, else `lldb-dap` (also `lldb-vscode`, Xcode's and
-    /// Homebrew's on macOS), else gdb ≥ 14.
+    /// Homebrew's on macOS, LLVM's in `%ProgramFiles%` on Windows), else gdb ≥ 14.
     pub fn find() -> Result<Self, DebugError> {
         if let Some(program) = std::env::var_os("FREYA_TDE_DAP").filter(|p| !p.is_empty()) {
             return Ok(Self::from_program(program));
@@ -143,6 +143,15 @@ impl Adapter {
         match kind {
             AdapterKind::Lldb => {
                 let mut found = which("lldb-dap").or_else(|| which("lldb-vscode"));
+                // Windows: der LLVM-Installer (winget LLVM.LLVM) trägt sich nicht in
+                // den PATH ein.
+                if found.is_none() && cfg!(windows) {
+                    let program_files = std::env::var_os("ProgramFiles")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from(r"C:\Program Files"));
+                    found = Some(program_files.join(r"LLVM\bin\lldb-dap.exe"))
+                        .filter(|p| p.is_file());
+                }
                 if found.is_none() && cfg!(target_os = "macos") {
                     found = Command::new("xcrun")
                         .args(["-f", "lldb-dap"])
