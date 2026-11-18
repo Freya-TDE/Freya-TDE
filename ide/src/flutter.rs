@@ -6,6 +6,7 @@
 //!
 //! The program is `flutter` in the `PATH` or `FREYA_TDE_FLUTTER`.
 
+use crate::tools::NoConsole;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -48,12 +49,14 @@ pub fn build_commands(app_dir: &Path) -> Vec<Command> {
     if !app_dir.join(platform).is_dir() {
         let mut create = Command::new(program());
         create
+            .no_console()
             .args(["create", &format!("--platforms={platform}"), "."])
             .current_dir(app_dir);
         steps.push(create);
     }
     let mut build = Command::new(program());
     build
+        .no_console()
         .args(["build", platform, "--debug"])
         .current_dir(app_dir);
     steps.push(build);

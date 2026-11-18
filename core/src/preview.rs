@@ -59,6 +59,12 @@ impl BuildReport {
 pub fn command(dir: &Path) -> Command {
     let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
     let mut command = Command::new(cargo);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        // Kein Konsolenfenster (Freya TDE hat unter Windows keine Konsole).
+        command.creation_flags(0x0800_0000);
+    }
     command
         .arg("build")
         .arg("--message-format=json-diagnostic-rendered-ansi")

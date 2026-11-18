@@ -126,7 +126,27 @@ pub struct ToolReport {
 }
 
 fn cargo() -> Command {
-    Command::new(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()))
+    let mut command = Command::new(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()));
+    command.no_console();
+    command
+}
+
+/// Windows: Freya TDE has no console of its own, so every console program
+/// it starts (cargo, rustc, rust-analyzer …) would open a console window.
+/// `no_console` suppresses it (`CREATE_NO_WINDOW`); a no-op elsewhere.
+pub trait NoConsole {
+    fn no_console(&mut self) -> &mut Self;
+}
+
+impl NoConsole for Command {
+    fn no_console(&mut self) -> &mut Self {
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            self.creation_flags(0x0800_0000);
+        }
+        self
+    }
 }
 
 fn text(output: &std::process::Output) -> String {
@@ -243,6 +263,7 @@ pub fn format_files(dir: &Path) -> std::io::Result<ToolReport> {
     for file in files {
         let source = std::fs::read_to_string(&file)?;
         let mut child = Command::new(&rustfmt)
+            .no_console()
             .args(["--edition", &edition, "--emit", "stdout"])
             .current_dir(dir)
             .stdin(Stdio::piped())
@@ -341,7 +362,7 @@ pub fn uses_sqlx(dir: &Path) -> bool {
 pub fn open_externally(target: &Path) -> std::io::Result<()> {
     let mut command = if cfg!(target_os = "windows") {
         let mut c = Command::new("cmd");
-        c.args(["/C", "start", ""]);
+        c.no_console().args(["/C", "start", ""]);
         c
     } else if cfg!(target_os = "macos") {
         Command::new("open")

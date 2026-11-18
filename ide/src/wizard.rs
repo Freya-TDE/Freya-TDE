@@ -12,6 +12,7 @@
 //! *Neu-Assistent ohne Oberfläche: Beschreibung, Vorschau mit Prüfungen,
 //! Anlegen.*
 
+use crate::tools::NoConsole;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -192,6 +193,7 @@ impl Plan {
 /// The installed Rust version (`rustc --version`), e.g. `1.99.1`.
 pub fn installed_rust_version() -> Option<String> {
     let output = std::process::Command::new("rustc")
+        .no_console()
         .arg("--version")
         .output()
         .ok()?;

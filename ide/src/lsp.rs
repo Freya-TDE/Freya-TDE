@@ -7,6 +7,7 @@
 //! change. Positions are 1-based lines and 0-based character columns here;
 //! the client converts to the encoding the server chose (UTF-8 or UTF-16).
 
+use crate::tools::NoConsole;
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
@@ -228,6 +229,7 @@ impl LspClient {
         on_event: impl Fn(LspEvent) + Send + Sync + 'static,
     ) -> std::io::Result<Self> {
         let mut child = Command::new(program())
+            .no_console()
             .current_dir(root)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())

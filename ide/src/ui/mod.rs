@@ -26,6 +26,7 @@ mod terminal_view;
 mod toolbar;
 pub mod wizard_window;
 
+use crate::tools::NoConsole;
 use std::cell::{Cell, RefCell};
 use std::path::{Path, PathBuf};
 use std::rc::{Rc, Weak};
@@ -426,6 +427,16 @@ impl Ide {
         snippet_window::connect(&ide);
         ai_window::connect(&ide);
         ide.apply_settings();
+        // Windows: GTK übernimmt nach dem Öffnen der Fenster das Farbschema von
+        // Windows und überschreibt die Einstellung – kurz danach noch einmal.
+        if cfg!(windows) {
+            let weak = Rc::downgrade(&ide);
+            ruf::Timer::single_shot(500, move || {
+                if let Some(ide) = weak.upgrade() {
+                    ide.apply_settings();
+                }
+            });
+        }
         // Wie bei Delphi: Strg+G, F9, Strg+Umschalt+G … aus jedem Fenster.
         for (name, window) in ide.windows() {
             if name != window::MAIN {
@@ -2334,6 +2345,8 @@ impl Ide {
         };
         let dir = self.session().project_dir();
         let mut command = std::process::Command::new(&exe);
+        // Die Ausgabe landet im Kanal „Programm“, kein eigenes Konsolenfenster.
+        command.no_console();
         if let Some(dir) = dir {
             command.current_dir(dir);
         }

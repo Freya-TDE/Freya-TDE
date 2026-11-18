@@ -10,6 +10,10 @@
 //! freya-tde --no-splash                     # ohne Startbildschirm
 //! ```
 
+// Unter Windows ein GUI-Programm ohne eigenes Konsolenfenster (Release-Builds);
+// aus einer Eingabeaufforderung gestartet, schreibt es in deren Konsole.
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
 use std::path::PathBuf;
 
 use freya_tde::ui::about;
@@ -48,6 +52,7 @@ fn args() -> Args {
 }
 
 fn main() {
+    attach_parent_console();
     // Als GIT_ASKPASS/SSH_ASKPASS gestartet: Frage weiterreichen, sonst nichts.
     if let Some(code) = freya_tde::git::askpass::helper_main() {
         std::process::exit(code);
@@ -98,4 +103,16 @@ fn main() {
         return;
     }
     std::process::exit(app.exec());
+}
+
+/// Windows (Release): Ausgaben in die Konsole schreiben, aus der das Programm
+/// gestartet wurde (ohne Konsole: nichts).
+fn attach_parent_console() {
+    #[cfg(all(windows, not(debug_assertions)))]
+    // SAFETY: einfacher Systemaufruf ohne Zeiger, ganz am Programmanfang.
+    unsafe {
+        windows_sys::Win32::System::Console::AttachConsole(
+            windows_sys::Win32::System::Console::ATTACH_PARENT_PROCESS,
+        );
+    }
 }

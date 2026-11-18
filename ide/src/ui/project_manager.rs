@@ -5,6 +5,7 @@
 //! from a `Cargo.toml` and edits the Git settings. The logic is
 //! [`crate::projects`] and [`Ide`]'s project functions.
 
+use crate::tools::NoConsole;
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 
@@ -377,6 +378,7 @@ impl ProjectManager {
                 .and_then(|r| r.first().cloned())
                 .and_then(|name| {
                     std::process::Command::new(crate::git::program())
+                        .no_console()
                         .arg("-C")
                         .arg(repo.root())
                         .args(["remote", "get-url", &name])

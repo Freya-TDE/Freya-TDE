@@ -7,6 +7,7 @@
 use std::path::{Path, PathBuf};
 
 fn main() {
+    windows_icon();
     let manifest = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
     let sources = [
         ("Freya TDE", manifest.join("skills")),
@@ -46,4 +47,16 @@ fn canonical(path: &Path) -> String {
         .unwrap_or_else(|_| path.to_path_buf())
         .display()
         .to_string()
+}
+
+/// Windows: embeds the program icon in the `.exe` (Explorer, start menu,
+/// desktop shortcuts); nothing on other systems.
+fn windows_icon() {
+    println!("cargo:rerun-if-changed=assets/freya-tde.rc");
+    println!("cargo:rerun-if-changed=assets/freya-tde.ico");
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
+        embed_resource::compile("assets/freya-tde.rc", embed_resource::NONE)
+            .manifest_optional()
+            .expect("Windows-Ressource (Symbol) nicht übersetzbar");
+    }
 }

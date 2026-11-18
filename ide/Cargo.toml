@@ -45,3 +45,11 @@ ed25519-dalek = { version = "3.0.0", default-features = false, features = ["fast
 [[test]]
 name = "ui"
 harness = false
+
+[build-dependencies]
+# Programmsymbol in der Windows-.exe (build.rs; auf anderen Systemen ungenutzt).
+embed-resource = "3.0.12"
+
+[target.'cfg(windows)'.dependencies]
+# CLI-Ausgaben in die aufrufende Konsole (Programm ohne eigenes Konsolenfenster).
+windows-sys = { version = "0.61.2", features = ["Win32_System_Console"] }

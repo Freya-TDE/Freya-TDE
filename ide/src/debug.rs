@@ -20,6 +20,7 @@
 
 mod store;
 
+use crate::tools::NoConsole;
 use std::collections::{BTreeMap, HashMap};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
@@ -93,7 +94,11 @@ fn which(name: &str) -> Option<PathBuf> {
 
 /// Major version of `gdb --version` („GNU gdb (GDB) 18.1“).
 fn gdb_major(program: &Path) -> Option<u32> {
-    let out = Command::new(program).arg("--version").output().ok()?;
+    let out = Command::new(program)
+        .no_console()
+        .arg("--version")
+        .output()
+        .ok()?;
     let text = String::from_utf8_lossy(&out.stdout);
     let first = text.lines().next()?;
     let version = first.split_whitespace().last()?;
@@ -149,8 +154,8 @@ impl Adapter {
                     let program_files = std::env::var_os("ProgramFiles")
                         .map(PathBuf::from)
                         .unwrap_or_else(|| PathBuf::from(r"C:\Program Files"));
-                    found = Some(program_files.join(r"LLVM\bin\lldb-dap.exe"))
-                        .filter(|p| p.is_file());
+                    found =
+                        Some(program_files.join(r"LLVM\bin\lldb-dap.exe")).filter(|p| p.is_file());
                 }
                 if found.is_none() && cfg!(target_os = "macos") {
                     found = Command::new("xcrun")
@@ -188,6 +193,7 @@ impl Adapter {
 /// `lib/rustlib/etc`).
 fn rust_sysroot(dir: &Path) -> Option<PathBuf> {
     let out = Command::new("rustc")
+        .no_console()
         .args(["--print", "sysroot"])
         .current_dir(dir)
         .output()
@@ -1159,6 +1165,7 @@ impl DebugSession {
         on_change: impl Fn() + Send + Sync + 'static,
     ) -> Result<Self, DebugError> {
         let mut command = Command::new(&adapter.program);
+        command.no_console();
         if adapter.kind == AdapterKind::Gdb {
             command.args(["-q", "-i", "dap"]);
             // Rust-Darstellung wie rust-gdb: Skripte der Toolchain zulassen.

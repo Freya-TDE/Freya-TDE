@@ -9,6 +9,7 @@
 //!
 //! *Datenbanken zur Entwurfszeit über den Helfer `freya-tde-db`.*
 
+use crate::tools::NoConsole;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
@@ -107,6 +108,7 @@ impl Database {
         if self.process.is_none() {
             let program = self.program.clone().unwrap_or_else(helper_program);
             let mut child = Command::new(&program)
+                .no_console()
                 .current_dir(&self.dir)
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())
