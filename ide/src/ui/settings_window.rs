@@ -35,6 +35,8 @@ pub struct SettingsWindow {
     tabs: RnclTabView,
     general: RnclPanel,
     ai: RnclPanel,
+    /// The KI page scrolls (its content is taller than small windows).
+    ai_scroll: RnclScrollView,
     // Allgemein
     base_dir: RnclTextField,
     browse: RnclButton,
@@ -81,6 +83,9 @@ pub struct SettingsWindow {
     models_notice: RefCell<String>,
 }
 
+/// Room for the vertical scroll bar of the KI page.
+const SCROLLBAR: i32 = 16;
+
 fn label<P: AsWidget + ?Sized>(parent: &P, text: &str) -> RnclLabel {
     RnclLabel::new(parent, text)
 }
@@ -126,8 +131,9 @@ impl SettingsWindow {
             .widget()
             .set_tool_tip("Wohin „Code vervollständigen“ (Strg+Umschalt+C) neue Methoden setzt");
 
-        // KI
-        let p = &ai;
+        // KI: in einer Bildlauffläche, damit nichts aus dem Fenster läuft.
+        let ai_scroll = RnclScrollView::new(&ai);
+        let p = ai_scroll.content();
         let profiles = RnclListBox::new(p);
         let add = RnclButton::new(p, "Neu");
         let remove = RnclButton::new(p, "Entfernen");
@@ -169,6 +175,7 @@ impl SettingsWindow {
         let show_on_new = RnclCheckBox::new(p, "KI-Fenster bei neuem Projekt anzeigen");
         let show_always = RnclCheckBox::new(p, "KI-Fenster immer anzeigen");
         let ai_hint = label(p, "");
+        ai_hint.set_word_wrap(true);
 
         let cancel = RnclButton::new(&window, "Abbrechen");
         let ok = RnclButton::new(&window, "OK");
@@ -205,6 +212,7 @@ impl SettingsWindow {
             show_always,
             ai_hint,
             ai_labels,
+            ai_scroll,
             cancel,
             ok,
             edit: RefCell::new(SettingsEdit::default()),
@@ -264,7 +272,11 @@ impl SettingsWindow {
         self.theme.set_geometry(fx, line(4), fw, ROW);
         self.method_order.set_geometry(fx, line(5), fw, ROW);
 
-        // KI: links die Profile, rechts das gewählte Profil.
+        // KI: links die Profile, rechts das gewählte Profil – alles im
+        // Inhalt der Bildlauffläche (schmaler um die Bildlaufleiste).
+        self.ai_scroll.set_geometry(0, 0, width, height);
+        let inner = (width - 2 * p - SCROLLBAR).max(300);
+        let fw = p + inner - fx;
         let list_h = 5 * (ROW + GAP) - GAP;
         self.profiles
             .set_geometry(p, line(0), LIST_W, list_h - ROW - GAP);
@@ -299,8 +311,9 @@ impl SettingsWindow {
         self.show_on_new.set_geometry(p, line(10), inner, ROW);
         self.show_always.set_geometry(p, line(10) + ROW, inner, ROW);
         let y = line(10) + 2 * ROW + GAP;
-        self.ai_hint
-            .set_geometry(p, y, inner, (height - y - p).max(ROW));
+        let hint_h = 3 * ROW;
+        self.ai_hint.set_geometry(p, y, inner, hint_h);
+        self.ai_scroll.set_content_size(0, y + hint_h + p);
     }
 
     /// The selected profile in the edit.
@@ -475,14 +488,14 @@ impl SettingsWindow {
             .widget()
             .set_enabled(connected && self.project.borrow().is_some());
         self.ai_hint.set_text(if !connected {
-            "Noch keine KI angebunden: „Neu“ legt ein Profil an (Anthropic, OpenAI, Ollama oder\n\
-             ein OpenAI-kompatibler Server wie LM Studio). Mehrere Profile sind möglich;\n\
+            "Noch keine KI angebunden: „Neu“ legt ein Profil an (Anthropic, OpenAI, Ollama oder \
+             ein OpenAI-kompatibler Server wie LM Studio). Mehrere Profile sind möglich; \
              je Projekt lässt sich eines wählen."
         } else if self.project.borrow().is_none() {
             "Profil und Rechte je Projekt lassen sich wählen, sobald das Projekt gespeichert ist."
         } else {
             "Ohne eigene Wahl nutzt ein Projekt das Standardprofil; die Rechte gelten nur für \
-             dieses Projekt\n(Lesen ist immer erlaubt)."
+             dieses Projekt (Lesen ist immer erlaubt)."
         });
     }
 }
@@ -680,10 +693,15 @@ impl Ide {
                 w.model.set_current_text(&current);
                 w.filling.set(false);
                 let n = models.len();
-                if current.is_empty() {
-                    format!("{n} Modelle gefunden – bitte eines wählen.")
+                let found = if n == 1 {
+                    "1 Modell gefunden".to_owned()
                 } else {
-                    format!("{n} Modelle gefunden.")
+                    format!("{n} Modelle gefunden")
+                };
+                if current.is_empty() {
+                    format!("{found} – bitte eines wählen.")
+                } else {
+                    format!("{found}.")
                 }
             }
             Err(e) => format!("Modelle abrufen: {} ({})", e.detail, e.code),
