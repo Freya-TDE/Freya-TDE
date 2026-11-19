@@ -466,6 +466,8 @@ fn keep_expansion(new: &mut [TreeItem], old: &[TreeItem]) {
 
 pub struct DatabaseWindow {
     pub window: RnclWindow,
+    /// Grip and content (dockable, see `dock`).
+    pub pane: super::dock::DockPane,
     reload: RnclButton,
     test: RnclButton,
     hint: RnclLabel,
@@ -477,12 +479,19 @@ const BAR: i32 = 36;
 impl DatabaseWindow {
     pub fn build() -> Self {
         let window = RnclWindow::new("Datenbank");
-        let reload = RnclButton::new(&window, "Aktualisieren");
-        let test = RnclButton::new(&window, "Verbindung testen");
-        let hint = RnclLabel::new(&window, "");
-        let tree = RnclTreeView::new(&window);
+        let pane = super::dock::DockPane::with_body(
+            &window,
+            crate::desktop::window::DATABASE,
+            "Datenbank",
+        );
+        let body = pane.body().clone();
+        let reload = RnclButton::new(&body, "Aktualisieren");
+        let test = RnclButton::new(&body, "Verbindung testen");
+        let hint = RnclLabel::new(&body, "");
+        let tree = RnclTreeView::new(&body);
         Self {
             window,
+            pane,
             reload,
             test,
             hint,
@@ -543,7 +552,7 @@ impl DatabaseWindow {
 pub fn connect(ide: &Rc<Ide>) {
     let window = &ide.database_window;
     let weak = Rc::downgrade(ide);
-    window.window.on_resized(move |w, h| {
+    window.pane.body().widget().on_resized(move |w, h| {
         if let Some(ide) = weak.upgrade() {
             ide.database_window.layout(w, h);
         }

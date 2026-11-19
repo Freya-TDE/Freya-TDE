@@ -65,6 +65,8 @@ struct Node {
 
 pub struct DebuggerWindow {
     pub window: RnclWindow,
+    /// Grip and content (dockable, see `dock`).
+    pub pane: super::dock::DockPane,
     /// Toolbar: button and debugger action.
     tools: Vec<(RnclButton, &'static str)>,
     panic: RnclCheckBox,
@@ -87,7 +89,7 @@ pub struct DebuggerWindow {
     pub menu_target: RefCell<String>,
 }
 
-fn tool(window: &RnclWindow, text: &str, tip: &str) -> RnclButton {
+fn tool(window: &RnclPanel, text: &str, tip: &str) -> RnclButton {
     let button = RnclButton::new(window, text);
     button.widget().set_tool_tip(tip);
     button
@@ -96,6 +98,9 @@ fn tool(window: &RnclWindow, text: &str, tip: &str) -> RnclButton {
 impl DebuggerWindow {
     pub fn build() -> Self {
         let window = RnclWindow::new("Debugger");
+        let pane =
+            super::dock::DockPane::with_body(&window, crate::desktop::window::DEBUGGER, "Debugger");
+        let body = pane.body().clone();
         let tools = [
             ("▶", "Starten bzw. Weiter (F9)", "dbg.run"),
             ("❚❚", "Anhalten", "dbg.pause"),
@@ -109,14 +114,14 @@ impl DebuggerWindow {
             ("■", "Programm beenden (Strg+F2)", "dbg.stop"),
         ]
         .into_iter()
-        .map(|(text, tip, id)| (tool(&window, text, tip), id))
+        .map(|(text, tip, id)| (tool(&body, text, tip), id))
         .collect();
-        let panic = RnclCheckBox::new(&window, "Bei Panic anhalten");
-        let status = RnclLabel::new(&window, "");
-        let variables_title = RnclLabel::new(&window, "<b>Variablen</b>");
-        let variables = RnclTreeView::new(&window);
-        let splitter = RnclSplitter::new(&window, true);
-        let tabs = RnclTabView::new(&window);
+        let panic = RnclCheckBox::new(&body, "Bei Panic anhalten");
+        let status = RnclLabel::new(&body, "");
+        let variables_title = RnclLabel::new(&body, "<b>Variablen</b>");
+        let variables = RnclTreeView::new(&body);
+        let splitter = RnclSplitter::new(&body, true);
+        let tabs = RnclTabView::new(&body);
         let watch_page = tabs.add_tab("Überwacht");
         let stack_page = tabs.add_tab("Aufrufstapel");
         let threads_page = tabs.add_tab("Threads");
@@ -145,6 +150,7 @@ impl DebuggerWindow {
         }
         Self {
             window,
+            pane,
             tools,
             panic,
             status,
@@ -193,7 +199,7 @@ impl DebuggerWindow {
     }
 
     fn relayout(&self) {
-        let size = self.window.size();
+        let size = self.pane.body().size();
         self.layout(size.width, size.height);
     }
 
@@ -530,7 +536,7 @@ fn watch_menu() -> Menu {
 pub fn connect(ide: &Rc<Ide>) {
     let w = &ide.debugger;
     let weak = Rc::downgrade(ide);
-    w.window.on_resized(move |width, height| {
+    w.pane.body().widget().on_resized(move |width, height| {
         if let Some(ide) = weak.upgrade() {
             ide.debugger.layout(width, height);
         }
@@ -606,8 +612,6 @@ pub fn connect(ide: &Rc<Ide>) {
     context(&w.breakpoints, breakpoint_menu);
     context(&w.variables, variable_menu);
     context(&w.watches, watch_menu);
-    w.window
-        .on_menu(with(ide, |ide, id: String| ide.debug_menu(&id)));
 }
 
 impl Ide {

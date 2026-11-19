@@ -1123,7 +1123,7 @@ Die KI folgt ihren Anweisungen. Nur freigeben, wenn du ihnen vertraust:\n\n{}",
         self.ai_window.refresh(self);
     }
 
-    fn ai_menu(&self, id: &str) {
+    pub(super) fn ai_menu(&self, id: &str) {
         match id {
             "ai.send" => {
                 let text = self.ai_window.input.text();
@@ -1150,8 +1150,6 @@ pub fn connect(ide: &Rc<Ide>) {
             ide.ai_window.layout(width, height);
         }
     });
-    w.window
-        .on_menu(with(ide, |ide, id: String| ide.ai_menu(&id)));
     w.profile
         .on_current_index_changed(with(ide, |ide, index: i32| {
             if ide.is_refreshing() || index < 0 {

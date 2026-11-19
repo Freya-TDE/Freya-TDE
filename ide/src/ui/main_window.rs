@@ -120,7 +120,8 @@ pub(super) fn menu_bar() -> MenuBar {
                 .item("window.output", "Ausgabe", Some("Ctrl+Shift+U"))
                 .item("window.terminal", "Terminal", Some("Ctrl+Shift+T"))
                 .item("window.code", "Code", None)
-                .item("window.project", "Projekt", None)
+                .item("window.project", "Dateien", None)
+                .item("window.project_manager", "Projekt-Manager", None)
                 .item("window.git", "Quellcodeverwaltung", Some("Ctrl+Shift+G"))
                 .item("window.debugger", "Debugger", Some("Ctrl+Shift+D"))
                 .item("window.database", "Datenbank", Some("Ctrl+Shift+B"))
@@ -523,12 +524,10 @@ pub fn connect(ide: &Rc<Ide>) {
                 ide.main.build_palette(ide);
             }
             "file.projects" => {
-                ide.project.show_manager();
-                ide.show_window(window::PROJECT);
+                ide.show_window(window::PROJECT_MANAGER);
             }
             "file.from_cargo" => {
-                ide.project.show_manager();
-                ide.show_window(window::PROJECT);
+                ide.show_window(window::PROJECT_MANAGER);
                 ide.project.menu_from_main(ide, "pm.cargo");
             }
             id if id.starts_with("snip.") => ide.main.snippet_menu(ide, id),
@@ -562,6 +561,7 @@ pub fn connect(ide: &Rc<Ide>) {
             "window.terminal" => ide.show_terminal(),
             "window.code" => ide.show_code(),
             "window.project" => ide.show_window(window::PROJECT),
+            "window.project_manager" => ide.show_window(window::PROJECT_MANAGER),
             "window.git" => {
                 ide.git_refresh(true);
                 ide.show_window(window::GIT);

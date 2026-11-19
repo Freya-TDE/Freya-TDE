@@ -1,4 +1,5 @@
-//! Putting tool windows together as tabs (structure, object inspector, KI):
+//! Putting tool windows together as tabs (structure, object inspector, KI,
+//! files, project manager, source control, debugger, database):
 //! each has a grip at the top ("⠿ Struktur"); dragging it onto the other
 //! window makes both one window with tabs, dragging it out into the open
 //! (no drop target) makes it its own window again. Kept in the window
@@ -28,6 +29,8 @@ pub struct DockPane {
     grip: RnclLabel,
     /// Tabs of the window while it hosts other panes (hidden otherwise).
     tabs: RnclTabView,
+    /// Content area below the grip (panes made with [`DockPane::with_body`]).
+    body: Option<RnclPanel>,
 }
 
 impl DockPane {
@@ -47,7 +50,28 @@ impl DockPane {
             root,
             grip,
             tabs,
+            body: None,
         }
+    }
+
+    /// Like [`DockPane::new`], plus a content area below the grip that
+    /// follows the pane's size: the window builds its content on
+    /// [`DockPane::body`] and lays it out when the body is resized.
+    pub fn with_body(window: &RnclWindow, name: &'static str, title: &'static str) -> Self {
+        let mut pane = Self::new(window, name, title);
+        let body = RnclPanel::new(&pane.root);
+        let (grip, b) = (pane.grip.clone(), body.clone());
+        pane.root.widget().on_resized(move |w, h| {
+            grip.set_geometry(6, 0, (w - 12).max(10), GRIP);
+            b.set_geometry(0, GRIP, w, (h - GRIP).max(0));
+        });
+        pane.body = Some(body);
+        pane
+    }
+
+    /// The content area of a pane made with [`DockPane::with_body`].
+    pub fn body(&self) -> &RnclPanel {
+        self.body.as_ref().expect("DockPane::with_body")
     }
 
     /// Lays out the grip; returns the area below it for the content.
@@ -62,13 +86,32 @@ impl DockPane {
 }
 
 impl Ide {
-    /// The dockable panes with their windows.
-    fn panes(&self) -> [(&DockPane, &RnclWindow); 3] {
+    /// The dockable panes with their windows (all tool windows; not code
+    /// editor, designer, main window and messages).
+    fn panes(&self) -> [(&DockPane, &RnclWindow); 8] {
         [
             (&self.structure.pane, &self.structure.window),
             (&self.inspector.pane, &self.inspector.window),
             (&self.ai_window.pane, &self.ai_window.window),
+            (&self.project.pane, &self.project.window),
+            (&self.project.manager_pane, &self.project.manager_window),
+            (&self.git_window.pane, &self.git_window.window),
+            (&self.debugger.pane, &self.debugger.window),
+            (&self.database_window.pane, &self.database_window.window),
         ]
+    }
+
+    /// A menu entry of a tool window, wherever its pane sits: RUF reports a
+    /// context menu to the window the widget is in, which may be another
+    /// tool window while docked. Routed by the prefix of the entry.
+    fn tool_menu(self: &Rc<Self>, id: &str) {
+        match id.split('.').next().unwrap_or_default() {
+            "git" => self.git_window.menu(self, id),
+            "dbg" => self.debug_menu(id),
+            "ai" => self.ai_menu(id),
+            "files" | "pm" => self.project.menu(self, id),
+            _ => {}
+        }
     }
 
     fn pane(&self, name: &str) -> Option<(&DockPane, &RnclWindow)> {
@@ -218,6 +261,13 @@ pub fn connect(ide: &Rc<Ide>) {
                 && let Err(e) = ide.dock_view(guest, name)
             {
                 ide.main.set_status(&e);
+            }
+        });
+        // Menüs der Werkzeugfenster, egal in welchem Fenster ihr Inhalt liegt.
+        let weak = Rc::downgrade(ide);
+        win.on_menu(move |id| {
+            if let Some(ide) = weak.upgrade() {
+                ide.tool_menu(&id);
             }
         });
         // Ins Freie gezogen: wieder ein eigenes Fenster.

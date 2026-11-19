@@ -49,6 +49,9 @@ pub mod window {
     pub const SHORTCUTS: &str = "shortcuts";
     pub const DATABASE: &str = "database";
     pub const AI: &str = "ai";
+    /// Project manager (since 20.11.2026 a window of its own, docked into
+    /// [`PROJECT`] by default).
+    pub const PROJECT_MANAGER: &str = "project_manager";
 }
 
 /// All window places.
@@ -104,6 +107,7 @@ impl Desktop {
             (window::MESSAGES, Place::at(340, 770, 800, 200)),
             (window::CODE, Place::at(370, 230, 820, 600)),
             (window::PROJECT, Place::at(1160, 200, 300, 330)),
+            (window::PROJECT_MANAGER, Place::at(1180, 220, 300, 330)),
             // Erst auf Wunsch sichtbar (Fenster → Quellcodeverwaltung).
             (
                 window::GIT,
@@ -150,7 +154,11 @@ impl Desktop {
                 .map(|(n, p)| (n.to_owned(), p))
                 .collect(),
             files: ScanOptions::default(),
-            docked: BTreeMap::new(),
+            // Wie früher: Dateien und Projekt-Manager als Reiter eines Fensters.
+            docked: BTreeMap::from([(
+                window::PROJECT_MANAGER.to_owned(),
+                window::PROJECT.to_owned(),
+            )]),
         }
     }
 
@@ -177,7 +185,20 @@ impl Desktop {
     pub fn load() -> Self {
         Self::path()
             .and_then(|p| std::fs::read_to_string(p).ok())
-            .and_then(|text| toml::from_str(&text).ok())
+            .and_then(|text| toml::from_str::<Self>(&text).ok())
+            .map(|mut desktop| {
+                // Ältere Anordnung ohne eigenen Projekt-Manager: wie bisher als
+                // Reiter im Projektfenster.
+                if !desktop.windows.contains_key(window::PROJECT_MANAGER)
+                    && !desktop.docked.contains_key(window::PROJECT_MANAGER)
+                {
+                    desktop.docked.insert(
+                        window::PROJECT_MANAGER.to_owned(),
+                        window::PROJECT.to_owned(),
+                    );
+                }
+                desktop
+            })
             .unwrap_or_else(Self::standard)
     }
 

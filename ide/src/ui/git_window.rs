@@ -375,7 +375,7 @@ fn commit_menu() -> Menu {
         .item("git.commit_pr", "Commit & Create Pull Request", None)
 }
 
-fn icon_button(window: &RnclWindow, text: &str, tip: &str) -> RnclButton {
+fn icon_button(window: &RnclPanel, text: &str, tip: &str) -> RnclButton {
     let button = RnclButton::new(window, text);
     button.widget().set_tool_tip(tip);
     button
@@ -383,6 +383,8 @@ fn icon_button(window: &RnclWindow, text: &str, tip: &str) -> RnclButton {
 
 pub struct GitWindow {
     pub window: RnclWindow,
+    /// Grip and content (dockable, see `dock`).
+    pub pane: super::dock::DockPane,
     repo_name: RnclLabel,
     branch: RnclButton,
     sync: RnclButton,
@@ -414,24 +416,30 @@ pub struct GitWindow {
 impl GitWindow {
     pub fn build() -> Self {
         let window = RnclWindow::new("Quellcodeverwaltung");
+        let pane = super::dock::DockPane::with_body(
+            &window,
+            crate::desktop::window::GIT,
+            "Quellcodeverwaltung",
+        );
+        let body = pane.body().clone();
         window.set_menu_bar(vec![("Git".into(), more_actions())]);
-        let repo_name = RnclLabel::new(&window, "");
-        let branch = icon_button(&window, "⎇", "Zweig oder Tag auschecken …");
-        let sync = icon_button(&window, "⟳", "Änderungen synchronisieren");
-        let more = icon_button(&window, "⋯", "Weitere Aktionen …");
-        let message = RnclTextArea::new(&window);
+        let repo_name = RnclLabel::new(&body, "");
+        let branch = icon_button(&body, "⎇", "Zweig oder Tag auschecken …");
+        let sync = icon_button(&body, "⟳", "Änderungen synchronisieren");
+        let more = icon_button(&body, "⋯", "Weitere Aktionen …");
+        let message = RnclTextArea::new(&body);
         message.set_placeholder(&format!("Nachricht ({COMMIT_KEY} für Commit)"));
         message.set_word_wrap(true);
-        let commit = RnclButton::new(&window, "✓ Commit");
+        let commit = RnclButton::new(&body, "✓ Commit");
         let variants = icon_button(
-            &window,
+            &body,
             "▾",
             "Commit (Amend), Commit & Push, Commit & Sync, Commit & Create Pull Request",
         );
-        let changes = RnclTreeView::new(&window);
-        let splitter = RnclSplitter::new(&window, true);
-        let graph_title = RnclLabel::new(&window, "<b>Graph</b>");
-        let graph_refs = icon_button(&window, "⎇ Auto", "Angezeigte Zweige wählen");
+        let changes = RnclTreeView::new(&body);
+        let splitter = RnclSplitter::new(&body, true);
+        let graph_title = RnclLabel::new(&body, "<b>Graph</b>");
+        let graph_refs = icon_button(&body, "⎇ Auto", "Angezeigte Zweige wählen");
         let graph_tools = [
             // ⊙ statt ◎: ◎ fehlt in den macOS-Schriften.
             ("⊙", "Zum aktuellen Commit", "git.goto_head"),
@@ -442,12 +450,13 @@ impl GitWindow {
             ("⋯", "Ansicht …", "git.view_menu"),
         ]
         .into_iter()
-        .map(|(text, tip, id)| (icon_button(&window, text, tip), id))
+        .map(|(text, tip, id)| (icon_button(&body, text, tip), id))
         .collect();
-        let graph_scroll = RnclScrollView::new(&window);
+        let graph_scroll = RnclScrollView::new(&body);
         let graph = RnclCanvas::new(graph_scroll.content());
         Self {
             window,
+            pane,
             repo_name,
             branch,
             sync,
@@ -533,7 +542,7 @@ impl GitWindow {
     }
 
     fn relayout(&self) {
-        let size = self.window.size();
+        let size = self.pane.body().size();
         self.layout(size.width, size.height);
     }
 
@@ -698,7 +707,7 @@ impl GitWindow {
             .item("git.view_tree", tree, None)
     }
 
-    fn menu(&self, ide: &Ide, id: &str) {
+    pub(super) fn menu(&self, ide: &Ide, id: &str) {
         let commit = |then, amend| {
             ide.git_commit(&self.message(), amend, then);
         };
@@ -909,7 +918,7 @@ impl GitWindow {
 pub fn connect(ide: &Rc<Ide>) {
     let git = &ide.git_window;
     let weak = Rc::downgrade(ide);
-    git.window.on_resized(move |w, h| {
+    git.pane.body().widget().on_resized(move |w, h| {
         if let Some(ide) = weak.upgrade() {
             ide.git_window.layout(w, h);
         }
@@ -939,7 +948,7 @@ pub fn connect(ide: &Rc<Ide>) {
     // Das Nachrichtenfeld wächst mit dem Text (wie in VS Code).
     git.message.on_text_changed(with(ide, |ide, _: String| {
         let w = &ide.git_window;
-        if w.message_height(w.window.size().width - 2 * MARGIN) != w.message.size().height {
+        if w.message_height(w.pane.body().size().width - 2 * MARGIN) != w.message.size().height {
             w.relayout();
         }
     }));
@@ -963,6 +972,4 @@ pub fn connect(ide: &Rc<Ide>) {
     });
     git.changes
         .on_context_menu(move |id, x, y| context((id, x, y)));
-    git.window
-        .on_menu(with(ide, |ide, id: String| ide.git_window.menu(ide, &id)));
 }

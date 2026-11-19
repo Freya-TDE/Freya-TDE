@@ -169,6 +169,11 @@ Generierter Code gehört dem Nutzer. Jedes Plugin deklariert die Lizenz seines e
   20.11.2026 (`ide/src/ui/code.rs`: `detach`, `reattach`, `close_tab`; die aktuelle Datei ist die zuletzt
   angeklickte herausgelöste, sonst der vordere Reiter). RUF: `on_tab_close_requested`,
   `on_tab_detach_requested` an der Registerkarte (schalten „x“ bzw. Ziehen ein), `simulate_tab_close`/`_detach`.
+  Erledigt 20.11.2026: `dock::DockPane::with_body` (Griff plus Inhaltsbereich), alle acht Fenster in
+  `Ide::panes`; der Projekt-Manager ist ein eigenes Fenster (`window::PROJECT_MANAGER`, standardmäßig im Fenster
+  „Dateien“ angedockt, auch bei älteren `desktop.toml`). Kontextmenüs meldet RUF dem Fenster, in dem das Widget
+  gerade liegt – deshalb verteilt `Ide::tool_menu` die Einträge der Werkzeugfenster nach Präfix (`git.`, `dbg.`,
+  `ai.`, `files.`/`pm.`), registriert an allen Werkzeugfenstern.
 - Ziehen in RUF (20.11.2026): `set_drag_text` bietet einen eigenen Typ (`RufDragText`) statt Text an, damit
   andere Programme (Plasma-Desktop machte daraus eine Notiz, Explorer, Chat) das Ablegen ablehnen und „ins Leere
   gezogen“ zuverlässig greift; Ablageziele nehmen ihn und Text an. Ziehbild ist ein Standbild des Widgets (ein

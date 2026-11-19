@@ -464,7 +464,7 @@ impl Ide {
         self.session.borrow()
     }
 
-    fn windows(&self) -> [(&'static str, &RnclWindow); 12] {
+    fn windows(&self) -> [(&'static str, &RnclWindow); 13] {
         [
             (window::MAIN, &self.main.window),
             (window::STRUCTURE, &self.structure.window),
@@ -473,6 +473,7 @@ impl Ide {
             (window::MESSAGES, &self.panel.window),
             (window::CODE, &self.code.window),
             (window::PROJECT, &self.project.window),
+            (window::PROJECT_MANAGER, &self.project.manager_window),
             (window::GIT, &self.git_window.window),
             (window::DEBUGGER, &self.debugger.window),
             (window::SHORTCUTS, &self.shortcuts.window),

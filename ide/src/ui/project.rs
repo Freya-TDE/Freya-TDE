@@ -15,6 +15,7 @@ use ruf::dialog;
 
 use super::project_manager::ProjectManager;
 use super::{Ide, with, with0};
+use crate::desktop::window;
 use crate::files::{self, Entry, EntryKind, FileError, FileOp, Plan, ScanOptions};
 use crate::git::Change;
 
@@ -165,9 +166,13 @@ fn newest(candidates: &[PathBuf]) -> Option<PathBuf> {
 }
 
 pub struct ProjectWindow {
+    /// „Dateien“.
     pub window: RnclWindow,
-    /// „Dateien“ and „Projekt-Manager“.
-    tabs: RnclTabView,
+    pub pane: super::dock::DockPane,
+    /// „Projekt-Manager“: a window of its own, docked into „Dateien“ by
+    /// default (see `Desktop::standard`).
+    pub manager_window: RnclWindow,
+    pub manager_pane: super::dock::DockPane,
     pub manager: ProjectManager,
     tree: RnclTreeView,
     show_generated: RnclCheckBox,
@@ -184,9 +189,15 @@ pub struct ProjectWindow {
 impl ProjectWindow {
     pub fn build() -> Self {
         let window = RnclWindow::new("Projekt");
-        let tabs = RnclTabView::new(&window);
-        let files = tabs.add_tab("Dateien");
-        let manager = ProjectManager::build(&tabs.add_tab("Projekt-Manager"));
+        let pane = super::dock::DockPane::with_body(&window, window::PROJECT, "Dateien");
+        let files = pane.body().clone();
+        let manager_window = RnclWindow::new("Projekt-Manager");
+        let manager_pane = super::dock::DockPane::with_body(
+            &manager_window,
+            window::PROJECT_MANAGER,
+            "Projekt-Manager",
+        );
+        let manager = ProjectManager::build(manager_pane.body());
         let tree = RnclTreeView::new(&files);
         let show_generated = RnclCheckBox::new(&files, "Generierte");
         show_generated
@@ -206,7 +217,9 @@ impl ProjectWindow {
         }
         Self {
             window,
-            tabs,
+            pane,
+            manager_window,
+            manager_pane,
             manager,
             tree,
             show_generated,
@@ -218,18 +231,9 @@ impl ProjectWindow {
         }
     }
 
-    fn layout(&self, width: i32, height: i32) {
-        self.tabs.set_geometry(0, 0, width, height);
-    }
-
     /// A project manager entry chosen in another window's menu.
     pub fn menu_from_main(&self, ide: &Ide, id: &str) {
         self.manager.menu(ide, self.window.widget(), id);
-    }
-
-    /// Shows the „Projekt-Manager“ tab.
-    pub fn show_manager(&self) {
-        self.tabs.set_current_index(1);
     }
 
     pub fn options(&self) -> ScanOptions {
@@ -553,7 +557,7 @@ impl ProjectWindow {
         }
     }
 
-    fn menu(&self, ide: &Ide, id: &str) {
+    pub(super) fn menu(&self, ide: &Ide, id: &str) {
         if self.manager.menu(ide, self.window.widget(), id) {
             return;
         }
@@ -582,12 +586,6 @@ impl ProjectWindow {
 
 pub fn connect(ide: &Rc<Ide>) {
     let project = &ide.project;
-    let weak = Rc::downgrade(ide);
-    project.window.on_resized(move |w, h| {
-        if let Some(ide) = weak.upgrade() {
-            ide.project.layout(w, h);
-        }
-    });
     for check in [&project.show_generated, &project.show_hidden] {
         check.on_toggled(with(ide, |ide, _: bool| ide.project.refresh(ide)));
     }
@@ -611,9 +609,6 @@ pub fn connect(ide: &Rc<Ide>) {
     project
         .tree
         .on_context_menu(move |id, x, y| context((id, x, y)));
-    project
-        .window
-        .on_menu(with(ide, |ide, id: String| ide.project.menu(ide, &id)));
     // Projekt-Manager: Doppelklick öffnet bzw. aktiviert, Rechtsklick: Menü.
     let manager = &project.manager;
     manager.tree.on_item_activated(with(ide, |ide, id: String| {

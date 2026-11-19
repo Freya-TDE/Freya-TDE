@@ -622,7 +622,12 @@ fn main() {
         })
         .unwrap();
         let status = ide.git_status().unwrap();
-        assert!(status.files.is_empty(), "{:?}", status.files);
+        // rust-analyzer legt im Hintergrund jederzeit eine Cargo.lock an.
+        assert!(
+            status.files.iter().all(|f| f.path == "Cargo.lock"),
+            "{:?}",
+            status.files
+        );
         assert!(status.head.is_some());
         let log = ide.repo().unwrap().log(10).unwrap();
         assert_eq!(log[0].subject, "Initial commit");
@@ -1397,6 +1402,13 @@ fn main() {
     {
         use freya_tde::desktop::window;
         let ide = freya_tde::Ide::start(None);
+        // Wie früher: Projekt-Manager als Reiter im Fenster „Dateien“.
+        assert_eq!(
+            ide.docked()
+                .get(window::PROJECT_MANAGER)
+                .map(String::as_str),
+            Some(window::PROJECT)
+        );
         ide.show_window(window::STRUCTURE);
         ide.show_window(window::INSPECTOR);
         ide.dock_view(window::STRUCTURE, window::INSPECTOR).unwrap();
@@ -1426,6 +1438,19 @@ fn main() {
         // Ein Fenster, das Reiter enthält, wird nicht selbst angedockt.
         assert!(ide.dock_view(window::INSPECTOR, window::STRUCTURE).is_ok());
         ide.undock_view(window::STRUCTURE);
+        assert!(!ide.docked().contains_key(window::STRUCTURE));
+        // Alle Werkzeugfenster: Projekt-Manager lösen, Git in den Debugger,
+        // Datenbank zur Struktur; Code-Editor und Designer nicht.
+        ide.undock_view(window::PROJECT_MANAGER);
+        assert!(ide.docked().is_empty());
+        ide.dock_view(window::GIT, window::DEBUGGER).unwrap();
+        ide.dock_view(window::DATABASE, window::STRUCTURE).unwrap();
+        ide.dock_view(window::PROJECT, window::AI).unwrap();
+        assert_eq!(ide.docked().len(), 3);
+        assert!(ide.dock_view(window::CODE, window::STRUCTURE).is_err());
+        for guest in [window::GIT, window::DATABASE, window::PROJECT] {
+            ide.undock_view(guest);
+        }
         assert!(ide.docked().is_empty());
         pump_until(1, || false);
         let visible: Vec<String> = ide
