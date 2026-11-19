@@ -10,6 +10,10 @@
 //! fold with the arrows in the gutter. The leftmost gutter column holds
 //! breakpoints (click toggles, right click edits) and the debugger's
 //! current line.
+//!
+//! Tabs close with their „x“ or a middle click. A tab dragged out of the tab
+//! bar becomes a window of its own (to look something up without switching
+//! tabs); dragging that window's grip onto the tab bar puts it back.
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -26,10 +30,24 @@ use crate::desktop::window;
 /// Typing pause before rust-analyzer gets the new text.
 const CHANGE_PAUSE: i32 = 300;
 
+/// Prefix of the drag text of a detached file's grip.
+const DRAG: &str = "freya-code:";
+/// Height of the grip of a detached file.
+const GRIP: i32 = 22;
+
+/// A file shown in a window of its own instead of a tab.
+struct Detached {
+    window: RnclWindow,
+    grip: RnclLabel,
+}
+
 /// An open file.
 struct OpenFile {
     path: PathBuf,
-    page: RnclPanel,
+    /// Its tab page (replaced when the file goes back into a tab).
+    page: RefCell<RnclPanel>,
+    /// Shown in a window of its own (see [`CodeWindow::detach`]).
+    detached: RefCell<Option<Detached>>,
     editor: RnclCodeEditor,
     /// Text as last loaded or saved.
     saved: RefCell<String>,
@@ -119,6 +137,9 @@ pub struct CodeWindow {
     breakpoints: RefCell<BTreeMap<PathBuf, Vec<BreakpointMark>>>,
     /// Where the debugger stands.
     execution: RefCell<Option<(PathBuf, usize)>>,
+    /// A detached file the user works in right now (its menu or a click in
+    /// it); `None` = the front tab counts.
+    active: RefCell<Option<PathBuf>>,
 }
 
 pub(super) fn menu_bar() -> MenuBar {
@@ -169,12 +190,66 @@ impl CodeWindow {
             change_timer,
             breakpoints: RefCell::new(BTreeMap::new()),
             execution: RefCell::new(None),
+            active: RefCell::new(None),
         }
     }
 
+    /// The files in tabs, in tab order.
+    fn attached(&self) -> Vec<Rc<OpenFile>> {
+        self.files
+            .borrow()
+            .iter()
+            .filter(|f| f.detached.borrow().is_none())
+            .cloned()
+            .collect()
+    }
+
+    /// Titles of the tabs (automation).
+    pub fn tab_titles(&self) -> Vec<String> {
+        self.tabs.tab_titles()
+    }
+
+    /// Files shown in windows of their own (automation).
+    pub fn detached_paths(&self) -> Vec<PathBuf> {
+        self.files
+            .borrow()
+            .iter()
+            .filter(|f| f.detached.borrow().is_some())
+            .map(|f| f.path.clone())
+            .collect()
+    }
+
+    /// The tab bar (automation: simulate „x“, dragging out, dropping).
+    pub fn tabs_widget(&self) -> Widget {
+        self.tabs.widget().clone()
+    }
+
+    /// Tab index of `path` (not for detached files).
+    fn tab_of(&self, path: &Path) -> Option<usize> {
+        self.attached().iter().position(|f| f.path == path)
+    }
+
+    /// The file being worked in: a detached one the user is in, else the
+    /// front tab.
     fn current(&self) -> Option<Rc<OpenFile>> {
+        let active = self.active.borrow().clone();
+        if let Some(file) = active
+            .and_then(|p| self.file(&p))
+            .filter(|f| f.detached.borrow().is_some())
+        {
+            return Some(file);
+        }
         let index = usize::try_from(self.tabs.current_index()).ok()?;
-        self.files.borrow().get(index).cloned()
+        self.attached().get(index).cloned()
+    }
+
+    /// Marks `path` as the file being worked in if it is detached (else the
+    /// front tab counts again).
+    fn set_active(&self, path: &Path) {
+        let detached = self
+            .file(path)
+            .is_some_and(|f| f.detached.borrow().is_some());
+        *self.active.borrow_mut() = detached.then(|| path.to_path_buf());
     }
 
     /// The file shown in the front tab.
@@ -214,8 +289,15 @@ impl CodeWindow {
     }
 
     fn update_titles(&self) {
-        for (i, file) in self.files.borrow().iter().enumerate() {
+        for (i, file) in self.attached().iter().enumerate() {
             self.tabs.set_tab_title(i as i32, &file.title());
+        }
+        for file in self.files.borrow().iter() {
+            if let Some(d) = file.detached.borrow().as_ref() {
+                let title = file.title();
+                d.window.set_title(&format!("Code – {title}"));
+                d.grip.set_text(&format!("⠿ {title}"));
+            }
         }
         let title = match self.current() {
             Some(file) if file.label.is_some() => format!("Code – {}", file.title()),
@@ -268,14 +350,19 @@ impl CodeWindow {
                 editor.on_gutter_clicked(with(ide, move |ide, click: GutterClick| {
                     ide.gutter_clicked(&p, click, &widget);
                 }));
-                editor.on_mouse(with(ide, |ide, e: MouseEvent| {
+                let p = path.to_path_buf();
+                editor.on_mouse(with(ide, move |ide, e: MouseEvent| {
+                    if e.action == MouseAction::Pressed {
+                        ide.code.set_active(&p);
+                    }
                     if e.action == MouseAction::Released && e.button == 1 && e.modifiers.ctrl {
                         ide.goto_definition();
                     }
                 }));
                 self.files.borrow_mut().push(Rc::new(OpenFile {
                     path: path.to_path_buf(),
-                    page,
+                    page: RefCell::new(page),
+                    detached: RefCell::new(None),
                     editor,
                     saved: RefCell::new(text.clone()),
                     read_only,
@@ -291,12 +378,12 @@ impl CodeWindow {
                 self.files.borrow().len() - 1
             }
         };
-        self.tabs.set_current_index(index as i32);
-        if let Some(file) = self.files.borrow().get(index) {
+        let file = self.files.borrow().get(index).cloned();
+        if let Some(file) = file {
+            self.show_file(&file);
             file.editor.goto_line(line.max(1));
         }
         self.update_titles();
-        self.window.show();
         Ok(())
     }
 
@@ -325,7 +412,8 @@ impl CodeWindow {
                     .on_resized(move |w, h| e.set_geometry(0, 0, w, h));
                 self.files.borrow_mut().push(Rc::new(OpenFile {
                     path,
-                    page,
+                    page: RefCell::new(page),
+                    detached: RefCell::new(None),
                     editor,
                     saved: RefCell::new(text.to_owned()),
                     read_only: true,
@@ -336,8 +424,24 @@ impl CodeWindow {
                 self.files.borrow().len() - 1
             }
         };
-        self.tabs.set_current_index(index as i32);
+        let file = self.files.borrow().get(index).cloned();
+        if let Some(file) = file {
+            self.show_file(&file);
+        }
         self.update_titles();
+    }
+
+    /// Brings `file` to the front: its own window if detached, else its tab.
+    fn show_file(&self, file: &Rc<OpenFile>) {
+        if let Some(d) = file.detached.borrow().as_ref() {
+            d.window.show();
+            *self.active.borrow_mut() = Some(file.path.clone());
+            return;
+        }
+        *self.active.borrow_mut() = None;
+        if let Some(tab) = self.tab_of(&file.path) {
+            self.tabs.set_current_index(tab as i32);
+        }
         self.window.show();
     }
 
@@ -553,8 +657,7 @@ impl CodeWindow {
             };
             if file.path.starts_with(path) {
                 closed.push((file.path.clone(), file.editor.cursor().0));
-                self.files.borrow_mut().remove(index);
-                self.tabs.remove_tab(index as i32);
+                self.drop_file(&file);
             } else {
                 index += 1;
             }
@@ -592,13 +695,133 @@ impl CodeWindow {
         reloaded
     }
 
-    /// Closes the front tab (asks about unsaved changes); returns the path.
+    /// Shows the file in tab `index` in a window of its own (dragged out of
+    /// the tab bar). Its grip, dragged onto the tab bar, puts it back.
+    pub fn detach(&self, ide: &Rc<Ide>, index: i32) {
+        let Some(file) = usize::try_from(index)
+            .ok()
+            .and_then(|i| self.attached().get(i).cloned())
+        else {
+            return;
+        };
+        let window = RnclWindow::new(&format!("Code – {}", file.title()));
+        window.set_menu_bar(menu_bar());
+        window.inherit_menu_shortcuts(&ide.main.window);
+        let grip = RnclLabel::new(&window, &format!("⠿ {}", file.title()));
+        grip.widget().set_tool_tip(
+            "Auf die Reiterleiste des Code-Fensters ziehen: wieder als Reiter zeigen",
+        );
+        grip.widget().set_mouse_cursor("grab");
+        grip.widget()
+            .set_drag_text(&format!("{DRAG}{}", file.path.display()));
+        file.editor.widget().set_parent(window.widget());
+        let (g, e) = (grip.clone(), file.editor.clone());
+        window.on_resized(move |w, h| {
+            g.set_geometry(6, 0, (w - 12).max(0), GRIP);
+            e.set_geometry(0, GRIP, w, (h - GRIP).max(0));
+        });
+        let size = self.window.widget().size();
+        window.set_size(size.width.clamp(500, 900), size.height.clamp(400, 900));
+        let p = file.path.clone();
+        window.on_menu(with(ide, move |ide, id: String| {
+            *ide.code.active.borrow_mut() = Some(p.clone());
+            code_menu(ide, &id);
+        }));
+        // Schließen schließt die Datei (mit Rückfrage bei Änderungen).
+        let weak = Rc::downgrade(ide);
+        let p = file.path.clone();
+        window.on_close_requested(move || {
+            let Some(ide) = weak.upgrade() else {
+                return true;
+            };
+            let Some(file) = ide.code.file(&p) else {
+                return true;
+            };
+            if let Some(path) = ide.code.close_file(&file) {
+                ide.lsp_closed(&path);
+            }
+            ide.code.update_titles();
+            ide.code.file(&p).is_none()
+        });
+        window.show();
+        // Den ursprünglichen Griff aufheben: nur er besitzt das Fenster, mit
+        // ihm ginge es samt Editor (RUF zerstört Fenster, deren Besitzer fällt).
+        *file.detached.borrow_mut() = Some(Detached { window, grip });
+        self.tabs.remove_tab(index);
+        *self.active.borrow_mut() = Some(file.path.clone());
+        self.update_titles();
+    }
+
+    /// Puts a detached file back into a tab (its grip dropped on the tab bar).
+    pub fn reattach(&self, path: &Path) {
+        let Some(file) = self.file(path) else {
+            return;
+        };
+        let Some(detached) = file.detached.borrow_mut().take() else {
+            return;
+        };
+        // Ans Ende: die Reihenfolge der Reiter folgt der Liste.
+        self.files.borrow_mut().retain(|f| !Rc::ptr_eq(f, &file));
+        self.files.borrow_mut().push(file.clone());
+        let page = self.tabs.add_tab(&file.title());
+        file.editor.widget().set_parent(page.widget());
+        let e = file.editor.clone();
+        page.widget()
+            .on_resized(move |w, h| e.set_geometry(0, 0, w, h));
+        *file.page.borrow_mut() = page;
+        detached.window.widget().set_visible(false);
+        ruf::Timer::single_shot(0, move || drop(detached));
+        *self.active.borrow_mut() = None;
+        if let Some(tab) = self.tab_of(&file.path) {
+            self.tabs.set_current_index(tab as i32);
+        }
+        self.update_titles();
+        self.window.show();
+    }
+
+    /// Closes the file being worked in (asks about unsaved changes);
+    /// returns the path for rust-analyzer.
     pub fn close_current(&self) -> Option<PathBuf> {
-        let index = usize::try_from(self.tabs.current_index()).ok()?;
-        let file = self.files.borrow().get(index).cloned()?;
+        let file = self.current()?;
+        self.close_file(&file)
+    }
+
+    /// Closes the file in tab `index` („x“ or middle click).
+    pub fn close_tab(&self, index: i32) -> Option<PathBuf> {
+        let file = self.attached().get(usize::try_from(index).ok()?).cloned()?;
+        self.close_file(&file)
+    }
+
+    /// Removes `file` with its tab or window, without asking.
+    fn drop_file(&self, file: &Rc<OpenFile>) {
+        let tab = self.tab_of(&file.path);
+        self.files.borrow_mut().retain(|f| !Rc::ptr_eq(f, file));
+        let detached = file.detached.borrow_mut().take();
+        if let Some(d) = detached {
+            // Erst nach dem laufenden Ereignis freigeben (z. B. dem Schließen
+            // genau dieses Fensters).
+            d.window.widget().set_visible(false);
+            ruf::Timer::single_shot(0, move || drop(d));
+        } else if let Some(tab) = tab {
+            self.tabs.remove_tab(tab as i32);
+        }
+        if self.active.borrow().as_deref() == Some(file.path.as_path()) {
+            *self.active.borrow_mut() = None;
+        }
+    }
+
+    /// Closes `file` (asks about unsaved changes); returns the path for
+    /// rust-analyzer (texts without a file: `None`).
+    fn close_file(&self, file: &Rc<OpenFile>) -> Option<PathBuf> {
+        let parent = file
+            .detached
+            .borrow()
+            .as_ref()
+            .map(|d| d.window.widget().clone())
+            .unwrap_or_else(|| self.window.widget().clone());
         if file.is_dirty()
             && !ruf::dialog::confirm(
-                Some(self.window.widget()),
+                Some(&parent),
                 "Ungespeicherte Änderungen",
                 &format!(
                     "{} schließen und Änderungen verwerfen?",
@@ -608,9 +831,7 @@ impl CodeWindow {
         {
             return None;
         }
-        self.files.borrow_mut().remove(index);
-        self.tabs.remove_tab(index as i32);
-        let _ = &file.page;
+        self.drop_file(file);
         self.update_titles();
         // Texte ohne Datei kennt rust-analyzer nicht.
         file.label.is_none().then(|| file.path.clone())
@@ -752,6 +973,7 @@ pub fn connect(ide: &Rc<Ide>) {
         if ide.is_refreshing() {
             return;
         }
+        *ide.code.active.borrow_mut() = None;
         ide.code.update_titles();
         // Formular und .rs gehören zusammen: der Designer folgt dem Reiter.
         if let Some(form) = ide.code.current_form(ide)
@@ -761,50 +983,77 @@ pub fn connect(ide: &Rc<Ide>) {
         }
     }));
     code.window.on_menu(with(ide, |ide, id: String| {
-        let result = match id.as_str() {
-            "code.save" => ide.code.save_current().map(|saved| ide.lsp_saved(&saved)),
-            "code.save_all" => ide.code.save_all().map(|saved| ide.lsp_saved(&saved)),
-            "code.close" => {
-                if let Some(path) = ide.code.close_current() {
-                    ide.lsp_closed(&path);
-                }
-                Ok(())
-            }
-            "code.complete" => {
-                ide.complete_at_cursor();
-                Ok(())
-            }
-            "code.definition" => {
-                ide.goto_definition();
-                Ok(())
-            }
-            "code.codetools" => {
-                ide.complete_code();
-                Ok(())
-            }
-            "code.save_snippet" => {
-                ide.snippet_from_selection();
-                Ok(())
-            }
-            "code.fold_all" | "code.unfold_all" => {
-                ide.code.set_all_folded(id == "code.fold_all");
-                Ok(())
-            }
-            "code.designer" => {
-                ide.show_window(window::DESIGNER);
-                Ok(())
-            }
-            // Haltepunkt-Menü der Randleiste.
-            other if other.starts_with("dbg.") => {
-                ide.debug_menu(other);
-                Ok(())
-            }
-            _ => Ok(()),
-        };
-        if let Err(e) = result {
-            ide.main.set_status(&e);
-        }
+        *ide.code.active.borrow_mut() = None;
+        code_menu(ide, &id);
     }));
+    // Reiter: „x“/Mittelklick schließt, ins Leere gezogen wird ein eigenes
+    // Fenster; dessen Griff auf die Reiterleiste gezogen holt es zurück.
+    code.tabs
+        .on_tab_close_requested(with(ide, |ide, index: i32| {
+            if let Some(path) = ide.code.close_tab(index) {
+                ide.lsp_closed(&path);
+            }
+            ide.code.update_titles();
+        }));
+    code.tabs
+        .on_tab_detach_requested(with(ide, |ide, index: i32| ide.code.detach(ide, index)));
+    code.tabs
+        .widget()
+        .on_drop(with(ide, |ide, event: ruf::DropEvent| {
+            if event.action != ruf::DropAction::Drop {
+                return;
+            }
+            if let Some(path) = event.text.as_deref().and_then(|t| t.strip_prefix(DRAG)) {
+                ide.code.reattach(Path::new(path));
+            }
+        }));
+}
+
+/// A menu entry of the code window (also of a detached file's window).
+fn code_menu(ide: &Rc<Ide>, id: &str) {
+    let result = match id {
+        "code.save" => ide.code.save_current().map(|saved| ide.lsp_saved(&saved)),
+        "code.save_all" => ide.code.save_all().map(|saved| ide.lsp_saved(&saved)),
+        "code.close" => {
+            if let Some(path) = ide.code.close_current() {
+                ide.lsp_closed(&path);
+            }
+            Ok(())
+        }
+        "code.complete" => {
+            ide.complete_at_cursor();
+            Ok(())
+        }
+        "code.definition" => {
+            ide.goto_definition();
+            Ok(())
+        }
+        "code.codetools" => {
+            ide.complete_code();
+            Ok(())
+        }
+        "code.save_snippet" => {
+            ide.snippet_from_selection();
+            Ok(())
+        }
+        "code.fold_all" | "code.unfold_all" => {
+            ide.code.set_all_folded(id == "code.fold_all");
+            Ok(())
+        }
+        "code.designer" => {
+            ide.show_window(window::DESIGNER);
+            Ok(())
+        }
+        // Haltepunkt-Menü der Randleiste.
+        other if other.starts_with("dbg.") => {
+            ide.debug_menu(other);
+            Ok(())
+        }
+        _ => Ok(()),
+    };
+    if let Err(e) = result {
+        ide.main.set_status(&e);
+    }
 }
 
 #[cfg(test)]

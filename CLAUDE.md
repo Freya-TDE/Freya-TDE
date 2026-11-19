@@ -165,7 +165,10 @@ Generierter Code gehört dem Nutzer. Jedes Plugin deklariert die Lizenz seines e
   und Meldungen. Quellcodeverwaltung, Debugger und Datenbank öffnen beim ersten Aufruf als eigenes Fenster,
   danach dort, wo der Entwickler sie hingeschoben hat. Code-Editor: Reiter mit „x“ (und Mittelklick) zum
   Schließen; ein Reiter lässt sich als eigenes Code-Fenster herausziehen (Nachschauen ohne Reiterwechsel) und
-  wieder auf die Reiterleiste ziehen.
+  über seinen Griff wieder auf die Reiterleiste ziehen; Schließen dieses Fensters schließt die Datei. Erledigt
+  20.11.2026 (`ide/src/ui/code.rs`: `detach`, `reattach`, `close_tab`; die aktuelle Datei ist die zuletzt
+  angeklickte herausgelöste, sonst der vordere Reiter). RUF: `on_tab_close_requested`,
+  `on_tab_detach_requested` an der Registerkarte (schalten „x“ bzw. Ziehen ein), `simulate_tab_close`/`_detach`.
 - Ziehen in RUF (20.11.2026): `set_drag_text` bietet einen eigenen Typ (`RufDragText`) statt Text an, damit
   andere Programme (Plasma-Desktop machte daraus eine Notiz, Explorer, Chat) das Ablegen ablehnen und „ins Leere
   gezogen“ zuverlässig greift; Ablageziele nehmen ihn und Text an. Ziehbild ist ein Standbild des Widgets (ein

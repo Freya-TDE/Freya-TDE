@@ -563,6 +563,44 @@ fn main() {
     );
     println!("test project_files ... ok");
 
+    // Code-Reiter: „x“ schließt, herausgezogen wird ein eigenes Fenster,
+    // dessen Griff auf der Reiterleiste holt es zurück.
+    for name in ["a", "b"] {
+        ide.file_op(&FileOp::NewFile {
+            path: format!("src/{name}.rs"),
+            text: format!("pub fn {name}() {{}}\n"),
+        })
+        .unwrap();
+        ide.open_project_file(&format!("src/{name}.rs"));
+    }
+    let a = project_dir.join("src/a.rs").canonicalize().unwrap();
+    if let Some(dir) = std::env::var_os("FREYA_TDE_SHOT").map(std::path::PathBuf::from) {
+        pump_until(1, || false);
+        ide.screenshots(&dir.join("code-tabs"));
+    }
+    let tabs = ide.code_tabs();
+    let index = |tabs: &[String], name: &str| tabs.iter().position(|t| t == name).unwrap() as i32;
+    let bar = ide.code_tabs_widget();
+    bar.simulate_tab_detach(index(&tabs, "a.rs"));
+    assert_eq!(ide.code_detached(), std::slice::from_ref(&a));
+    assert!(!ide.code_tabs().contains(&"a.rs".to_owned()));
+    // Der herausgelöste gilt als aktuelle Datei.
+    assert_eq!(ide.code_file().as_ref(), Some(&a));
+    bar.simulate_drop(ruf::DropEvent {
+        action: ruf::DropAction::Drop,
+        x: 10,
+        y: 10,
+        text: Some(format!("freya-code:{}", a.display())),
+    });
+    assert!(ide.code_detached().is_empty());
+    assert_eq!(ide.code_tabs().last().map(String::as_str), Some("a.rs"));
+    assert_eq!(ide.code_file().as_ref(), Some(&a));
+    let before = ide.code_tabs().len();
+    bar.simulate_tab_close(index(&ide.code_tabs(), "b.rs"));
+    assert_eq!(ide.code_tabs().len(), before - 1);
+    assert!(!ide.code_tabs().contains(&"b.rs".to_owned()));
+    println!("test code_tabs ... ok");
+
     // Git: Repository anlegen, Status mit Markierungen, stagen, Commit.
     use freya_tde::git::{After, Change, GitOp};
     if std::process::Command::new("git")

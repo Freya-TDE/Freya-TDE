@@ -565,6 +565,20 @@ impl Ide {
     }
 
     /// The file in the front tab of the code editor (automation).
+    pub fn code_tabs(&self) -> Vec<String> {
+        self.code.tab_titles()
+    }
+
+    /// Files of the code editor shown in windows of their own.
+    pub fn code_detached(&self) -> Vec<PathBuf> {
+        self.code.detached_paths()
+    }
+
+    /// The code editor's tab bar (automation).
+    pub fn code_tabs_widget(&self) -> Widget {
+        self.code.tabs_widget()
+    }
+
     pub fn code_file(&self) -> Option<PathBuf> {
         self.code.current_path()
     }
