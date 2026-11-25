@@ -178,6 +178,12 @@ Generierter Code gehört dem Nutzer. Jedes Plugin deklariert die Lizenz seines e
   andere Programme (Plasma-Desktop machte daraus eine Notiz, Explorer, Chat) das Ablegen ablehnen und „ins Leere
   gezogen“ zuverlässig greift; Ablageziele nehmen ihn und Text an. Ziehbild ist ein Standbild des Widgets (ein
   lebendes `WidgetPaintable` blieb unter Windows 11 als Fenster stehen und blockierte systemweit das Ziehen).
+- Linux-Test 25.11.2026 (KDE, drei Bildschirme): fest gewähltes Hell/Dunkel schaltet in RUF auf das eingebaute
+  Adwaita (Breeze nimmt seine Farben fest aus `~/.config/gtk-4.0/colors.css` von KDE), „System“ setzt das Thema
+  zurück (`reset_property("gtk-theme-name")`); `Application::on_color_scheme_changed` (Terminal und Git-Graph
+  zeichnen neu). Fensterposition unter X11 einschließlich Rahmen (`_NET_FRAME_EXTENTS`), sonst wanderten Fenster
+  bei jedem Neustart um Titelleiste und Rand. „Ins Leere gezogen“ ergibt sich aus dem Ende des Ziehens (kein
+  eigenes Ablageziel, nicht mit Esc abgebrochen) statt aus dem Abbruchgrund, den GTK unter XWayland anders meldet.
 - Hilfe → Tastenkürzel (02.11.2026): Seite mit allen Kürzeln je Fenster und Menü samt Erklärung, erzeugt aus den Menüdefinitionen (`ui::shortcuts`, auch als Daten).
 - Tastenkürzel (27.10.2026): Die Kürzel des Hauptmenüs gelten in allen IDE-Fenstern (RUF `inherit_menu_shortcuts`); das eigene Menü eines Fensters geht vor. Menükürzel gehen dem fokussierten Widget vor. Unter macOS ist `Ctrl` die Befehlstaste.
 - Projektfenster (26.10.2026): Datei-Manager mit dem Projektordner als Wurzel (ohne `target/`, `.git/`; `.gen.rs` und versteckte Dateien zuschaltbar). Logik ohne Oberfläche in `freya_tde::files` (Dateioperationen als JSON-Befehle mit Probelauf, stabile Codes). Löschen geht in den Papierkorb (Crate `trash`, MIT; unter macOS über `NSFileManager`, damit keine Finder-Berechtigung nötig ist), Projektdatei und Formulare sind geschützt. „Einbinden“ kopiert eine Datei von außen ins Projekt; `Cargo.toml` öffnet der CT-Editor (`--path`). Zweiter Reiter: Projekt-Manager (siehe dort).

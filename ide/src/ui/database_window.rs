@@ -488,6 +488,7 @@ impl DatabaseWindow {
         let reload = RnclButton::new(&body, "Aktualisieren");
         let test = RnclButton::new(&body, "Verbindung testen");
         let hint = RnclLabel::new(&body, "");
+        hint.set_word_wrap(true);
         let tree = RnclTreeView::new(&body);
         Self {
             window,
@@ -499,11 +500,20 @@ impl DatabaseWindow {
         }
     }
 
+    /// Buttons on top, the hint (if any) wrapped in its own line below them,
+    /// then the tree.
     fn layout(&self, w: i32, h: i32) {
         self.reload.set_geometry(6, 4, 120, BAR - 8);
         self.test.set_geometry(132, 4, 150, BAR - 8);
-        self.hint.set_geometry(290, 4, (w - 296).max(0), BAR - 8);
-        self.tree.set_geometry(0, BAR, w, (h - BAR).max(0));
+        let hint_h = if self.hint.text().is_empty() {
+            0
+        } else {
+            // Zwei Zeilen reichen auch schmal (Umbruch).
+            2 * 20 + 4
+        };
+        self.hint.set_geometry(6, BAR, (w - 12).max(0), hint_h);
+        let top = BAR + hint_h;
+        self.tree.set_geometry(0, top, w, (h - top).max(0));
     }
 
     pub fn refresh(&self, ide: &Ide) {
@@ -524,7 +534,11 @@ impl DatabaseWindow {
         } else {
             ""
         };
-        self.hint.set_text(hint);
+        if self.hint.text() != hint {
+            self.hint.set_text(hint);
+            let size = self.pane.body().size();
+            self.layout(size.width, size.height);
+        }
         let mut items = tree(&pools, &ide.db_schemas.borrow());
         keep_expansion(&mut items, &self.tree.items());
         if items != self.tree.items() {

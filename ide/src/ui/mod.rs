@@ -427,6 +427,17 @@ impl Ide {
         snippet_window::connect(&ide);
         ai_window::connect(&ide);
         ide.apply_settings();
+        // Selbst gezeichnete Flächen (Terminal, Git-Graph) nehmen ihre Farben
+        // aus dem Farbschema: nach einem Wechsel neu zeichnen.
+        let weak = Rc::downgrade(&ide);
+        Application::on_color_scheme_changed(move || {
+            if let Some(ide) = weak.upgrade() {
+                for view in ide.panel.terminals.views.borrow().iter() {
+                    view.redraw();
+                }
+                ide.git_window.repaint_graph();
+            }
+        });
         // Windows: GTK übernimmt nach dem Öffnen der Fenster das Farbschema von
         // Windows und überschreibt die Einstellung – kurz danach noch einmal.
         if cfg!(windows) {

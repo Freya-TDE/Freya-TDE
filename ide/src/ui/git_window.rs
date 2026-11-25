@@ -620,6 +620,13 @@ impl GitWindow {
         ));
     }
 
+    /// Draws the graph again with the colors of the current scheme.
+    pub fn repaint_graph(&self) {
+        let commits = self.commits.borrow();
+        let rows = crate::git::graph(&commits);
+        self.graph.set_shapes(graph_shapes(&commits, &rows));
+    }
+
     pub fn show_log(&self, commits: Vec<Commit>, refs: &LogRefs) {
         let rows = crate::git::graph(&commits);
         self.graph.set_shapes(graph_shapes(&commits, &rows));
