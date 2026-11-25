@@ -894,7 +894,7 @@ dependencies = [
 
 [[package]]
 name = "freya-tde"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "ed25519-dalek",
  "embed-resource",
@@ -919,7 +919,7 @@ dependencies = [
 
 [[package]]
 name = "freya-tde-db"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "redis",
  "serde_json",
@@ -2213,7 +2213,7 @@ dependencies = [
 
 [[package]]
 name = "rncl"
-version = "0.3.4"
+version = "0.3.5"
 dependencies = [
  "ruf",
 ]
@@ -2234,7 +2234,7 @@ dependencies = [
 
 [[package]]
 name = "ruf"
-version = "0.3.4"
+version = "0.3.5"
 dependencies = [
  "gdk4-macos",
  "gdk4-win32",
@@ -2874,7 +2874,7 @@ checksum = "adb6935a6f5c20170eeceb1a3835a49e12e19d792f6dd344ccc76a985ca5a6ca"
 
 [[package]]
 name = "tdr-core"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "indexmap",
  "minijinja",
@@ -2890,7 +2890,7 @@ dependencies = [
 
 [[package]]
 name = "tdr-designer"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "serde",
  "serde_json",

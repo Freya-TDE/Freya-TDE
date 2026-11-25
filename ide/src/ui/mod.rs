@@ -480,9 +480,11 @@ impl Ide {
             (window::MAIN, &self.main.window),
             (window::STRUCTURE, &self.structure.window),
             (window::INSPECTOR, &self.inspector.window),
+            // Code vor dem Designer: beim Start erscheinen die Fenster in dieser
+            // Reihenfolge, der Designer liegt so über dem Code-Fenster.
+            (window::CODE, &self.code.window),
             (window::DESIGNER, &self.designer.window),
             (window::MESSAGES, &self.panel.window),
-            (window::CODE, &self.code.window),
             (window::PROJECT, &self.project.window),
             (window::PROJECT_MANAGER, &self.project.manager_window),
             (window::GIT, &self.git_window.window),
@@ -514,6 +516,9 @@ impl Ide {
         // X11: Größenänderungen in der Startphase (Palette, Mindesthöhe) lassen
         // Fenster je nach Ablauf um ihren Rahmen rutschen. Sobald alles steht,
         // die gespeicherten Lagen noch einmal setzen.
+        // `FREYA_TDE_DEBUG_WINDOWS=1`: Soll- und Ist-Lagen auf stderr (Fehlersuche
+        // bei Fenstermanagern, die Lagen übergehen).
+        let debug = std::env::var_os("FREYA_TDE_DEBUG_WINDOWS").is_some();
         let weak = self.me.clone();
         ruf::Timer::single_shot(1500, move || {
             let Some(ide) = weak.upgrade() else {
@@ -521,12 +526,34 @@ impl Ide {
             };
             for (name, window) in ide.windows() {
                 let place = desktop.place(name);
+                let now = window.screen_position();
+                if debug && window.widget().is_visible() {
+                    eprintln!(
+                        "freya-tde: Fenster {name}: soll {:?},{:?}, nach dem Start {now:?}",
+                        place.x, place.y
+                    );
+                }
                 if let (Some(x), Some(y)) = (place.x, place.y)
                     && window.widget().is_visible()
-                    && window.screen_position() != Some(ruf::Point::new(x, y))
+                    && now != Some(ruf::Point::new(x, y))
                 {
                     window.set_screen_position(x, y);
                 }
+            }
+            if debug {
+                let weak = ide.me.clone();
+                ruf::Timer::single_shot(1000, move || {
+                    if let Some(ide) = weak.upgrade() {
+                        for (name, window) in ide.windows() {
+                            if window.widget().is_visible() {
+                                eprintln!(
+                                    "freya-tde: Fenster {name}: nach dem zweiten Setzen {:?}",
+                                    window.screen_position()
+                                );
+                            }
+                        }
+                    }
+                });
             }
         });
     }

@@ -17,9 +17,9 @@ const STATUS: i32 = 24;
 const BRANCH: i32 = 200;
 const TOOL_W: i32 = 96;
 const TOOL_H: i32 = ROW;
-/// Generous height of the palette's tab row (differs between systems;
-/// on Windows it is higher than on Linux).
-const TAB_HEADER: i32 = 36;
+/// Height of the palette's tab row (differs between systems; on Windows it
+/// is higher than on Linux and macOS).
+const TAB_HEADER: i32 = if cfg!(windows) { 36 } else { 30 };
 /// Least height of the window's content: tools, tab row, one row of palette
 /// buttons, status line. Below it the palette page gets no size at all, so
 /// its own growing (`build_palette`) never starts – seen on Windows.
