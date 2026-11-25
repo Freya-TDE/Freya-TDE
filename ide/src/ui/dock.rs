@@ -40,9 +40,7 @@ impl DockPane {
         tabs.widget().set_visible(false);
         let root = RnclPanel::new(window);
         let grip = RnclLabel::new(&root, &format!("⠿ {title}"));
-        grip.widget().set_tool_tip(
-            &tr!("dock.grip_tip"),
-        );
+        grip.widget().set_tool_tip(&tr!("dock.grip_tip"));
         grip.widget().set_mouse_cursor("grab");
         grip.widget().set_drag_text(&format!("{DRAG}{name}"));
         Self {

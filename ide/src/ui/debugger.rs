@@ -7,6 +7,7 @@
 //! Variables and watch values with children load when expanded; what is
 //! expanded stays expanded across stops (by name path).
 
+use crate::tr;
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::path::Path;
@@ -97,37 +98,37 @@ fn tool(window: &RnclPanel, text: &str, tip: &str) -> RnclButton {
 
 impl DebuggerWindow {
     pub fn build() -> Self {
-        let window = RnclWindow::new("Debugger");
-        let pane =
-            super::dock::DockPane::with_body(&window, crate::desktop::window::DEBUGGER, "Debugger");
+        let window = RnclWindow::new(&tr!("menu.window.debugger"));
+        let pane = super::dock::DockPane::with_body(
+            &window,
+            crate::desktop::window::DEBUGGER,
+            &tr!("menu.window.debugger"),
+        );
         let body = pane.body().clone();
         let tools = [
-            ("▶", "Starten bzw. Weiter (F9)", "dbg.run"),
-            ("❚❚", "Anhalten", "dbg.pause"),
-            ("↷", "Gesamte Routine – über Aufrufe (F8)", "dbg.step_over"),
-            ("↓", "Einzelne Anweisung – in Aufrufe (F7)", "dbg.step_into"),
-            (
-                "↑",
-                "Bis Rückgabe – zum Aufrufer (Umschalt+F8)",
-                "dbg.step_out",
-            ),
-            ("■", "Programm beenden (Strg+F2)", "dbg.stop"),
+            ("▶", "run", "dbg.run"),
+            ("❚❚", "pause", "dbg.pause"),
+            ("↷", "step_over", "dbg.step_over"),
+            ("↓", "step_into", "dbg.step_into"),
+            ("↑", "step_out", "dbg.step_out"),
+            ("■", "stop", "dbg.stop"),
         ]
         .into_iter()
-        .map(|(text, tip, id)| (tool(&body, text, tip), id))
+        .map(|(text, tip, id)| (tool(&body, text, &tr!(&format!("debugger.tool.{tip}"))), id))
         .collect();
-        let panic = RnclCheckBox::new(&body, "Bei Panic anhalten");
+        let panic = RnclCheckBox::new(&body, &tr!("debugger.stop_on_panic"));
         let status = RnclLabel::new(&body, "");
-        let variables_title = RnclLabel::new(&body, "<b>Variablen</b>");
+        let variables_title =
+            RnclLabel::new(&body, &format!("<b>{}</b>", tr!("debugger.variables")));
         let variables = RnclTreeView::new(&body);
         let splitter = RnclSplitter::new(&body, true);
         let tabs = RnclTabView::new(&body);
-        let watch_page = tabs.add_tab("Überwacht");
-        let stack_page = tabs.add_tab("Aufrufstapel");
-        let threads_page = tabs.add_tab("Threads");
-        let breakpoints_page = tabs.add_tab("Haltepunkte");
+        let watch_page = tabs.add_tab(&tr!("debugger.watched"));
+        let stack_page = tabs.add_tab(&tr!("debugger.call_stack"));
+        let threads_page = tabs.add_tab(&tr!("debugger.threads"));
+        let breakpoints_page = tabs.add_tab(&tr!("debugger.breakpoints"));
         let watch_input = RnclTextField::new(&watch_page);
-        watch_input.set_placeholder("Ausdruck überwachen (Enter)");
+        watch_input.set_placeholder(&tr!("debugger.watch_placeholder"));
         let watches = RnclTreeView::new(&watch_page);
         let stack = RnclTreeView::new(&stack_page);
         let threads = RnclTreeView::new(&threads_page);
@@ -423,24 +424,24 @@ impl DebuggerWindow {
                     .unwrap_or_default();
                 let mut text = format!("{name}:{}", b.line);
                 if let Some(c) = &b.condition {
-                    text.push_str(&format!(" – wenn {c}"));
+                    text.push_str(&tr!("debugger.bp_if", condition = c));
                 }
                 if let Some(h) = &b.hit_condition {
-                    text.push_str(&format!(" – Treffer {h}"));
+                    text.push_str(&tr!("debugger.bp_hits", hits = h));
                 }
                 if let Some(m) = &b.log_message {
-                    text.push_str(&format!(" – Log: {m}"));
+                    text.push_str(&tr!("debugger.bp_log", message = m));
                 }
                 let mut item = TreeItem::new(&format!("b{i}"), &text);
                 if !b.enabled {
-                    item = item.with_color(GRAY).with_badge("aus");
+                    item = item.with_color(GRAY).with_badge(&tr!("debugger.off"));
                 } else if let Some(status) = s
                     .breakpoints
                     .iter()
                     .find(|st| st.path == b.path && st.line == b.line)
                     && !status.verified
                 {
-                    item = item.with_badge("nicht aufgelöst");
+                    item = item.with_badge(&tr!("debugger.unresolved"));
                 }
                 item
             })
@@ -465,7 +466,7 @@ impl DebuggerWindow {
 
 fn status_text(snap: Option<&Snapshot>) -> String {
     let Some(snap) = snap else {
-        return "Kein Programm. Start mit F9.".into();
+        return tr!("debugger.no_program");
     };
     let place = |snap: &Snapshot| {
         snap.location()
@@ -479,58 +480,62 @@ fn status_text(snap: Option<&Snapshot>) -> String {
             .unwrap_or_default()
     };
     match &snap.state {
-        State::Starting => format!("Startet ({}) …", snap.adapter),
-        State::Running => "Läuft …".into(),
+        State::Starting => tr!("debugger.starting", adapter = snap.adapter),
+        State::Running => tr!("debugger.running"),
         State::Stopped {
             reason,
             description,
         } => {
             let why = match reason.as_str() {
-                "breakpoint" | "function breakpoint" => "Haltepunkt".to_owned(),
-                "step" => "Schritt".to_owned(),
-                "pause" => "Angehalten".to_owned(),
+                "breakpoint" | "function breakpoint" => tr!("debugger.why_breakpoint"),
+                "step" => tr!("debugger.why_step"),
+                "pause" => tr!("debugger.why_pause"),
                 "panic" => "Panic".to_owned(),
-                "exception" => description.clone().unwrap_or_else(|| "Ausnahme".into()),
+                "exception" => description
+                    .clone()
+                    .unwrap_or_else(|| tr!("debugger.why_exception")),
                 other => other.to_owned(),
             };
             format!("⏸ {why}{}", place(snap))
         }
         State::Ended {
             exit_code: Some(code),
-        } => format!("Beendet (Exit-Code {code})."),
-        State::Ended { exit_code: None } => "Beendet.".into(),
+        } => tr!("debugger.ended_code", code = code),
+        State::Ended { exit_code: None } => tr!("debugger.ended"),
     }
 }
 
 fn breakpoint_menu() -> Menu {
     Menu::new()
-        .item("dbg.bp.toggle", "Aktivieren/Deaktivieren", None)
-        .item("dbg.bp.condition", "Bedingung …", None)
-        .item("dbg.bp.hit", "Trefferzahl …", None)
-        .item("dbg.bp.log", "Logmeldung …", None)
-        .item("dbg.bp.goto", "Gehe zur Zeile", None)
+        .item("dbg.bp.toggle", &tr!("menu.dbg.bp.toggle"), None)
+        .item("dbg.bp.condition", &tr!("menu.dbg.bp.condition"), None)
+        .item("dbg.bp.hit", &tr!("menu.dbg.bp.hit"), None)
+        .item("dbg.bp.log", &tr!("menu.dbg.bp.log"), None)
+        .item("dbg.bp.goto", &tr!("menu.dbg.bp.goto"), None)
         .separator()
-        .item("dbg.bp.remove", "Entfernen", None)
+        .item("dbg.bp.remove", &tr!("menu.dbg.bp.remove"), None)
         .separator()
-        .item("dbg.bp.enable_all", "Alle aktivieren", None)
-        .item("dbg.bp.disable_all", "Alle deaktivieren", None)
-        .item("dbg.bp.remove_all", "Alle entfernen", None)
+        .item("dbg.bp.enable_all", &tr!("menu.dbg.bp.enable_all"), None)
+        .item("dbg.bp.disable_all", &tr!("menu.dbg.bp.disable_all"), None)
+        .item("dbg.bp.remove_all", &tr!("menu.dbg.bp.remove_all"), None)
 }
 
 fn variable_menu() -> Menu {
-    Menu::new().item("dbg.var.watch", "Überwachen", None).item(
-        "dbg.var.copy",
-        "Wert kopieren",
-        None,
-    )
+    Menu::new()
+        .item("dbg.var.watch", &tr!("menu.dbg.var.watch"), None)
+        .item("dbg.var.copy", &tr!("menu.dbg.var.copy"), None)
 }
 
 fn watch_menu() -> Menu {
     Menu::new()
-        .item("dbg.watch.copy", "Wert kopieren", None)
-        .item("dbg.watch.remove", "Entfernen", None)
+        .item("dbg.watch.copy", &tr!("menu.dbg.watch.copy"), None)
+        .item("dbg.watch.remove", &tr!("menu.dbg.watch.remove"), None)
         .separator()
-        .item("dbg.watch.remove_all", "Alle entfernen", None)
+        .item(
+            "dbg.watch.remove_all",
+            &tr!("menu.dbg.watch.remove_all"),
+            None,
+        )
 }
 
 pub fn connect(ide: &Rc<Ide>) {

@@ -4,6 +4,7 @@
 //! [`crate::files`]; the tree is rescanned every few seconds, so changes
 //! made outside Freya TDE show up as well.
 
+use crate::tr;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -188,25 +189,26 @@ pub struct ProjectWindow {
 
 impl ProjectWindow {
     pub fn build() -> Self {
-        let window = RnclWindow::new("Projekt");
-        let pane = super::dock::DockPane::with_body(&window, window::PROJECT, "Dateien");
+        let window = RnclWindow::new(&tr!("project.title"));
+        let pane =
+            super::dock::DockPane::with_body(&window, window::PROJECT, &tr!("menu.window.project"));
         let files = pane.body().clone();
-        let manager_window = RnclWindow::new("Projekt-Manager");
+        let manager_window = RnclWindow::new(&tr!("menu.window.project_manager"));
         let manager_pane = super::dock::DockPane::with_body(
             &manager_window,
             window::PROJECT_MANAGER,
-            "Projekt-Manager",
+            &tr!("menu.window.project_manager"),
         );
         let manager = ProjectManager::build(manager_pane.body());
         let tree = RnclTreeView::new(&files);
-        let show_generated = RnclCheckBox::new(&files, "Generierte");
+        let show_generated = RnclCheckBox::new(&files, &tr!("project.generated"));
         show_generated
             .widget()
-            .set_tool_tip("Erzeugte Dateien (*.gen.rs) zeigen");
-        let show_hidden = RnclCheckBox::new(&files, "Versteckte");
+            .set_tool_tip(&tr!("project.generated_tip"));
+        let show_hidden = RnclCheckBox::new(&files, &tr!("project.hidden"));
         show_hidden
             .widget()
-            .set_tool_tip("Dateien und Ordner mit . am Anfang zeigen");
+            .set_tool_tip(&tr!("project.hidden_tip"));
         {
             let (t, g, h) = (tree.clone(), show_generated.clone(), show_hidden.clone());
             files.widget().on_resized(move |width, height| {
@@ -266,7 +268,7 @@ impl ProjectWindow {
             }
             None => {
                 self.entries.borrow_mut().clear();
-                TreeItem::new("", "(Projekt noch nicht gespeichert)")
+                TreeItem::new("", &tr!("project.unsaved"))
             }
         };
         let mut items = vec![root];
@@ -275,8 +277,8 @@ impl ProjectWindow {
             self.tree.set_items(items);
         }
         self.window.set_title(&match &dir {
-            Some(dir) => format!("Projekt – {}", dir.display()),
-            None => "Projekt".to_owned(),
+            Some(dir) => format!("{} – {}", tr!("project.title"), dir.display()),
+            None => tr!("project.title"),
         });
     }
 
@@ -306,36 +308,36 @@ impl ProjectWindow {
         let item = id != ROOT;
         let mut menu = Menu::new();
         if file {
-            menu = menu.item("files.open", "Öffnen", None);
+            menu = menu.item("files.open", &tr!("menu.files.open"), None);
             if name(id) == "Cargo.toml" {
-                menu = menu.item("files.ct_editor", "Mit CT-Editor öffnen", None);
+                menu = menu.item("files.ct_editor", &tr!("menu.files.ct_editor"), None);
             }
             menu = menu.separator();
         }
         menu = menu
-            .item("files.new_file", "Neue Datei …", None)
-            .item("files.new_folder", "Neuer Ordner …", None)
-            .item("files.import", "Datei einbinden …", None)
+            .item("files.new_file", &tr!("menu.files.new_file"), None)
+            .item("files.new_folder", &tr!("menu.files.new_folder"), None)
+            .item("files.import", &tr!("menu.files.import"), None)
             .separator();
         menu = if item {
-            menu.item("files.copy", "Kopieren", None)
+            menu.item("files.copy", &tr!("menu.files.copy"), None)
         } else {
-            menu.disabled_item("files.copy", "Kopieren")
+            menu.disabled_item("files.copy", &tr!("menu.files.copy"))
         };
         menu = if self.clipboard.borrow().is_some() {
-            menu.item("files.paste", "Einfügen", None)
+            menu.item("files.paste", &tr!("menu.files.paste"), None)
         } else {
-            menu.disabled_item("files.paste", "Einfügen")
+            menu.disabled_item("files.paste", &tr!("menu.files.paste"))
         };
         menu = if item {
-            menu.item("files.rename", "Umbenennen …", None)
-                .item("files.delete", "Löschen", None)
+            menu.item("files.rename", &tr!("menu.files.rename"), None)
+                .item("files.delete", &tr!("menu.files.delete"), None)
         } else {
-            menu.disabled_item("files.rename", "Umbenennen …")
-                .disabled_item("files.delete", "Löschen")
+            menu.disabled_item("files.rename", &tr!("menu.files.rename"))
+                .disabled_item("files.delete", &tr!("menu.files.delete"))
         };
         menu.separator()
-            .item("files.refresh", "Aktualisieren", None)
+            .item("files.refresh", &tr!("menu.files.refresh"), None)
     }
 
     // --- Actions (context menu) ------------------------------------------------------
@@ -363,7 +365,7 @@ impl ProjectWindow {
             && !dialog::confirm(
                 self.parent_widget(),
                 title,
-                &format!("Trotzdem fortfahren?{}", warnings(&plan)),
+                &format!("{}{}", tr!("project.continue_anyway"), warnings(&plan)),
             )
         {
             return false;
@@ -381,11 +383,12 @@ impl ProjectWindow {
         let target = self.menu_target.borrow().clone();
         let dir = self.folder_of(&target);
         let (title, suggestion) = if folder {
-            ("Neuer Ordner", "neu")
+            (tr!("project.new_folder"), tr!("project.new_folder_name"))
         } else {
-            ("Neue Datei", "neu.rs")
+            (tr!("project.new_file"), tr!("project.new_file_name"))
         };
-        let Some(name) = self.ask_name(title, "Name (auch mit Unterordnern):", suggestion) else {
+        let Some(name) = self.ask_name(&title, &tr!("project.name_with_folders"), &suggestion)
+        else {
             return;
         };
         let path = join(&dir, &name);
@@ -397,7 +400,7 @@ impl ProjectWindow {
                 text: String::new(),
             }
         };
-        if self.run(ide, title, op) {
+        if self.run(ide, &title, op) {
             self.tree.select(Some(&path));
             if !folder {
                 ide.open_project_file(&path);
@@ -408,7 +411,8 @@ impl ProjectWindow {
     fn import(&self, ide: &Ide) {
         let target = self.menu_target.borrow().clone();
         let dir = self.folder_of(&target);
-        let Some(source) = dialog::open_file(self.parent_widget(), "Datei einbinden", &[]) else {
+        let Some(source) = dialog::open_file(self.parent_widget(), &tr!("project.import"), &[])
+        else {
             return;
         };
         let Some(file) = source.file_name().and_then(|n| n.to_str()) else {
@@ -420,7 +424,7 @@ impl ProjectWindow {
         let to = files::copy_name(&root, &dir, file);
         if self.run(
             ide,
-            "Datei einbinden",
+            &tr!("project.import"),
             FileOp::Import {
                 source,
                 to: to.clone(),
@@ -442,7 +446,7 @@ impl ProjectWindow {
         let to = files::copy_name(&root, &dir, name(&from));
         if self.run(
             ide,
-            "Einfügen",
+            &tr!("menu.files.paste"),
             FileOp::Copy {
                 from,
                 to: to.clone(),
@@ -454,14 +458,18 @@ impl ProjectWindow {
 
     fn rename(&self, ide: &Ide) {
         let from = self.menu_target.borrow().clone();
-        let Some(new) = self.ask_name("Umbenennen", "Neuer Name:", name(&from)) else {
+        let Some(new) = self.ask_name(
+            &tr!("project.rename"),
+            &tr!("git.ask.new_name"),
+            name(&from),
+        ) else {
             return;
         };
         let to = join(parent(&from), &new);
         if to != from
             && self.run(
                 ide,
-                "Umbenennen",
+                &tr!("project.rename"),
                 FileOp::Rename {
                     from,
                     to: to.clone(),
@@ -482,25 +490,26 @@ impl ProjectWindow {
             return;
         };
         if let Some(error) = plan.errors().next() {
-            dialog::error(self.parent_widget(), "Löschen", &error.detail);
+            dialog::error(self.parent_widget(), &tr!("project.delete"), &error.detail);
             return;
         }
         let files = plan.changes.first().map_or(0, |c| c.files);
         let what = if self.kind(&path) == Some(EntryKind::Folder) {
-            format!("Den Ordner {path} ({files} Dateien)")
+            tr!("project.the_folder", path = path, files = files)
         } else {
             path.clone()
         };
         let unsaved = if ide.has_unsaved_below(&path) {
-            "\n\nUngespeicherte Änderungen im Code-Editor gehen verloren."
+            tr!("project.unsaved_lost")
         } else {
-            ""
+            String::new()
         };
         if !dialog::confirm(
             self.parent_widget(),
-            "Löschen",
+            &tr!("project.delete"),
             &format!(
-                "{what} in den Papierkorb verschieben?{unsaved}{}",
+                "{}{unsaved}{}",
+                tr!("project.to_trash", what = what),
                 warnings(&plan)
             ),
         ) {
@@ -512,18 +521,16 @@ impl ProjectWindow {
                 // Kein Papierkorb (z. B. Netzlaufwerk): endgültig löschen?
                 if dialog::confirm(
                     self.parent_widget(),
-                    "Löschen",
-                    &format!(
-                        "Der Papierkorb ist nicht verfügbar ({detail}).\n\n{path} endgültig löschen?"
-                    ),
+                    &tr!("project.delete"),
+                    &tr!("project.no_trash", detail = detail, path = path),
                 ) && let Err(e) = ide.file_op(&FileOp::Delete {
                     path,
                     permanent: true,
                 }) {
-                    dialog::error(self.parent_widget(), "Löschen", &e.to_string());
+                    dialog::error(self.parent_widget(), &tr!("project.delete"), &e.to_string());
                 }
             }
-            Err(e) => dialog::error(self.parent_widget(), "Löschen", &e.to_string()),
+            Err(e) => dialog::error(self.parent_widget(), &tr!("project.delete"), &e.to_string()),
         }
     }
 
@@ -548,11 +555,11 @@ impl ProjectWindow {
             .arg(&dir)
             .spawn()
         {
-            Ok(_) => ide.set_status(&format!("CT-Editor geöffnet: {}", dir.display())),
-            Err(e) => ide.set_status(&format!(
-                "CT-Editor nicht gestartet ({}): {e} – installieren über den DS-Launcher \
-                 oder `brew install freya-tde/tap/ct-editor`",
-                program.display()
+            Ok(_) => ide.set_status(&tr!("project.ct_opened", path = dir.display())),
+            Err(e) => ide.set_status(&tr!(
+                "project.ct_failed",
+                program = program.display(),
+                error = e
             )),
         }
     }
@@ -572,7 +579,7 @@ impl ProjectWindow {
             "files.import" => self.import(ide),
             "files.copy" => {
                 let target = self.menu_target.borrow().clone();
-                ide.set_status(&format!("Kopiert: {target} – „Einfügen“ im Zielordner"));
+                ide.set_status(&tr!("project.copied", target = target));
                 *self.clipboard.borrow_mut() = Some(target);
             }
             "files.paste" => self.paste(ide),

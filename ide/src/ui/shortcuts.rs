@@ -156,7 +156,11 @@ pub fn page() -> String {
         if s.menu != menu {
             menu = &s.menu;
             let no_menu = tr!("shortcuts.no_menu");
-            let title = if menu.is_empty() { no_menu.as_str() } else { menu };
+            let title = if menu.is_empty() {
+                no_menu.as_str()
+            } else {
+                menu
+            };
             text.push_str(&format!("\n  {title}\n"));
         }
         let keys = display_keys(&s.keys);

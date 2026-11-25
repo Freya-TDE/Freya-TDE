@@ -6,6 +6,7 @@
 //! The buttons run them in the background; the `database_*` methods of
 //! [`Ide`] run them directly (automation, tests, AI).
 
+use crate::tr;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -215,11 +216,11 @@ impl Ide {
                 return;
             }
         };
-        let what = match job {
-            DbJob::Test => "Verbindung wird getestet",
-            DbJob::Columns => "Spalten werden gelesen",
-            DbJob::Schema => "Schema wird geladen",
-        };
+        let what = tr!(match job {
+            DbJob::Test => "db.testing",
+            DbJob::Columns => "db.reading_columns",
+            DbJob::Schema => "db.loading_schema",
+        });
         self.set_status(&format!("{path}: {what} …"));
         self.db_busy.set(self.db_busy.get() + 1);
         let access = self.db_access.clone();
@@ -241,9 +242,14 @@ impl Ide {
                         .borrow_mut()
                         .insert(path.clone(), Err(error.clone()));
                 }
-                format!("{path}: Fehler {} – {}", error.code, error.detail)
+                tr!(
+                    "db.error",
+                    path = path,
+                    code = error.code,
+                    detail = error.detail
+                )
             }
-            (_, Ok(DbAnswer::Server(server))) => format!("{path}: verbunden mit {server}"),
+            (_, Ok(DbAnswer::Server(server))) => tr!("db.connected", path = path, server = server),
             (_, Ok(DbAnswer::Described(described))) => {
                 let command =
                     database::columns_command(self.session().document().forms(), &path, &described);
@@ -252,15 +258,23 @@ impl Ide {
                         self.apply(command);
                         format!("{path}: {}", database::columns_summary(&described))
                     }
-                    Err(error) => format!("{path}: Fehler {} – {}", error.code, error.detail),
+                    Err(error) => {
+                        tr!(
+                            "db.error",
+                            path = path,
+                            code = error.code,
+                            detail = error.detail
+                        )
+                    }
                 }
             }
             (_, Ok(DbAnswer::Schema(schema))) => {
-                let text = format!(
-                    "{path}: {} – {} Tabellen/Sichten, {} Routinen",
-                    schema.server,
-                    schema.tables.len(),
-                    schema.routines.len()
+                let text = tr!(
+                    "db.schema_summary",
+                    path = path,
+                    server = schema.server,
+                    tables = schema.tables.len(),
+                    routines = schema.routines.len()
                 );
                 self.db_schemas
                     .borrow_mut()
@@ -269,10 +283,11 @@ impl Ide {
             }
             (_, Ok(DbAnswer::Keys(keys))) => {
                 let more = if keys.truncated { "+" } else { "" };
-                let text = format!(
-                    "{path}: {} – {}{more} Schlüssel",
-                    keys.server,
-                    keys.keys.len()
+                let text = tr!(
+                    "db.keys_summary",
+                    path = path,
+                    server = keys.server,
+                    count = format!("{}{more}", keys.keys.len())
                 );
                 self.db_schemas
                     .borrow_mut()
@@ -322,19 +337,20 @@ fn tree(
                     c.driver.name(),
                     database::display_url(&c.url)
                 ),
-                None => format!("{path} (ohne URL)"),
+                None => tr!("db.no_url", path = path),
             };
             let mut item = TreeItem::new(&id, &label);
             match schemas.get(path) {
                 None => {
-                    item = item.with_child(TreeItem::new(&format!("{id}:wait"), "… wird geladen"));
+                    item =
+                        item.with_child(TreeItem::new(&format!("{id}:wait"), &tr!("db.loading")));
                 }
                 Some(Ok(DbAnswer::Server(_) | DbAnswer::Described(_))) => {}
                 Some(Err(error)) => {
                     item = item.with_child(
                         TreeItem::new(
                             &format!("{id}:error"),
-                            &format!("Fehler {}: {}", error.code, error.detail),
+                            &tr!("db.tree_error", code = error.code, detail = error.detail),
                         )
                         .with_color(Color::rgb(0xc0, 0x39, 0x2b)),
                     );
@@ -346,8 +362,8 @@ fn tree(
                     } else {
                         keys.keys.len().to_string()
                     };
-                    let mut group =
-                        TreeItem::new(&format!("{id}:keys"), "Schlüssel").with_badge(&count);
+                    let mut group = TreeItem::new(&format!("{id}:keys"), &tr!("inspector.db.keys"))
+                        .with_badge(&count);
                     for key in &keys.keys {
                         let key_id = format!("key:{path}:{}", key.key);
                         let mut node = TreeItem::new(&key_id, &key.key)
@@ -355,11 +371,11 @@ fn tree(
                             .collapsed();
                         let mut facts = Vec::new();
                         if let Some(length) = key.length {
-                            facts.push(format!("Länge {length}"));
+                            facts.push(tr!("db.length", length = length));
                         }
                         facts.push(match key.ttl {
-                            Some(ttl) => format!("läuft ab in {ttl} s"),
-                            None => "ohne Ablauf".to_owned(),
+                            Some(ttl) => tr!("db.expires", seconds = ttl),
+                            None => tr!("db.no_expiry"),
                         });
                         node = node.with_child(TreeItem::new(
                             &format!("{key_id}:facts"),
@@ -373,16 +389,18 @@ fn tree(
                     if keys.truncated {
                         group = group.with_child(TreeItem::new(
                             &format!("{id}:more"),
-                            &format!("… weitere (die ersten {} gezeigt)", database::KEY_LIMIT),
+                            &tr!("db.more_keys", count = database::KEY_LIMIT),
                         ));
                     }
                     item = item.with_child(group);
                 }
                 Some(Ok(DbAnswer::Schema(schema))) => {
                     item = item.with_child(TreeItem::new(&format!("{id}:server"), &schema.server));
-                    for (kind, title) in
-                        [(TableKind::Table, "Tabellen"), (TableKind::View, "Sichten")]
-                    {
+                    for (kind, title) in [
+                        (TableKind::Table, tr!("db.tables")),
+                        (TableKind::View, tr!("db.views")),
+                    ] {
+                        let title = title.as_str();
                         let tables: Vec<_> =
                             schema.tables.iter().filter(|t| t.kind == kind).collect();
                         let mut group = TreeItem::new(&format!("{id}:{title}"), title)
@@ -417,11 +435,13 @@ fn tree(
                         &[]
                     } else {
                         &[
-                            (RoutineKind::Function, "Funktionen"),
-                            (RoutineKind::Procedure, "Prozeduren"),
+                            (RoutineKind::Function, "functions"),
+                            (RoutineKind::Procedure, "procedures"),
                         ]
                     };
-                    for &(kind, title) in routine_groups {
+                    for &(kind, key) in routine_groups {
+                        let title = tr!(&format!("db.{key}"));
+                        let title = title.as_str();
                         let routines: Vec<_> =
                             schema.routines.iter().filter(|r| r.kind == kind).collect();
                         let mut group = TreeItem::new(&format!("{id}:{title}"), title)
@@ -478,15 +498,15 @@ const BAR: i32 = 36;
 
 impl DatabaseWindow {
     pub fn build() -> Self {
-        let window = RnclWindow::new("Datenbank");
+        let window = RnclWindow::new(&tr!("menu.window.database"));
         let pane = super::dock::DockPane::with_body(
             &window,
             crate::desktop::window::DATABASE,
-            "Datenbank",
+            &tr!("menu.window.database"),
         );
         let body = pane.body().clone();
-        let reload = RnclButton::new(&body, "Aktualisieren");
-        let test = RnclButton::new(&body, "Verbindung testen");
+        let reload = RnclButton::new(&body, &tr!("menu.git.refresh"));
+        let test = RnclButton::new(&body, &tr!("db.test_connection"));
         let hint = RnclLabel::new(&body, "");
         hint.set_word_wrap(true);
         let tree = RnclTreeView::new(&body);
@@ -528,14 +548,14 @@ impl DatabaseWindow {
             .collect();
         drop(session);
         let hint = if pools.is_empty() {
-            "Keine Datenbank im Projekt – einen SQLx-Pool oder Redis-Client aus der Palette ablegen."
+            tr!("db.none_hint")
         } else if ide.db_busy.get() > 0 {
-            "Lädt …"
+            tr!("db.busy")
         } else {
-            ""
+            String::new()
         };
         if self.hint.text() != hint {
-            self.hint.set_text(hint);
+            self.hint.set_text(&hint);
             let size = self.pane.body().size();
             self.layout(size.width, size.height);
         }
@@ -582,7 +602,7 @@ pub fn connect(ide: &Rc<Ide>) {
             .or_else(|| pools.first().cloned());
         match target {
             Some(pool) => ide.database_job(DbJob::Test, &pool),
-            None => ide.set_status("Keine Datenbank im Projekt."),
+            None => ide.set_status(&tr!("db.none")),
         }
     }));
     // Doppelklick auf einen Pool wählt ihn im Designer.

@@ -7,6 +7,7 @@
 //! debugger, Ctrl+F2 stop, F7 step into, F8 step over, Shift+F8 step out,
 //! F4 run to cursor, F5 toggle breakpoint, Ctrl+F5 watch expression.
 
+use crate::tr;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -116,8 +117,7 @@ impl Ide {
             let mut store = DebugStore::load(file);
             store.set(&key, settings.clone());
             if let Err(e) = store.save(file) {
-                self.main
-                    .set_status(&format!("Haltepunkte nicht gespeichert: {e}"));
+                self.main.set_status(&tr!("debugging.not_saved", error = e));
             }
         }
         if let Some(session) = self.debugging.borrow().session.as_ref()
@@ -248,7 +248,7 @@ impl Ide {
             Some(session) => session.execute(command),
             None => Err(DebugError {
                 code: "not_running",
-                detail: "Es läuft keine Debug-Sitzung.".into(),
+                detail: tr!("debugging.not_running"),
             }),
         };
         if let Err(e) = &result
@@ -285,8 +285,7 @@ impl Ide {
             return;
         }
         if self.debug_active() {
-            self.main
-                .set_status("Das Programm läuft bereits im Debugger.");
+            self.main.set_status(&tr!("debugging.already_running"));
             return;
         }
         self.debugging.borrow_mut().after_build = true;
@@ -327,7 +326,7 @@ impl Ide {
             Err(e) => {
                 self.output.line(channel::PROGRAM, &e.detail);
                 self.main
-                    .set_status(&format!("{} Das Programm startet ohne Debugger.", e.detail));
+                    .set_status(&tr!("debugging.without_debugger", detail = e.detail));
                 self.run_executable();
                 return;
             }
@@ -368,10 +367,10 @@ impl Ide {
                     d.seen = u64::MAX;
                     d.location = None;
                 }
-                self.main.set_status(&format!(
-                    "Debuggen: {} ({})",
-                    exe.display(),
-                    adapter.program.display()
+                self.main.set_status(&tr!(
+                    "debugging.debugging",
+                    program = exe.display(),
+                    adapter = adapter.program.display()
                 ));
                 self.show_window(window::DEBUGGER);
                 self.show_panel(Tab::Debug);
@@ -462,7 +461,7 @@ impl Ide {
             && let Some(State::Stopped { reason, .. }) = snap.as_ref().map(|s| &s.state)
             && reason == "panic"
         {
-            self.main.set_status("Panic – das Programm ist angehalten.");
+            self.main.set_status(&tr!("debugging.panic"));
         }
     }
 
@@ -512,24 +511,24 @@ impl Ide {
             Some(b) => Menu::new()
                 .item(
                     "dbg.bp.toggle",
-                    if b.enabled {
-                        "Haltepunkt deaktivieren"
+                    &tr!(if b.enabled {
+                        "gutter.disable"
                     } else {
-                        "Haltepunkt aktivieren"
-                    },
+                        "gutter.enable"
+                    }),
                     None,
                 )
-                .item("dbg.bp.condition", "Bedingung …", None)
-                .item("dbg.bp.hit", "Trefferzahl …", None)
-                .item("dbg.bp.log", "Logmeldung …", None)
-                .item("dbg.bp.remove", "Haltepunkt entfernen", None),
+                .item("dbg.bp.condition", &tr!("menu.dbg.bp.condition"), None)
+                .item("dbg.bp.hit", &tr!("menu.dbg.bp.hit"), None)
+                .item("dbg.bp.log", &tr!("menu.dbg.bp.log"), None)
+                .item("dbg.bp.remove", &tr!("gutter.remove"), None),
             None => Menu::new()
-                .item("dbg.bp.add", "Haltepunkt setzen", Some("F5"))
-                .item("dbg.bp.condition", "Bedingten Haltepunkt …", None)
-                .item("dbg.bp.log", "Logpoint …", None),
+                .item("dbg.bp.add", &tr!("gutter.add"), Some("F5"))
+                .item("dbg.bp.condition", &tr!("gutter.conditional"), None)
+                .item("dbg.bp.log", &tr!("gutter.logpoint"), None),
         }
         .separator()
-        .item("dbg.bp.run_to", "Bis hier ausführen", Some("F4"));
+        .item("dbg.bp.run_to", &tr!("gutter.run_to"), Some("F4"));
         editor.popup_menu(&menu, click.x, click.y);
     }
 
@@ -591,8 +590,7 @@ impl Ide {
             if self.debug_stopped() {
                 let _ = self.debug_command(&command);
             } else if !self.debug_active() {
-                self.main
-                    .set_status("Erst mit F9 im Debugger starten (oder F4: bis Cursor).");
+                self.main.set_status(&tr!("debugging.start_first"));
             }
         };
         match action {
@@ -626,8 +624,8 @@ impl Ide {
                     .unwrap_or_default();
                 if let Some(expression) = ruf::dialog::input(
                     Some(self.main.window.widget()),
-                    "Ausdruck überwachen",
-                    "Ausdruck:",
+                    &tr!("debugging.watch_title"),
+                    &tr!("debugging.expression"),
                     &word,
                 ) {
                     self.add_watch(&expression);
@@ -669,18 +667,18 @@ impl Ide {
                     }
                     "bp.run_to" => self.run_to(path, line),
                     "bp.condition" => self.edit_breakpoint(
-                        "Bedingung",
-                        "Anhalten, wenn dieser Ausdruck wahr ist (leer = immer):",
+                        &tr!("debugging.condition"),
+                        &tr!("debugging.condition_label"),
                         |b| &mut b.condition,
                     ),
                     "bp.hit" => self.edit_breakpoint(
-                        "Trefferzahl",
-                        "Anhalten beim n-ten Erreichen (z. B. 5; leer = immer):",
+                        &tr!("debugging.hits"),
+                        &tr!("debugging.hits_label"),
                         |b| &mut b.hit_condition,
                     ),
                     _ => self.edit_breakpoint(
-                        "Logmeldung",
-                        "Statt anzuhalten ausgeben; {ausdruck} wird ersetzt (leer = anhalten):",
+                        &tr!("debugging.log"),
+                        &tr!("debugging.log_label"),
                         |b| &mut b.log_message,
                     ),
                 }

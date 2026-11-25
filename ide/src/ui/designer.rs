@@ -261,12 +261,12 @@ fn context_menu(kind: Option<ItemKind>) -> Menu {
     let menu = Menu::new();
     match kind {
         Some(ItemKind::Widget) => menu
-            .item("designer.delete", "Löschen", Some("Delete"))
-            .item("designer.natural_size", "Natürliche Größe", None)
+            .item("designer.delete", &tr!("project.delete"), Some("Delete"))
+            .item("designer.natural_size", &tr!("designer.natural_size"), None)
             .separator()
             .item("designer.inspector", "Objektinspektor", None),
         Some(ItemKind::Component) => menu
-            .item("designer.delete", "Löschen", Some("Delete"))
+            .item("designer.delete", &tr!("project.delete"), Some("Delete"))
             .separator()
             .item("designer.inspector", "Objektinspektor", None),
         _ => menu.item("designer.inspector", "Objektinspektor", None),

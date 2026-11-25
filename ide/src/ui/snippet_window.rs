@@ -33,7 +33,7 @@ pub struct SnippetWindow {
 
 impl SnippetWindow {
     pub fn build() -> Self {
-        let window = RnclWindow::new("Snippet");
+        let window = RnclWindow::new(&tr!("window.snippet"));
         window.set_size(W, H);
         let labels = ["name", "description", "use_line", "code"]
             .map(|key| RnclLabel::new(&window, &tr!(&format!("snippet.{key}"))))
@@ -135,9 +135,7 @@ impl Ide {
                 let snippet = Snippet::new("", "", &use_lines.join(" "), &dedent(&body.join("\n")));
                 self.open_snippet_window(None, &snippet);
             }
-            None => self
-                .main
-                .set_status(&tr!("snippet.select_first")),
+            None => self.main.set_status(&tr!("snippet.select_first")),
         }
     }
 

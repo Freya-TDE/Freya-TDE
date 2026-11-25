@@ -27,6 +27,7 @@ mod toolbar;
 pub mod wizard_window;
 
 use crate::tools::NoConsole;
+use crate::tr;
 use std::cell::{Cell, RefCell};
 use std::path::{Path, PathBuf};
 use std::rc::{Rc, Weak};
@@ -720,7 +721,7 @@ impl Ide {
                     severity: tdr_core::Severity::Error,
                     code: "no_project",
                     path: String::new(),
-                    detail: "Das Projekt ist noch nicht gespeichert.".to_owned(),
+                    detail: tr!("ai.unsaved_project"),
                 }],
             });
         };
@@ -798,7 +799,7 @@ impl Ide {
             }
         } else if relative.ends_with(".ptdr") {
             if self.path.borrow().as_deref() == Some(path.as_path()) {
-                self.set_status("Das ist die geöffnete Projektdatei.");
+                self.set_status(&tr!("status.open_project_file"));
             } else if self.confirm_discard() {
                 self.open_path(&path);
             }
@@ -956,7 +957,7 @@ impl Ide {
         self.repo()
             .ok_or_else(|| GitError {
                 code: "not_a_repository",
-                detail: "Das Projekt liegt in keinem Git-Repository.".to_owned(),
+                detail: tr!("pm.no_repo"),
                 output: String::new(),
                 issues: Vec::new(),
             })?
@@ -1024,7 +1025,7 @@ impl Ide {
     /// Runs a Git operation in the background (push, pull, commit …).
     pub fn git_start(&self, op: GitOp) {
         if self.git_busy.get() {
-            self.set_status("Git arbeitet noch …");
+            self.set_status(&tr!("status.git_busy"));
             return;
         }
         if !self.git_confirm("Git", &op) {
@@ -1048,14 +1049,18 @@ impl Ide {
             GitOp::Fetch | GitOp::FetchAll => "Fetch",
             GitOp::Pull | GitOp::PullRebase => "Pull",
             GitOp::Push => "Push",
-            GitOp::PushTags => "Tags pushen",
+            GitOp::PushTags => "push_tags",
             GitOp::Sync => "Sync",
             _ => "Git",
-        }
-        .to_owned();
+        };
+        let what = if what == "push_tags" {
+            tr!("status.push_tags")
+        } else {
+            what.to_owned()
+        };
         let clear = matches!(op, GitOp::Commit { .. });
         self.git_busy.set(true);
-        self.set_status(&format!("{what} läuft …"));
+        self.set_status(&tr!("status.running", what = what));
         std::thread::spawn(move || {
             let result = repo.run(&op);
             sender.send((what, clear, None, result));
@@ -1102,11 +1107,7 @@ impl Ide {
     pub fn git_commit(&self, message: &str, amend: bool, then: After) {
         let parent = Some(self.git_window.window.widget());
         if self.code.has_unsaved()
-            && dialog::confirm(
-                parent,
-                "Commit",
-                "Es gibt ungespeicherte Dateien im Code-Editor. Vor dem Commit speichern?",
-            )
+            && dialog::confirm(parent, "Commit", &tr!("status.save_before_commit"))
         {
             match self.code.save_all() {
                 Ok(saved) => self.lsp_saved(&saved),
@@ -1119,11 +1120,7 @@ impl Ide {
         }
         let status = self.git_status().unwrap_or_default();
         if !amend && !status.has_staged() && !status.files.is_empty() {
-            if !dialog::confirm(
-                parent,
-                "Commit",
-                "Es sind keine Änderungen gestaged. Alle Änderungen stagen und committen?",
-            ) {
+            if !dialog::confirm(parent, "Commit", &tr!("status.stage_all_question")) {
                 return;
             }
             if let Err(e) = self.git_run(&GitOp::Stage { paths: vec![] }) {
@@ -1141,14 +1138,14 @@ impl Ide {
     /// Discards changes after asking (cannot be undone).
     pub fn git_discard(&self, paths: Vec<String>) {
         let what = if paths.is_empty() {
-            "alle Änderungen".to_owned()
+            tr!("status.all_changes")
         } else {
             paths.join(", ")
         };
         if !dialog::confirm(
             Some(self.git_window.window.widget()),
-            "Verwerfen",
-            &format!("Änderungen an {what} verwerfen? Das lässt sich nicht rückgängig machen."),
+            &tr!("status.discard"),
+            &tr!("status.discard_question", what = what),
         ) {
             return;
         }
@@ -1220,12 +1217,12 @@ impl Ide {
         let mut menu = Menu::new()
             .item(
                 &format!("git.refs:{REFS_AUTO}"),
-                &check(refs == LogRefs::Auto, "Auto – aktueller Zweig und Upstream"),
+                &check(refs == LogRefs::Auto, &tr!("status.refs_auto")),
                 None,
             )
             .item(
                 &format!("git.refs:{REFS_ALL}"),
-                &check(refs == LogRefs::All, "Alle Zweige und Tags"),
+                &check(refs == LogRefs::All, &tr!("status.refs_all")),
                 None,
             )
             .separator();
@@ -1293,7 +1290,7 @@ impl Ide {
     /// opens its project afterwards (if it has exactly one `.ptdr`).
     pub fn git_clone(&self, url: &str) {
         let parent = Some(self.git_window.window.widget());
-        let Some(folder) = dialog::choose_folder(parent, "Ordner für den Klon wählen") else {
+        let Some(folder) = dialog::choose_folder(parent, &tr!("status.clone_folder")) else {
             return;
         };
         let name = url
@@ -1316,10 +1313,10 @@ impl Ide {
             return;
         };
         if self.git_busy.replace(true) {
-            self.set_status("Git arbeitet noch …");
+            self.set_status(&tr!("status.git_busy"));
             return;
         }
-        self.set_status(&format!("Klone {url} …"));
+        self.set_status(&tr!("status.cloning", url = url));
         let askpass = self.askpass();
         let url = url.to_owned();
         std::thread::spawn(move || {
@@ -1345,21 +1342,18 @@ impl Ide {
                     self.open_path(project);
                 }
             }
-            _ => self.set_status(&format!(
-                "Geklont nach {} (kein einzelnes Freya-TDE-Projekt darin).",
-                dir.display()
-            )),
+            _ => self.set_status(&tr!("status.cloned", path = dir.display())),
         }
     }
 
     /// `git init` in the project folder.
     pub fn git_init(&self) {
         let Some(dir) = self.session().project_dir() else {
-            self.set_status("Das Projekt ist noch nicht gespeichert.");
+            self.set_status(&tr!("ai.unsaved_project"));
             return;
         };
         if self.repo().is_some() {
-            self.set_status("Das Projekt liegt schon in einem Git-Repository.");
+            self.set_status(&tr!("status.already_repo"));
             return;
         }
         match Git::init(&dir) {
@@ -1382,12 +1376,12 @@ impl Ide {
             Ok(diff) => {
                 let name = path.rsplit_once('/').map_or(path, |(_, n)| n);
                 let label = if staged {
-                    format!("{name} (gestaged)")
+                    tr!("status.diff_staged", name = name)
                 } else {
-                    format!("{name} (Änderungen)")
+                    tr!("status.diff_changes", name = name)
                 };
                 let text = if diff.text.is_empty() {
-                    "(keine Unterschiede)".to_owned()
+                    tr!("status.no_differences")
                 } else {
                     diff.text
                 };
@@ -1876,8 +1870,8 @@ impl Ide {
         !(self.session.borrow().is_modified() || self.code.has_unsaved() || parked_dirty)
             || dialog::confirm(
                 Some(self.main.window.widget()),
-                "Ungespeicherte Änderungen",
-                "Das Projekt hat ungespeicherte Änderungen. Verwerfen?",
+                &tr!("status.unsaved_title"),
+                &tr!("status.unsaved_question"),
             )
     }
 
@@ -1901,7 +1895,7 @@ impl Ide {
             )
         {
             self.main
-                .set_status(&format!("Kein Projekt mit {backend} angelegt."));
+                .set_status(&tr!("status.no_project_with", backend = backend));
             return;
         }
         self.new_project_with_notice_accepted(backend);
@@ -1950,10 +1944,12 @@ impl Ide {
         if !self.confirm_discard() {
             return;
         }
-        let filters = [FileFilter::new("Freya-TDE-Projekt", &["*.ptdr"])];
-        if let Some(path) =
-            dialog::open_file(Some(self.main.window.widget()), "Projekt öffnen", &filters)
-        {
+        let filters = [FileFilter::new(&tr!("pm.filter"), &["*.ptdr"])];
+        if let Some(path) = dialog::open_file(
+            Some(self.main.window.widget()),
+            &tr!("status.open_project"),
+            &filters,
+        ) {
             self.open_path(&path);
         }
     }
@@ -1974,7 +1970,7 @@ impl Ide {
                 let mut notes: Vec<String> = report
                     .missing_packs
                     .iter()
-                    .map(|p| format!("Pack „{p}“ nicht gefunden"))
+                    .map(|p| tr!("status.pack_missing", pack = p))
                     .collect();
                 notes.extend(report.pack_errors.iter().map(ToString::to_string));
                 self.main.set_status(&notes.join("; "));
@@ -1988,7 +1984,7 @@ impl Ide {
             Err(e) => {
                 dialog::error(
                     Some(self.main.window.widget()),
-                    "Projekt öffnen",
+                    &tr!("status.open_project"),
                     &e.to_string(),
                 );
                 false
@@ -2002,7 +1998,7 @@ impl Ide {
         if let Some(file) = &self.projects_file
             && let Err(e) = self.projects.borrow().save(file)
         {
-            self.set_status(&format!("Projektliste nicht gespeichert: {e}"));
+            self.set_status(&tr!("status.list_not_saved", error = e));
         }
     }
 
@@ -2127,7 +2123,7 @@ impl Ide {
     /// opening another main project).
     pub fn close_project(&self, path: &Path) {
         if self.main_project().as_deref() == Some(path) {
-            self.set_status("Das Hauptprojekt schließt beim Öffnen eines anderen Projekts.");
+            self.set_status(&tr!("status.main_closes"));
             return;
         }
         let parent = Some(self.main.window.widget());
@@ -2135,8 +2131,8 @@ impl Ide {
             !dirty
                 || dialog::confirm(
                     parent,
-                    "Projekt schließen",
-                    "Das Projekt hat ungespeicherte Änderungen. Verwerfen?",
+                    &tr!("status.close_project"),
+                    &tr!("status.unsaved_question"),
                 )
         };
         if self.path.borrow().as_deref() == Some(path) {
@@ -2194,7 +2190,7 @@ impl Ide {
         let dir = self
             .session()
             .project_dir()
-            .ok_or("Das Projekt ist noch nicht gespeichert.")?;
+            .ok_or_else(|| tr!("ai.unsaved_project"))?;
         let mut session = self.session.borrow_mut();
         session.document_mut().set_git(git);
         session
@@ -2215,7 +2211,7 @@ impl Ide {
             Some(dir) => dir,
             None => match dialog::choose_folder(
                 Some(self.main.window.widget()),
-                "Ordner für das Projekt wählen",
+                &tr!("status.project_folder"),
             ) {
                 Some(dir) => dir,
                 None => return false,
@@ -2283,9 +2279,9 @@ impl Ide {
                 }
                 self.set_codegen_problems(&generation);
                 self.main.set_status(&if written.is_empty() {
-                    "Code ist aktuell.".to_owned()
+                    tr!("status.code_current")
                 } else {
-                    format!("Code erzeugt: {}", written.join(", "))
+                    tr!("status.code_written", files = written.join(", "))
                 });
                 self.refresh(Changes {
                     model: true,
@@ -2298,7 +2294,7 @@ impl Ide {
                 if let Some(generation) = self.session().generation() {
                     self.set_codegen_problems(&generation);
                 }
-                self.main.set_status(&format!("Code nicht erzeugt: {e}"));
+                self.main.set_status(&tr!("status.code_failed", error = e));
                 self.show_panel(Tab::Problems);
                 None
             }
@@ -2309,7 +2305,7 @@ impl Ide {
     /// background); `then_run` starts it when the build succeeds.
     pub fn build(&self, then_run: bool) {
         if self.building.get() {
-            self.main.set_status("Es läuft bereits ein Build.");
+            self.main.set_status(&tr!("status.build_running"));
             return;
         }
         // Nur verwaltete Projekte (aus einer Cargo.toml) bauen ohne Codeerzeugung.
@@ -2337,7 +2333,7 @@ impl Ide {
         };
         self.building.set(true);
         self.run_after_build.set(then_run);
-        self.main.set_status("Baue …");
+        self.main.set_status(&tr!("status.building"));
         self.output.clear(channel::BUILD);
         self.output.line(
             channel::BUILD,
@@ -2349,7 +2345,7 @@ impl Ide {
                     success: false,
                     messages: vec![tdr_core::preview::BuildMessage {
                         severity: tdr_core::Severity::Error,
-                        message: format!("cargo konnte nicht gestartet werden: {e}"),
+                        message: tr!("status.cargo_failed", error = e),
                         code: None,
                         file: None,
                         line: None,
@@ -2376,17 +2372,17 @@ impl Ide {
         }
         self.output.line(
             channel::BUILD,
-            if report.success {
-                "Build erfolgreich."
+            &tr!(if report.success {
+                "status.build_ok"
             } else {
-                "Build fehlgeschlagen."
-            },
+                "status.build_failed"
+            }),
         );
         self.set_build_marks(&report, dir.as_deref());
         let errors = report.errors().count();
         if report.success {
             *self.executable.borrow_mut() = report.executable.clone();
-            self.main.set_status("Build erfolgreich.");
+            self.main.set_status(&tr!("status.build_ok"));
             if self.run_after_build.replace(false) {
                 self.launch_after_build();
             }
@@ -2394,7 +2390,7 @@ impl Ide {
             self.run_after_build.set(false);
             self.cancel_launch();
             self.main
-                .set_status(&format!("Build fehlgeschlagen ({errors} Fehler)."));
+                .set_status(&tr!("status.build_failed_count", errors = errors));
             self.show_panel(Tab::Problems);
         }
     }
@@ -2456,8 +2452,8 @@ impl Ide {
                 std::thread::spawn(move || {
                     let status = child.wait();
                     let text = match status {
-                        Ok(s) => format!("Programm beendet ({s})."),
-                        Err(e) => format!("Programm: {e}"),
+                        Ok(s) => tr!("status.program_ended", status = s),
+                        Err(e) => tr!("status.program_error", error = e),
                     };
                     output.line(channel::PROGRAM, &text);
                 });
@@ -2469,7 +2465,7 @@ impl Ide {
                     self.show_output(channel::PROGRAM);
                 }
             }
-            Err(e) => self.main.set_status(&format!("Start fehlgeschlagen: {e}")),
+            Err(e) => self.main.set_status(&tr!("status.start_failed", error = e)),
         }
     }
 
@@ -2550,8 +2546,8 @@ impl Ide {
                 }
             }
             let text = match start(crate::flutter::run_command(&app, &name)) {
-                Ok(status) => format!("Programm beendet ({status})."),
-                Err(e) => format!("Programm: {e}"),
+                Ok(status) => tr!("status.program_ended", status = status),
+                Err(e) => tr!("status.program_error", error = e),
             };
             output.line(channel::PROGRAM, &text);
         });
@@ -2631,12 +2627,8 @@ impl Ide {
     pub fn show_code(&self) {
         match self.session().form_source() {
             Some(path) if path.exists() => self.open_source(&path, 1),
-            Some(_) => self
-                .main
-                .set_status("Noch kein Code – „Code erzeugen“ (Strg+G) legt ihn an."),
-            None => self
-                .main
-                .set_status("Das Projekt ist noch nicht gespeichert."),
+            Some(_) => self.main.set_status(&tr!("status.no_code_yet")),
+            None => self.main.set_status(&tr!("ai.unsaved_project")),
         }
     }
 
@@ -2758,9 +2750,9 @@ impl Ide {
         }
         match self.with_lsp(|lsp| lsp.code_actions(&path, line, column)) {
             Some(id) => *self.codetools_request.borrow_mut() = Some((id, path, line, column)),
-            None => self.main.set_status(&format!(
-                "Code vervollständigen: rust-analyzer ist (noch) nicht bereit ({}).",
-                crate::codetools::codes::ANALYZER_MISSING
+            None => self.main.set_status(&tr!(
+                "status.analyzer_not_ready",
+                code = crate::codetools::codes::ANALYZER_MISSING
             )),
         }
     }
@@ -2781,16 +2773,19 @@ impl Ide {
                 // Cursor auf die Zeile mit `fn` der neuen Methode.
                 let line = edit.line + edit.new_text.chars().take_while(|c| *c == '\n').count();
                 self.code.set_cursor(path, line, 0);
-                Ok(format!("Methode {name} angelegt."))
+                Ok(tr!("status.method_added", name = name))
             }
             Completion::TraitMembers { edits } => {
                 let text = self.code_text(path).unwrap_or_default();
                 self.set_code_text(path, &apply(&text, edits));
-                Ok("Fehlende Trait-Methoden angelegt.".to_owned())
+                Ok(tr!("status.trait_members_added"))
             }
             Completion::Field { name, rust_type } => {
                 self.add_state_field(path, &format!("{name}: {rust_type}"))?;
-                Ok(format!("Feld {name}: {rust_type} im Formular angelegt."))
+                Ok(tr!(
+                    "status.field_added",
+                    field = format!("{name}: {rust_type}")
+                ))
             }
         }
     }
@@ -2819,7 +2814,7 @@ impl Ide {
                 .ok_or_else(|| {
                     fail(
                         codes::NO_FORM,
-                        format!("kein Formular zu {}", path.display()),
+                        tr!("status.no_form_for", path = path.display()),
                     )
                 })?;
             let root = form.root.as_ref().expect("root").component.clone();
@@ -2961,22 +2956,24 @@ impl Ide {
                         // Den Typ bestätigen lassen (Vorschlag aus der Verwendung).
                         let Some(entry) = dialog::input(
                             Some(self.code.window.widget()),
-                            "Feld anlegen",
-                            "Eigenes Feld des Formulars (Name: Typ, optional = Startwert):",
+                            &tr!("status.add_field"),
+                            &tr!("status.add_field_label"),
                             &format!("{name}: {rust_type}"),
                         ) else {
                             return;
                         };
                         match self.add_state_field(&path, &entry) {
-                            Ok(()) => format!("Feld {} im Formular angelegt.", entry.trim()),
-                            Err(e) => format!("Feld nicht angelegt: {} ({})", e.detail, e.code),
+                            Ok(()) => tr!("status.field_added", field = entry.trim()),
+                            Err(e) => {
+                                tr!("status.field_failed", detail = e.detail, code = e.code)
+                            }
                         }
                     }
                     Ok(completion) => match self.apply_completion(&path, &completion) {
                         Ok(status) => status,
                         Err(e) => format!("{} ({})", e.detail, e.code),
                     },
-                    Err(e) => format!("Code vervollständigen: {} ({})", e.detail, e.code),
+                    Err(e) => tr!("status.complete_failed", detail = e.detail, code = e.code),
                 };
                 self.main.set_status(&status);
             }
@@ -2990,14 +2987,14 @@ impl Ide {
                         self.open_source(&at.path, at.line);
                         self.code.set_cursor(&at.path, at.line, at.column);
                     }
-                    _ => self.main.set_status("Keine Definition gefunden."),
+                    _ => self.main.set_status(&tr!("status.no_definition")),
                 }
             }
             LspEvent::Error { request, message } => {
                 if request.is_some() && request == self.definition_request.get() {
                     self.definition_request.set(None);
                     self.main
-                        .set_status(&format!("Gehe zu Definition: {message}"));
+                        .set_status(&tr!("status.definition_error", message = message));
                 } else if request.is_some() && request == self.completion_request.get() {
                     self.completion_request.set(None);
                 }
@@ -3035,7 +3032,7 @@ impl Ide {
             .borrow()
             .as_ref()
             .map(|p| format!(" – {}", p.display()))
-            .unwrap_or_else(|| " – (nicht gespeichert)".to_owned());
+            .unwrap_or_else(|| format!(" – ({})", tr!("status.not_saved")));
         format!(
             "Freya TDE – {}{dirty}{path}",
             session.document().project().name

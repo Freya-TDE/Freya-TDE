@@ -74,7 +74,7 @@ impl Ide {
         let (path, text, (line, column)) = self
             .code
             .current_state()
-            .ok_or("Kein Code geöffnet: erst eine Datei im Code-Fenster öffnen.")?;
+            .ok_or_else(|| tr!("toolbar.no_code"))?;
         let done = crate::snippets::insert(&text, line, column, &snippet);
         self.set_code_text(&path, &done.text);
         self.code.set_cursor(&path, done.line, done.column);
@@ -85,7 +85,7 @@ impl Ide {
         match self.insert_snippet(name) {
             Ok(_) => {
                 self.main
-                    .set_status(&format!("Snippet „{name}“ eingefügt."));
+                    .set_status(&tr!("toolbar.snippet_inserted", name = name));
                 self.show_code();
             }
             Err(e) => self.main.set_status(&e),
@@ -98,18 +98,17 @@ impl Ide {
     /// output channel "Build" (check/clippy also to the problems).
     pub fn run_tool(&self, tool: Tool) {
         if self.tool_busy.get() || self.building.get() {
-            self.main
-                .set_status("Es läuft schon ein Werkzeug oder Build.");
+            self.main.set_status(&tr!("toolbar.busy"));
             return;
         }
         let Some(dir) = self.session().project_dir() else {
-            self.main.set_status("Erst das Projekt speichern.");
+            self.main.set_status(&tr!("toolbar.save_first"));
             return;
         };
         if !tool.applies(&dir) {
             self.main.set_status(&match tool {
-                Tool::SqlxPrepare => "SQLx prepare: das Projekt nutzt kein SQLx.".to_owned(),
-                _ => "Das Projekt hat noch keine Cargo.toml (Code erzeugen).".to_owned(),
+                Tool::SqlxPrepare => tr!("toolbar.no_sqlx"),
+                _ => tr!("toolbar.no_cargo"),
             });
             return;
         }
@@ -212,13 +211,10 @@ impl Ide {
                     })
                     .collect();
                 if changes.is_empty() {
-                    self.main.set_status("cargo update: alles ist aktuell.");
+                    self.main.set_status(&tr!("toolbar.up_to_date"));
                     return;
                 }
-                let question = format!(
-                    "cargo update würde ändern:\n\n{}\n\nCargo.lock jetzt aktualisieren?",
-                    changes.join("\n")
-                );
+                let question = tr!("toolbar.update_question", changes = changes.join("\n"));
                 if dialog::confirm(Some(self.main.window.widget()), "cargo update", &question) {
                     self.run_update_now();
                 } else {

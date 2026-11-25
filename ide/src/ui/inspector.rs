@@ -503,7 +503,10 @@ impl InspectorWindow {
         }
         if !row.platforms.is_empty() {
             let platforms: Vec<String> = row.platforms.iter().map(ToString::to_string).collect();
-            tip.push_str(&tr!("inspector.platforms_only", platforms = platforms.join(", ")));
+            tip.push_str(&tr!(
+                "inspector.platforms_only",
+                platforms = platforms.join(", ")
+            ));
         }
         label.widget().set_tool_tip(tip.trim());
 
@@ -665,9 +668,7 @@ impl InspectorWindow {
 
         let reset = row.value.is_some().then(|| {
             let button = RnclButton::new(page, "↺");
-            button
-                .widget()
-                .set_tool_tip(&tr!("inspector.reset_tip"));
+            button.widget().set_tool_tip(&tr!("inspector.reset_tip"));
             let (form, element, property) = (
                 target.form.clone().expect("qualified"),
                 target.name.clone(),

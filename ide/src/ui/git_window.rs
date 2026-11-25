@@ -6,6 +6,7 @@
 //! fetch, pull, push, refresh). The logic is [`crate::git`]; the window
 //! shows [`Ide`]'s Git state and forwards input.
 
+use crate::tr;
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 use std::rc::Rc;
@@ -32,11 +33,14 @@ const MESSAGE_PADDING: i32 = 10;
 const MIN_PART: i32 = 60;
 
 /// The commit shortcut as the user presses it (RUF maps Ctrl to Cmd on macOS).
-const COMMIT_KEY: &str = if cfg!(target_os = "macos") {
-    "⌘+Enter"
-} else {
-    "Strg+Enter"
-};
+/// Keys for a commit (Ctrl+Enter, on macOS ⌘+Enter) in the language.
+fn commit_key() -> String {
+    if cfg!(target_os = "macos") {
+        "⌘+Enter".to_owned()
+    } else {
+        format!("{}+Enter", tr!("keys.ctrl"))
+    }
+}
 
 /// Height of a graph row and width of a lane.
 const ROW: i32 = 22;
@@ -162,9 +166,9 @@ fn change_items(status: &Status, as_tree: bool) -> Vec<TreeItem> {
         .collect();
     let mut items = Vec::new();
     if !staged.is_empty() {
-        items.push(group(STAGED, "Gestaged", "s", staged));
+        items.push(group(STAGED, &tr!("git.staged"), "s", staged));
     }
-    items.push(group(UNSTAGED, "Änderungen", "u", unstaged));
+    items.push(group(UNSTAGED, &tr!("git.sub.changes"), "u", unstaged));
     items
 }
 
@@ -282,97 +286,109 @@ fn graph_shapes(commits: &[Commit], rows: &[GraphRow]) -> Vec<Shape> {
 /// window's menu bar.
 pub(super) fn more_actions() -> Menu {
     Menu::new()
-        .item("git.pull", "Pull", None)
-        .item("git.push", "Push", None)
-        .item("git.clone", "Klonen …", None)
-        .item("git.checkout_to", "Auschecken nach …", None)
-        .item("git.fetch", "Fetch", None)
+        .item("git.pull", &tr!("menu.git.pull"), None)
+        .item("git.push", &tr!("menu.git.push"), None)
+        .item("git.clone", &tr!("menu.git.clone"), None)
+        .item("git.checkout_to", &tr!("menu.git.checkout_to"), None)
+        .item("git.fetch", &tr!("menu.git.fetch"), None)
         .separator()
         .submenu(
-            "Commit",
+            &tr!("git.sub.commit"),
             Menu::new()
-                .item("git.commit", "Commit", Some("Ctrl+Enter"))
-                .item("git.commit_amend", "Commit (Amend)", None)
-                .item("git.commit_push", "Commit & Push", None)
-                .item("git.commit_sync", "Commit & Sync", None)
-                .item("git.commit_pr", "Commit & Create Pull Request", None)
+                .item("git.commit", &tr!("menu.git.commit"), Some("Ctrl+Enter"))
+                .item("git.commit_amend", &tr!("menu.git.commit_amend"), None)
+                .item("git.commit_push", &tr!("menu.git.commit_push"), None)
+                .item("git.commit_sync", &tr!("menu.git.commit_sync"), None)
+                .item("git.commit_pr", &tr!("menu.git.commit_pr"), None)
                 .separator()
-                .item("git.undo_commit", "Letzten Commit rückgängig", None),
+                .item("git.undo_commit", &tr!("menu.git.undo_commit"), None),
         )
         .submenu(
-            "Änderungen",
+            &tr!("git.sub.changes"),
             Menu::new()
-                .item("git.stage_all", "Alle stagen", None)
-                .item("git.unstage_all", "Alle unstagen", None)
-                .item("git.discard_all", "Alle verwerfen …", None),
+                .item("git.stage_all", &tr!("menu.git.stage_all"), None)
+                .item("git.unstage_all", &tr!("menu.git.unstage_all"), None)
+                .item("git.discard_all", &tr!("menu.git.discard_all"), None),
         )
         .submenu(
-            "Pull, Push",
+            &tr!("git.sub.pull_push"),
             Menu::new()
-                .item("git.sync", "Sync", None)
+                .item("git.sync", &tr!("menu.git.sync"), None)
                 .separator()
-                .item("git.pull", "Pull", None)
-                .item("git.pull_rebase", "Pull (Rebase)", None)
-                .item("git.push", "Push", None)
+                .item("git.pull", &tr!("menu.git.pull"), None)
+                .item("git.pull_rebase", &tr!("menu.git.pull_rebase"), None)
+                .item("git.push", &tr!("menu.git.push"), None)
                 .separator()
-                .item("git.fetch", "Fetch", None)
-                .item("git.fetch_all", "Fetch (alle Remotes)", None),
+                .item("git.fetch", &tr!("menu.git.fetch"), None)
+                .item("git.fetch_all", &tr!("menu.git.fetch_all"), None),
         )
         .submenu(
-            "Zweig",
+            &tr!("git.sub.branch"),
             Menu::new()
-                .item("git.merge", "Zusammenführen …", None)
-                .item("git.rebase", "Rebase …", None)
+                .item("git.merge", &tr!("menu.git.merge"), None)
+                .item("git.rebase", &tr!("menu.git.rebase"), None)
                 .separator()
-                .item("git.branch", "Neuer Zweig …", None)
-                .item("git.rename_branch", "Umbenennen …", None)
-                .item("git.delete_branch", "Löschen …", None)
+                .item("git.branch", &tr!("menu.git.branch"), None)
+                .item("git.rename_branch", &tr!("menu.git.rename_branch"), None)
+                .item("git.delete_branch", &tr!("menu.git.delete_branch"), None)
                 .separator()
-                .item("git.publish", "Veröffentlichen", None),
+                .item("git.publish", &tr!("menu.git.publish"), None),
         )
         .submenu(
-            "Remote",
+            &tr!("git.sub.remote"),
             Menu::new()
-                .item("git.add_remote", "Remote hinzufügen …", None)
-                .item("git.remove_remote", "Remote entfernen …", None),
+                .item("git.add_remote", &tr!("menu.git.add_remote"), None)
+                .item("git.remove_remote", &tr!("menu.git.remove_remote"), None),
         )
         .submenu(
-            "Stash",
+            &tr!("git.sub.stash"),
             Menu::new()
-                .item("git.stash", "Zurücklegen", None)
+                .item("git.stash", &tr!("menu.git.stash"), None)
                 .item(
                     "git.stash_untracked",
-                    "Zurücklegen (mit neuen Dateien)",
+                    &tr!("menu.git.stash_untracked"),
                     None,
                 )
                 .separator()
-                .item("git.stash_pop_latest", "Letzten zurückholen", None)
-                .item("git.stash_apply_pick", "Anwenden …", None)
-                .item("git.stash_pop_pick", "Zurückholen …", None)
-                .item("git.stash_drop_pick", "Verwerfen …", None),
+                .item(
+                    "git.stash_pop_latest",
+                    &tr!("menu.git.stash_pop_latest"),
+                    None,
+                )
+                .item(
+                    "git.stash_apply_pick",
+                    &tr!("menu.git.stash_apply_pick"),
+                    None,
+                )
+                .item("git.stash_pop_pick", &tr!("menu.git.stash_pop_pick"), None)
+                .item(
+                    "git.stash_drop_pick",
+                    &tr!("menu.git.stash_drop_pick"),
+                    None,
+                ),
         )
         .submenu(
-            "Tags",
+            &tr!("git.sub.tags"),
             Menu::new()
-                .item("git.create_tag", "Tag anlegen …", None)
-                .item("git.delete_tag", "Tag löschen …", None)
+                .item("git.create_tag", &tr!("menu.git.create_tag"), None)
+                .item("git.delete_tag", &tr!("menu.git.delete_tag"), None)
                 .separator()
-                .item("git.push_tags", "Tags pushen", None),
+                .item("git.push_tags", &tr!("menu.git.push_tags"), None),
         )
         .separator()
-        .item("git.output", "Git-Ausgabe anzeigen", None)
-        .item("git.init", "Repository anlegen", None)
-        .item("git.refresh", "Aktualisieren", Some("F5"))
+        .item("git.output", &tr!("menu.git.output"), None)
+        .item("git.init", &tr!("menu.git.init"), None)
+        .item("git.refresh", &tr!("menu.git.refresh"), Some("F5"))
 }
 
 fn commit_menu() -> Menu {
     Menu::new()
-        .item("git.commit", "Commit", None)
-        .item("git.commit_amend", "Commit (Amend)", None)
+        .item("git.commit", &tr!("menu.git.commit"), None)
+        .item("git.commit_amend", &tr!("menu.git.commit_amend"), None)
         .separator()
-        .item("git.commit_push", "Commit & Push", None)
-        .item("git.commit_sync", "Commit & Sync", None)
-        .item("git.commit_pr", "Commit & Create Pull Request", None)
+        .item("git.commit_push", &tr!("menu.git.commit_push"), None)
+        .item("git.commit_sync", &tr!("menu.git.commit_sync"), None)
+        .item("git.commit_pr", &tr!("menu.git.commit_pr"), None)
 }
 
 fn icon_button(window: &RnclPanel, text: &str, tip: &str) -> RnclButton {
@@ -415,31 +431,27 @@ pub struct GitWindow {
 
 impl GitWindow {
     pub fn build() -> Self {
-        let window = RnclWindow::new("Quellcodeverwaltung");
+        let window = RnclWindow::new(&tr!("menu.window.git"));
         let pane = super::dock::DockPane::with_body(
             &window,
             crate::desktop::window::GIT,
-            "Quellcodeverwaltung",
+            &tr!("menu.window.git"),
         );
         let body = pane.body().clone();
         window.set_menu_bar(vec![("Git".into(), more_actions())]);
         let repo_name = RnclLabel::new(&body, "");
-        let branch = icon_button(&body, "⎇", "Zweig oder Tag auschecken …");
-        let sync = icon_button(&body, "⟳", "Änderungen synchronisieren");
-        let more = icon_button(&body, "⋯", "Weitere Aktionen …");
+        let branch = icon_button(&body, "⎇", &tr!("git.checkout_tip"));
+        let sync = icon_button(&body, "⟳", &tr!("git.sync_tip"));
+        let more = icon_button(&body, "⋯", &tr!("git.more_tip"));
         let message = RnclTextArea::new(&body);
-        message.set_placeholder(&format!("Nachricht ({COMMIT_KEY} für Commit)"));
+        message.set_placeholder(&tr!("git.message_placeholder", key = commit_key()));
         message.set_word_wrap(true);
         let commit = RnclButton::new(&body, "✓ Commit");
-        let variants = icon_button(
-            &body,
-            "▾",
-            "Commit (Amend), Commit & Push, Commit & Sync, Commit & Create Pull Request",
-        );
+        let variants = icon_button(&body, "▾", &tr!("git.variants_tip"));
         let changes = RnclTreeView::new(&body);
         let splitter = RnclSplitter::new(&body, true);
         let graph_title = RnclLabel::new(&body, "<b>Graph</b>");
-        let graph_refs = icon_button(&body, "⎇ Auto", "Angezeigte Zweige wählen");
+        let graph_refs = icon_button(&body, "⎇ Auto", &tr!("git.refs_tip"));
         let graph_tools = [
             // ⊙ statt ◎: ◎ fehlt in den macOS-Schriften.
             ("⊙", "Zum aktuellen Commit", "git.goto_head"),
@@ -572,14 +584,13 @@ impl GitWindow {
         *self.status.borrow_mut() = status.cloned();
         self.show_changes();
         let Some(status) = status else {
-            self.repo_name
-                .set_text("Kein Git-Repository – Git → Repository anlegen");
+            self.repo_name.set_text(&tr!("git.no_repo"));
             self.branch.set_text("⎇");
             self.commit.set_text("✓ Commit");
             for button in [&self.commit, &self.variants, &self.branch, &self.sync] {
                 button.widget().set_enabled(false);
             }
-            self.window.set_title("Quellcodeverwaltung");
+            self.window.set_title(&tr!("menu.window.git"));
             return;
         };
         self.repo_name.set_text(&format!("<b>{name}</b>"));
@@ -589,8 +600,13 @@ impl GitWindow {
         self.sync
             .set_text(if behind + ahead > 0 { "⟳•" } else { "⟳" });
         self.sync.widget().set_tool_tip(&match &status.upstream {
-            Some(up) => format!("Änderungen synchronisieren: {behind}↓ {ahead}↑ mit {up}"),
-            None => "Zweig veröffentlichen".to_owned(),
+            Some(up) => tr!(
+                "git.sync_with",
+                behind = behind,
+                ahead = ahead,
+                upstream = up
+            ),
+            None => tr!("git.publish_branch"),
         });
         // Wie VS Code: ohne Änderungen, aber mit ausstehenden Commits → Sync.
         let changes = status.files.len();
@@ -603,7 +619,7 @@ impl GitWindow {
         let branch = status.branch.as_deref().unwrap_or("HEAD");
         self.commit
             .widget()
-            .set_tool_tip(&format!("Änderungen auf „{branch}“ committen"));
+            .set_tool_tip(&tr!("git.commit_tip", branch = branch));
         self.commit
             .widget()
             .set_enabled(changes > 0 || ahead > 0 || behind > 0);
@@ -611,12 +627,14 @@ impl GitWindow {
             button.widget().set_enabled(true);
         }
         self.window.set_title(&if changes > 0 {
-            format!("Quellcodeverwaltung ({changes})")
+            format!("{} ({changes})", tr!("menu.window.git"))
         } else {
-            "Quellcodeverwaltung".to_owned()
+            tr!("menu.window.git")
         });
-        self.message.set_placeholder(&format!(
-            "Nachricht ({COMMIT_KEY} für Commit auf „{branch}“)"
+        self.message.set_placeholder(&tr!(
+            "git.message_placeholder_branch",
+            key = commit_key(),
+            branch = branch
         ));
     }
 
@@ -631,10 +649,10 @@ impl GitWindow {
         let rows = crate::git::graph(&commits);
         self.graph.set_shapes(graph_shapes(&commits, &rows));
         *self.commits.borrow_mut() = commits;
-        self.graph_refs.set_text(match refs {
-            LogRefs::Auto => "⎇ Auto",
-            LogRefs::All => "⎇ Alle",
-            LogRefs::Some(_) => "⎇ Auswahl",
+        self.graph_refs.set_text(&match refs {
+            LogRefs::Auto => "⎇ Auto".to_owned(),
+            LogRefs::All => format!("⎇ {}", tr!("git.refs_all")),
+            LogRefs::Some(_) => format!("⎇ {}", tr!("git.refs_some")),
         });
         self.layout_graph();
     }
@@ -658,26 +676,28 @@ impl GitWindow {
     fn context_menu(&self, id: &str) -> Menu {
         match id.split_once(':') {
             Some(("s", _)) => Menu::new()
-                .item("git.file_diff", "Änderungen ansehen", None)
-                .item("git.file_open", "Datei öffnen", None)
+                .item("git.file_diff", &tr!("git.ctx.diff"), None)
+                .item("git.file_open", &tr!("git.ctx.open"), None)
                 .separator()
-                .item("git.file_unstage", "Unstagen", None),
+                .item("git.file_unstage", &tr!("git.ctx.unstage"), None),
             Some(("u", _)) => Menu::new()
-                .item("git.file_diff", "Änderungen ansehen", None)
-                .item("git.file_open", "Datei öffnen", None)
+                .item("git.file_diff", &tr!("git.ctx.diff"), None)
+                .item("git.file_open", &tr!("git.ctx.open"), None)
                 .separator()
-                .item("git.file_stage", "Stagen", None)
-                .item("git.file_discard", "Änderungen verwerfen …", None),
-            Some(("sd", _)) => Menu::new().item("git.file_unstage", "Ordner unstagen", None),
+                .item("git.file_stage", &tr!("git.ctx.stage"), None)
+                .item("git.file_discard", &tr!("git.ctx.discard"), None),
+            Some(("sd", _)) => {
+                Menu::new().item("git.file_unstage", &tr!("git.ctx.unstage_folder"), None)
+            }
             Some(("ud", _)) => Menu::new()
-                .item("git.file_stage", "Ordner stagen", None)
-                .item("git.file_discard", "Ordner verwerfen …", None),
-            _ if id == STAGED => Menu::new().item("git.unstage_all", "Alle unstagen", None),
-            _ => Menu::new().item("git.stage_all", "Alle stagen", None).item(
-                "git.discard_all",
-                "Alle verwerfen …",
-                None,
-            ),
+                .item("git.file_stage", &tr!("git.ctx.stage_folder"), None)
+                .item("git.file_discard", &tr!("git.ctx.discard_folder"), None),
+            _ if id == STAGED => {
+                Menu::new().item("git.unstage_all", &tr!("menu.git.unstage_all"), None)
+            }
+            _ => Menu::new()
+                .item("git.stage_all", &tr!("menu.git.stage_all"), None)
+                .item("git.discard_all", &tr!("menu.git.discard_all"), None),
         }
     }
 
@@ -704,14 +724,15 @@ impl GitWindow {
     }
 
     fn view_menu(&self) -> Menu {
+        let (list, tree) = (tr!("git.view_list"), tr!("git.view_tree"));
         let (list, tree) = if self.as_tree.get() {
-            ("Als Liste anzeigen", "✓ Als Baum anzeigen")
+            (list, format!("✓ {tree}"))
         } else {
-            ("✓ Als Liste anzeigen", "Als Baum anzeigen")
+            (format!("✓ {list}"), tree)
         };
         Menu::new()
-            .item("git.view_list", list, None)
-            .item("git.view_tree", tree, None)
+            .item("git.view_list", &list, None)
+            .item("git.view_tree", &tree, None)
     }
 
     pub(super) fn menu(&self, ide: &Ide, id: &str) {
@@ -743,7 +764,7 @@ impl GitWindow {
             "git.push" | "git.publish" => ide.git_start(GitOp::Push),
             "git.sync" => ide.git_start(GitOp::Sync),
             "git.clone" => {
-                if let Some(url) = self.ask("Klonen", "Adresse des Repositorys:", "") {
+                if let Some(url) = self.ask(&tr!("git.ask.clone"), &tr!("git.ask.clone_url"), "") {
                     ide.git_clone(&url);
                 }
             }
@@ -752,7 +773,9 @@ impl GitWindow {
             "git.rebase" => self.pick(&ide.git_branch_pick("git.rebase:", false)),
             "git.delete_branch" => self.pick(&ide.git_branch_pick("git.delete_branch:", true)),
             "git.branch" => {
-                if let Some(name) = self.ask("Neuer Zweig", "Name des Zweigs:", "") {
+                if let Some(name) =
+                    self.ask(&tr!("git.ask.new_branch"), &tr!("git.ask.branch_name"), "")
+                {
                     ide.git_now(GitOp::CreateBranch {
                         name,
                         checkout: true,
@@ -761,13 +784,18 @@ impl GitWindow {
             }
             "git.rename_branch" => {
                 let current = ide.git_status().and_then(|s| s.branch).unwrap_or_default();
-                if let Some(name) = self.ask("Zweig umbenennen", "Neuer Name:", &current) {
+                if let Some(name) = self.ask(
+                    &tr!("git.ask.rename_branch"),
+                    &tr!("git.ask.new_name"),
+                    &current,
+                ) {
                     ide.git_now(GitOp::RenameBranch { name });
                 }
             }
             "git.add_remote" => {
-                if let Some(url) = self.ask("Remote hinzufügen", "Adresse:", "")
-                    && let Some(name) = self.ask("Remote hinzufügen", "Name:", "origin")
+                if let Some(url) = self.ask(&tr!("git.ask.add_remote"), &tr!("git.ask.address"), "")
+                    && let Some(name) =
+                        self.ask(&tr!("git.ask.add_remote"), &tr!("git.ask.name"), "origin")
                 {
                     ide.git_now(GitOp::AddRemote { name, url });
                 }
@@ -780,7 +808,8 @@ impl GitWindow {
                 self.pick(&menu);
             }
             "git.stash" | "git.stash_untracked" => {
-                let message = self.ask("Zurücklegen", "Nachricht (optional):", "");
+                let message =
+                    self.ask(&tr!("menu.git.stash"), &tr!("git.ask.message_optional"), "");
                 ide.git_now(GitOp::Stash {
                     message: message.unwrap_or_default(),
                     include_untracked: id == "git.stash_untracked",
@@ -803,9 +832,11 @@ impl GitWindow {
                 self.pick(&menu);
             }
             "git.create_tag" => {
-                if let Some(name) = self.ask("Tag anlegen", "Name des Tags:", "") {
+                if let Some(name) =
+                    self.ask(&tr!("git.ask.create_tag"), &tr!("git.ask.tag_name"), "")
+                {
                     let message = self
-                        .ask("Tag anlegen", "Nachricht (leer = einfacher Tag):", "")
+                        .ask(&tr!("git.ask.create_tag"), &tr!("git.ask.tag_message"), "")
                         .unwrap_or_default();
                     ide.git_now(GitOp::CreateTag { name, message });
                 }
@@ -899,7 +930,11 @@ impl GitWindow {
     /// Deletes a branch; a not merged one only after a second question.
     fn delete_branch(&self, ide: &Ide, name: String) {
         let parent = Some(self.window.widget());
-        if !ruf::dialog::confirm(parent, "Zweig löschen", &format!("{name} löschen?")) {
+        if !ruf::dialog::confirm(
+            parent,
+            &tr!("git.delete_branch"),
+            &tr!("git.delete_question", name = name),
+        ) {
             return;
         }
         let op = GitOp::DeleteBranch {
@@ -911,13 +946,13 @@ impl GitWindow {
             Err(e) if e.code == "not_merged" => {
                 if ruf::dialog::confirm(
                     parent,
-                    "Zweig löschen",
-                    &format!("{}\n\nTrotzdem löschen?", e.detail),
+                    &tr!("git.delete_branch"),
+                    &tr!("git.delete_anyway", detail = e.detail),
                 ) {
                     ide.git_now(GitOp::DeleteBranch { name, force: true });
                 }
             }
-            Err(e) => ruf::dialog::error(parent, "Zweig löschen", &e.to_string()),
+            Err(e) => ruf::dialog::error(parent, &tr!("git.delete_branch"), &e.to_string()),
         }
     }
 }

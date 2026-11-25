@@ -10,6 +10,7 @@
 //! *Fenster „KI“: Gespräch mit der KI des gewählten Profils (Drop-down),
 //! Rechte, Vorschläge mit Vorschau, Skills und Eingabe.*
 
+use crate::tr;
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -94,41 +95,37 @@ pub struct AiWindow {
 /// The window's menu (shortcuts while it is its own window).
 pub(super) fn menu() -> Menu {
     Menu::new()
-        .item("ai.send", "Senden", Some("Ctrl+Enter"))
-        .item("ai.cancel", "Abbrechen", None)
-        .item("ai.new", "Neues Gespräch", None)
+        .item("ai.send", &tr!("menu.ai.send"), Some("Ctrl+Enter"))
+        .item("ai.cancel", &tr!("menu.ai.cancel"), None)
+        .item("ai.new", &tr!("menu.ai.new"), None)
         .separator()
-        .item("ai.accept", "Vorschlag übernehmen", None)
-        .item("ai.reject", "Vorschlag ablehnen", None)
-        .item("ai.accept_all", "Alle Vorschläge übernehmen", None)
+        .item("ai.accept", &tr!("menu.ai.accept"), None)
+        .item("ai.reject", &tr!("menu.ai.reject"), None)
+        .item("ai.accept_all", &tr!("menu.ai.accept_all"), None)
         .separator()
-        .item("ai.skills", "Projekt-Skills freigeben …", None)
+        .item("ai.skills", &tr!("menu.ai.skills"), None)
 }
 
 impl AiWindow {
     pub fn build() -> Self {
-        let window = RnclWindow::new("KI");
-        window.set_menu_bar(vec![("KI".into(), menu())]);
-        let pane = super::dock::DockPane::new(&window, window::AI, "KI");
+        let window = RnclWindow::new(&tr!("ai.title"));
+        window.set_menu_bar(vec![(tr!("ai.title"), menu())]);
+        let pane = super::dock::DockPane::new(&window, window::AI, &tr!("ai.title"));
         let p = &pane.root;
-        let profile_label = RnclLabel::new(p, "KI");
+        let profile_label = RnclLabel::new(p, &tr!("ai.title"));
         let profile = RnclComboBox::new(p);
-        profile
-            .widget()
-            .set_tool_tip("Die KI für dieses Gespräch; gilt ab der nächsten Anfrage und wird für das Projekt gemerkt");
-        let permission_label = RnclLabel::new(p, "Darf");
+        profile.widget().set_tool_tip(&tr!("ai.profile_tip"));
+        let permission_label = RnclLabel::new(p, &tr!("ai.may"));
         let permission = RnclComboBox::new(p);
         permission.set_items(&AiPermission::ALL.map(AiPermission::label));
-        permission.widget().set_tool_tip(
-            "Lesen ist immer erlaubt. „mit Vorschau“: jede Änderung erst als Vorschlag; „selbstständig“: ohne Rückfrage",
-        );
-        let new_chat = RnclButton::new(p, "Neu");
-        new_chat.widget().set_tool_tip("Neues Gespräch");
+        permission.widget().set_tool_tip(&tr!("ai.permission_tip"));
+        let new_chat = RnclButton::new(p, &tr!("ai.new"));
+        new_chat.widget().set_tool_tip(&tr!("menu.ai.new"));
         let skills = RnclLabel::new(p, "");
-        let approve_skills = RnclButton::new(p, "Projekt-Skills …");
+        let approve_skills = RnclButton::new(p, &tr!("ai.project_skills"));
         approve_skills
             .widget()
-            .set_tool_tip("Eigene Skills des Projekts (.agents/skills) prüfen und freigeben");
+            .set_tool_tip(&tr!("ai.project_skills_tip"));
         let transcript = RnclTextArea::new(p);
         transcript.set_read_only(true);
         transcript.set_word_wrap(true);
@@ -148,14 +145,14 @@ impl AiWindow {
         preview.add_highlight_rule(r"^\+.*", "#2e9d4f", false);
         preview.add_highlight_rule(r"^-.*", "#d03b3b", false);
         preview.add_highlight_rule(r"^@@.*", "#888888", false);
-        let accept = RnclButton::new(p, "Übernehmen");
-        let reject = RnclButton::new(p, "Ablehnen");
-        let accept_all = RnclButton::new(p, "Alle übernehmen");
+        let accept = RnclButton::new(p, &tr!("ai.accept"));
+        let reject = RnclButton::new(p, &tr!("ai.reject"));
+        let accept_all = RnclButton::new(p, &tr!("ai.accept_all"));
         let input = RnclTextArea::new(p);
         input.set_word_wrap(true);
-        input.set_placeholder("Nachricht an die KI (Strg+Enter sendet)");
-        let send = RnclButton::new(p, "Senden");
-        let cancel = RnclButton::new(p, "Abbrechen");
+        input.set_placeholder(&tr!("ai.input_placeholder"));
+        let send = RnclButton::new(p, &tr!("menu.ai.send"));
+        let cancel = RnclButton::new(p, &tr!("menu.ai.cancel"));
         let status = RnclLabel::new(p, "");
         Self {
             window,
@@ -324,12 +321,12 @@ impl AiWindow {
         let trusted = state.skills.skills().iter().filter(|s| s.trusted()).count();
         let own = state.skills.skills().len() - trusted;
         let pending = state.skills.pending().len();
-        let mut text = format!("Skills: {trusted} geprüft");
+        let mut text = tr!("ai.skills_trusted", count = trusted);
         if own > 0 {
-            text.push_str(&format!(", {own} eigene (nicht geprüft)"));
+            text.push_str(&tr!("ai.skills_own", count = own));
         }
         if pending > 0 {
-            text.push_str(&format!(", {pending} warten auf Freigabe"));
+            text.push_str(&tr!("ai.skills_pending", count = pending));
         }
         self.skills.set_text(&text);
         self.skills.widget().set_tool_tip(
@@ -355,8 +352,7 @@ impl AiWindow {
             .set_enabled(!busy && !deciding && index >= 0);
         self.cancel.widget().set_enabled(busy || deciding);
         if index < 0 {
-            self.status
-                .set_text("Kein KI-Profil: Datei → Einstellungen … → KI");
+            self.status.set_text(&tr!("ai.no_profile"));
         }
     }
 
@@ -445,7 +441,7 @@ impl Workspace for IdeWorkspace<'_> {
     fn read_text(&self, rel: &str) -> std::io::Result<String> {
         let root = self
             .root()
-            .ok_or_else(|| std::io::Error::other("Das Projekt ist noch nicht gespeichert."))?;
+            .ok_or_else(|| std::io::Error::other(tr!("ai.unsaved_project")))?;
         let path = root.join(rel);
         match self.ide.code.text(&path) {
             Some(text) => Ok(text),
@@ -456,7 +452,7 @@ impl Workspace for IdeWorkspace<'_> {
     fn write_text(&mut self, rel: &str, text: &str) -> std::io::Result<()> {
         let root = self
             .root()
-            .ok_or_else(|| std::io::Error::other("Das Projekt ist noch nicht gespeichert."))?;
+            .ok_or_else(|| std::io::Error::other(tr!("ai.unsaved_project")))?;
         let path = root.join(rel);
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
@@ -638,16 +634,16 @@ impl Ide {
     pub fn ai_send(&self, text: &str) -> Result<(), String> {
         let text = text.trim();
         if text.is_empty() {
-            return Err("Leere Nachricht.".into());
+            return Err(tr!("ai.empty_message"));
         }
         self.ai_prepare();
         {
             let state = self.ai_window.state.borrow();
             if state.busy {
-                return Err("Die KI arbeitet noch.".into());
+                return Err(tr!("ai.busy"));
             }
             if !state.decisions.is_empty() {
-                return Err("Erst über die Vorschläge entscheiden.".into());
+                return Err(tr!("ai.decide_first"));
             }
         }
         let client = self.ai_client()?;
@@ -674,9 +670,7 @@ impl Ide {
     }
 
     fn ai_client(&self) -> Result<Client, String> {
-        let name = self
-            .ai_profile()
-            .ok_or("Kein KI-Profil: Datei → Einstellungen … → KI")?;
+        let name = self.ai_profile().ok_or_else(|| tr!("ai.no_profile"))?;
         let settings = self.settings.borrow();
         Client::from_settings(&settings, &name, self.secrets.borrow().as_ref())
             .map_err(|e| format!("{} ({})", e.detail, e.code))
@@ -810,7 +804,7 @@ impl Ide {
         let mut guard = self.ai_window.state.borrow_mut();
         let state = &mut *guard;
         let Some(conversation) = state.conversation.as_mut() else {
-            return Err("Kein Gespräch.".into());
+            return Err(tr!("ai.no_conversation"));
         };
         let mut ws = IdeWorkspace {
             ide: self,
@@ -903,9 +897,7 @@ impl Ide {
                 self.ai_window.state.borrow_mut().decisions =
                     proposals.into_iter().map(|p| (p, None)).collect();
                 self.ai_window.fill_proposals();
-                self.ai_window
-                    .status
-                    .set_text("Vorschläge prüfen: Übernehmen oder Ablehnen");
+                self.ai_window.status.set_text(&tr!("ai.check_proposals"));
                 self.show_ai_window_only();
             }
             Ok(Turn::Run { proposals }) => self.ai_run(proposals),
@@ -918,12 +910,13 @@ impl Ide {
                     .as_ref()
                     .map(Conversation::usage)
                     .unwrap_or_default();
-                let mut text = format!(
-                    "Fertig · {} Token gelesen, {} geschrieben",
-                    usage.input_tokens, usage.output_tokens
+                let mut text = tr!(
+                    "ai.done",
+                    input = usage.input_tokens,
+                    output = usage.output_tokens
                 );
                 if stop == ai::StopReason::MaxTokens {
-                    text.push_str(" · Antwort abgeschnitten (Längengrenze)");
+                    text.push_str(&tr!("ai.truncated"));
                 }
                 self.ai_window.status.set_text(&text);
             }
@@ -950,7 +943,7 @@ impl Ide {
             state.busy = true;
             state.generation
         };
-        self.ai_window.status.set_text("cargo läuft …");
+        self.ai_window.status.set_text(&tr!("ai.cargo_running"));
         std::thread::spawn(move || {
             for p in proposals {
                 let result = match &p.action {
@@ -975,7 +968,7 @@ impl Ide {
             let had = !state.decisions.is_empty();
             state.decisions.clear();
             if let Some(c) = state.conversation.as_mut() {
-                c.abort("Vom Entwickler abgebrochen.");
+                c.abort(&tr!("ai.aborted"));
             }
             had
         };
@@ -1088,7 +1081,11 @@ impl Ide {
                 format!(
                     "• {}{}: {}\n  {}",
                     s.name,
-                    if s.changed { " (geändert)" } else { "" },
+                    if s.changed {
+                        tr!("ai.changed")
+                    } else {
+                        String::new()
+                    },
                     s.description,
                     s.path.display()
                 )

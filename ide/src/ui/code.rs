@@ -149,16 +149,30 @@ pub(super) fn menu_bar() -> MenuBar {
             tr!("menu.title.file"),
             Menu::new()
                 .item("code.save", &tr!("menu.code.save"), Some("Ctrl+S"))
-                .item("code.save_all", &tr!("menu.code.save_all"), Some("Ctrl+Shift+S"))
+                .item(
+                    "code.save_all",
+                    &tr!("menu.code.save_all"),
+                    Some("Ctrl+Shift+S"),
+                )
                 .separator()
                 .item("code.close", &tr!("menu.code.close"), Some("Ctrl+W")),
         ),
         (
             tr!("menu.title.code"),
             Menu::new()
-                .item("code.complete", &tr!("menu.code.complete"), Some("Ctrl+Space"))
-                .item("code.definition", &tr!("menu.code.definition"), Some("Ctrl+F12"))
-                .item("code.codetools", &tr!("menu.code.codetools"),
+                .item(
+                    "code.complete",
+                    &tr!("menu.code.complete"),
+                    Some("Ctrl+Space"),
+                )
+                .item(
+                    "code.definition",
+                    &tr!("menu.code.definition"),
+                    Some("Ctrl+F12"),
+                )
+                .item(
+                    "code.codetools",
+                    &tr!("menu.code.codetools"),
                     Some("Ctrl+Shift+C"),
                 )
                 .separator()
@@ -174,7 +188,7 @@ pub(super) fn menu_bar() -> MenuBar {
 
 impl CodeWindow {
     pub fn build() -> Self {
-        let window = RnclWindow::new("Code");
+        let window = RnclWindow::new(&tr!("menu.window.code"));
         window.set_menu_bar(menu_bar());
         let tabs = RnclTabView::new(&window);
         let change_timer = Timer::new();
@@ -294,7 +308,8 @@ impl CodeWindow {
         for file in self.files.borrow().iter() {
             if let Some(d) = file.detached.borrow().as_ref() {
                 let title = file.title();
-                d.window.set_title(&format!("Code – {title}"));
+                d.window
+                    .set_title(&format!("{} – {title}", tr!("menu.window.code")));
                 d.grip.set_text(&format!("⠿ {title}"));
             }
         }
@@ -703,13 +718,11 @@ impl CodeWindow {
         else {
             return;
         };
-        let window = RnclWindow::new(&format!("Code – {}", file.title()));
+        let window = RnclWindow::new(&format!("{} – {}", tr!("menu.window.code"), file.title()));
         window.set_menu_bar(menu_bar());
         window.inherit_menu_shortcuts(&ide.main.window);
         let grip = RnclLabel::new(&window, &format!("⠿ {}", file.title()));
-        grip.widget().set_tool_tip(
-            &tr!("code.grip_tip"),
-        );
+        grip.widget().set_tool_tip(&tr!("code.grip_tip"));
         grip.widget().set_mouse_cursor("grab");
         grip.widget()
             .set_drag_text(&format!("{DRAG}{}", file.path.display()));

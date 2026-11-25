@@ -5,6 +5,7 @@
 //! come). The data are [`crate::problems`], [`crate::output`] and
 //! [`crate::terminal`]; the window shows them.
 
+use crate::tr;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
@@ -95,37 +96,37 @@ impl Terminals {
 
 pub(super) fn terminal_menu() -> Menu {
     Menu::new()
-        .item("term.copy", "Kopieren", Some("Ctrl+Shift+C"))
-        .item("term.paste", "Einfügen", Some("Ctrl+Shift+V"))
+        .item("term.copy", &tr!("menu.term.copy"), Some("Ctrl+Shift+C"))
+        .item("term.paste", &tr!("menu.term.paste"), Some("Ctrl+Shift+V"))
         .separator()
-        .item("term.clear", "Leeren", None)
-        .item("term.restart", "Neu starten", None)
+        .item("term.clear", &tr!("menu.term.clear"), None)
+        .item("term.restart", &tr!("menu.term.restart"), None)
         .separator()
-        .item("term.new", "Neues Terminal", None)
-        .item("term.close", "Terminal beenden", None)
+        .item("term.new", &tr!("menu.term.new"), None)
+        .item("term.close", &tr!("menu.term.close"), None)
 }
 
 impl PanelWindow {
     pub fn build() -> Self {
-        let window = RnclWindow::new("Meldungen");
+        let window = RnclWindow::new(&tr!("menu.window.messages"));
         let tabs = RnclTabView::new(&window);
-        let problems = tabs.add_tab("Probleme");
-        let output = tabs.add_tab("Ausgabe");
-        let terminal = tabs.add_tab("Terminal");
-        let debug = tabs.add_tab("Debug-Konsole");
+        let problems = tabs.add_tab(&tr!("panel.problems"));
+        let output = tabs.add_tab(&tr!("panel.output"));
+        let terminal = tabs.add_tab(&tr!("panel.terminal"));
+        let debug = tabs.add_tab(&tr!("menu.window.debug_console"));
 
         let filter = RnclTextField::new(&problems);
-        filter.set_placeholder("Filter (Text, Datei oder Code)");
-        let show_errors = RnclCheckBox::new(&problems, "Fehler");
-        let show_warnings = RnclCheckBox::new(&problems, "Warnungen");
-        let show_infos = RnclCheckBox::new(&problems, "Hinweise");
+        filter.set_placeholder(&tr!("panel.filter"));
+        let show_errors = RnclCheckBox::new(&problems, &tr!("panel.errors"));
+        let show_warnings = RnclCheckBox::new(&problems, &tr!("panel.warnings"));
+        let show_infos = RnclCheckBox::new(&problems, &tr!("panel.infos"));
         for check in [&show_errors, &show_warnings, &show_infos] {
             check.set_checked(true);
         }
         let tree = RnclTreeView::new(&problems);
 
         let channel = RnclComboBox::new(&output);
-        let clear = RnclButton::new(&output, "Leeren");
+        let clear = RnclButton::new(&output, &tr!("menu.term.clear"));
         let text = RnclTextArea::new(&output);
         text.set_read_only(true);
         text.set_monospace(true);
@@ -137,16 +138,15 @@ impl PanelWindow {
             views: RefCell::new(Vec::new()),
             next: Cell::new(1),
         };
-        terminals.add.set_tool_tip("Neues Terminal");
-        terminals.close.set_tool_tip("Sichtbares Terminal beenden");
+        terminals.add.set_tool_tip(&tr!("menu.term.new"));
+        terminals.close.set_tool_tip(&tr!("panel.close_terminal"));
         // Debug-Konsole: Ausgabe des Programms und des Debuggers, darunter
         // die Eingabe (Ausdruck; ` = Befehl an den Debugger).
         let debug_text = RnclTextArea::new(&debug);
         debug_text.set_read_only(true);
         debug_text.set_monospace(true);
         let debug_input = RnclTextField::new(&debug);
-        debug_input
-            .set_placeholder("Ausdruck auswerten (Enter) – ` am Anfang: Befehl an den Debugger");
+        debug_input.set_placeholder(&tr!("panel.debug_placeholder"));
         {
             let (text, input) = (debug_text.clone(), debug_input.clone());
             debug.widget().on_resized(move |width, height| {
@@ -289,8 +289,8 @@ impl PanelWindow {
             let group = problem.group();
             if current.as_ref() != Some(&group) {
                 let label = match &group {
-                    Group::Project => "Projekt".to_owned(),
-                    Group::Form(form) => format!("Formular {form}"),
+                    Group::Project => tr!("project.title"),
+                    Group::Form(form) => tr!("panel.form", form = form),
                     Group::File(file) => {
                         let name = file
                             .file_name()
@@ -347,7 +347,7 @@ impl PanelWindow {
             group.badge = Some(group.children.len().to_string());
         }
         if items.is_empty() {
-            items.push(TreeItem::new("", "Keine Probleme."));
+            items.push(TreeItem::new("", &tr!("panel.no_problems")));
         }
         // Aufgeklappt bleibt, was der Nutzer nicht zugeklappt hat.
         let old = self.tree.items();
@@ -364,14 +364,15 @@ impl PanelWindow {
         self.tabs.set_tab_title(
             Tab::Problems as i32,
             &if total == 0 {
-                "Probleme".to_owned()
+                tr!("panel.problems")
             } else {
-                format!("Probleme ({total})")
+                format!("{} ({total})", tr!("panel.problems"))
             },
         );
-        self.window.set_title(&format!(
-            "Meldungen – {} Fehler, {} Warnungen",
-            all.errors, all.warnings
+        self.window.set_title(&tr!(
+            "panel.title_counts",
+            errors = all.errors,
+            warnings = all.warnings
         ));
     }
 

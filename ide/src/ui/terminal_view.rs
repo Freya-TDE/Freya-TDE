@@ -2,6 +2,7 @@
 //! forwards keys, mouse selection, wheel and clipboard. The shell starts
 //! when the tab is shown first, in the project folder.
 
+use crate::tr;
 use std::cell::{Cell, RefCell};
 use std::path::Path;
 
@@ -153,7 +154,7 @@ impl TerminalView {
                 self.canvas.set_shapes(vec![Shape::Text {
                     x: PAD,
                     y: PAD,
-                    text: format!("Terminal nicht gestartet: {e}"),
+                    text: tr!("panel.terminal_failed", error = e),
                     color: palette().ansi[1],
                     size: FONT,
                     bold: false,
