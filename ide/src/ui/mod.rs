@@ -511,6 +511,24 @@ impl Ide {
             }
         }
         self.restore_docking(&desktop.docked);
+        // X11: Größenänderungen in der Startphase (Palette, Mindesthöhe) lassen
+        // Fenster je nach Ablauf um ihren Rahmen rutschen. Sobald alles steht,
+        // die gespeicherten Lagen noch einmal setzen.
+        let weak = self.me.clone();
+        ruf::Timer::single_shot(1500, move || {
+            let Some(ide) = weak.upgrade() else {
+                return;
+            };
+            for (name, window) in ide.windows() {
+                let place = desktop.place(name);
+                if let (Some(x), Some(y)) = (place.x, place.y)
+                    && window.widget().is_visible()
+                    && window.screen_position() != Some(ruf::Point::new(x, y))
+                {
+                    window.set_screen_position(x, y);
+                }
+            }
+        });
     }
 
     fn save_desktop(&self) {

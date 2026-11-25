@@ -184,6 +184,10 @@ Generierter Code gehört dem Nutzer. Jedes Plugin deklariert die Lizenz seines e
   zeichnen neu). Fensterposition unter X11 einschließlich Rahmen (`_NET_FRAME_EXTENTS`), sonst wanderten Fenster
   bei jedem Neustart um Titelleiste und Rand. „Ins Leere gezogen“ ergibt sich aus dem Ende des Ziehens (kein
   eigenes Ablageziel, nicht mit Esc abgebrochen) statt aus dem Abbruchgrund, den GTK unter XWayland anders meldet.
+  Außerdem (26.11.2026, geprüft mit Openbox unter Xvfb): GTK schickt unter X11 beim Vergrößern eines sichtbaren
+  Fensters die Lage des Inhalts mit, der Fenstermanager setzt dort den Rahmen – RUF merkt sich die Lage vor der
+  Größenänderung und setzt sie danach wieder (`KEEP_POSITIONS`); Freya setzt die gespeicherten Lagen 1,5 s nach
+  dem Start noch einmal (Größenänderungen der Startphase je nach Ablauf).
 - Hilfe → Tastenkürzel (02.11.2026): Seite mit allen Kürzeln je Fenster und Menü samt Erklärung, erzeugt aus den Menüdefinitionen (`ui::shortcuts`, auch als Daten).
 - Tastenkürzel (27.10.2026): Die Kürzel des Hauptmenüs gelten in allen IDE-Fenstern (RUF `inherit_menu_shortcuts`); das eigene Menü eines Fensters geht vor. Menükürzel gehen dem fokussierten Widget vor. Unter macOS ist `Ctrl` die Befehlstaste.
 - Projektfenster (26.10.2026): Datei-Manager mit dem Projektordner als Wurzel (ohne `target/`, `.git/`; `.gen.rs` und versteckte Dateien zuschaltbar). Logik ohne Oberfläche in `freya_tde::files` (Dateioperationen als JSON-Befehle mit Probelauf, stabile Codes). Löschen geht in den Papierkorb (Crate `trash`, MIT; unter macOS über `NSFileManager`, damit keine Finder-Berechtigung nötig ist), Projektdatei und Formulare sind geschützt. „Einbinden“ kopiert eine Datei von außen ins Projekt; `Cargo.toml` öffnet der CT-Editor (`--path`). Zweiter Reiter: Projekt-Manager (siehe dort).
