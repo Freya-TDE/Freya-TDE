@@ -122,7 +122,7 @@ pub fn shortcut(keys: &str) -> Option<eframe::egui::KeyboardShortcut> {
     Some(KeyboardShortcut::new(mods, key))
 }
 
-/// Shows a menu bar from entries like `Datei/Öffnen | Ctrl+O` (`-` =
+/// Shows a menu bar from entries like `File/Open | Ctrl+O` (`-` =
 /// separator, deeper paths = submenus); returns the chosen entry's path,
 /// also when its shortcut was pressed.
 #[allow(dead_code)]

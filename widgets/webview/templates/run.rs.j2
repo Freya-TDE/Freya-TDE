@@ -4,10 +4,10 @@
 {%- set ui = forms | rejectattr("data_module") | list %}
 {%- if ui %}
 {%- set main = ui[0] %}
-// WebKitGTK zeigt mit manchen Treibern (z. B. NVIDIA) sonst nur ein leeres Fenster.
+// Otherwise WebKitGTK shows only an empty window with some drivers (e.g. NVIDIA).
 #[cfg(target_os = "linux")]
 if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
-    // SAFETY: vor dem Start der WebView, noch ohne deren Threads.
+    // SAFETY: before the WebView starts, without its threads yet.
     unsafe { std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1") };
 }
 let mut form = {{ app }}.{{ main.name }};
@@ -23,7 +23,7 @@ let builder = wry::WebViewBuilder::new()
         let _ = ipc.send_event(crate::app::FreyaEvent::Ipc(request.into_body()));
     });
 {%- if pictures %}
-// Bilder (ImageBox, ImageScrollBox) über das eigene Schema `freya`.
+// Images (ImageBox, ImageScrollBox) via the custom scheme `freya`.
 let builder = builder.with_custom_protocol("freya".into(), |_, request| {
     crate::app::freya_picture_response(request)
 });

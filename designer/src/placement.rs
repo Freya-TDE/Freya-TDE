@@ -31,7 +31,7 @@ use crate::inspector::PropertyRow;
 use crate::layout::FormLayout;
 
 /// Category of the placement rows.
-pub const PLACEMENT: &str = "Platzierung";
+pub const PLACEMENT: &str = "Placement";
 /// Category of a container's layout rows.
 pub const LAYOUT: &str = "Layout";
 
@@ -95,7 +95,7 @@ pub fn layout_rows(form: &Form, element: &ComponentName, absolute: bool) -> Vec<
                 rows.push(row(
                     p,
                     "placement.width",
-                    "Wunschbreite in Pixeln (0 = natürlich)",
+                    "Desired width in pixels (0 = natural)",
                     int(0, None),
                     px(0),
                     px(size.width),
@@ -103,7 +103,7 @@ pub fn layout_rows(form: &Form, element: &ComponentName, absolute: bool) -> Vec<
                 rows.push(row(
                     p,
                     "placement.height",
-                    "Wunschhöhe in Pixeln (0 = natürlich)",
+                    "Desired height in pixels (0 = natural)",
                     int(0, None),
                     px(0),
                     px(size.height),
@@ -111,7 +111,7 @@ pub fn layout_rows(form: &Form, element: &ComponentName, absolute: bool) -> Vec<
                 rows.push(row(
                     p,
                     "placement.width_percent",
-                    "Breite in Prozent des Elternelements (0 = aus; geht den Pixeln vor)",
+                    "Width in percent of the parent (0 = off; takes precedence over pixels)",
                     int(0, Some(100)),
                     px(0),
                     px(percent.width),
@@ -119,7 +119,7 @@ pub fn layout_rows(form: &Form, element: &ComponentName, absolute: bool) -> Vec<
                 rows.push(row(
                     p,
                     "placement.height_percent",
-                    "Höhe in Prozent des Elternelements (0 = aus; geht den Pixeln vor)",
+                    "Height in percent of the parent (0 = off; takes precedence over pixels)",
                     int(0, Some(100)),
                     px(0),
                     px(percent.height),
@@ -127,7 +127,7 @@ pub fn layout_rows(form: &Form, element: &ComponentName, absolute: bool) -> Vec<
                 rows.push(row(
                     p,
                     "placement.align",
-                    "Ausrichtung quer zum Layout (Fill = ganze Breite bzw. Höhe)",
+                    "Alignment across the layout (Fill = full width or height)",
                     PropertyType::Enum(ALIGNS.map(String::from).to_vec()),
                     Value::Enum("Fill".into()),
                     Value::Enum(format!("{align:?}")),
@@ -135,7 +135,7 @@ pub fn layout_rows(form: &Form, element: &ComponentName, absolute: bool) -> Vec<
                 rows.push(row(
                     p,
                     "placement.stretch",
-                    "Anteil am freien Platz in Layout-Richtung (0 = natürliche Größe)",
+                    "Share of the free space along the layout (0 = natural size)",
                     int(0, None),
                     Value::Int(0),
                     Value::Int(i64::from(*stretch)),
@@ -150,7 +150,7 @@ pub fn layout_rows(form: &Form, element: &ComponentName, absolute: bool) -> Vec<
                     rows.push(row(
                         p,
                         "placement.row",
-                        "Zeile im Raster",
+                        "Row in the grid",
                         int(0, None),
                         Value::Int(0),
                         Value::Int(i64::from(cell.row)),
@@ -158,7 +158,7 @@ pub fn layout_rows(form: &Form, element: &ComponentName, absolute: bool) -> Vec<
                     rows.push(row(
                         p,
                         "placement.column",
-                        "Spalte im Raster",
+                        "Column in the grid",
                         int(0, None),
                         Value::Int(0),
                         Value::Int(i64::from(cell.column)),
@@ -178,7 +178,7 @@ pub fn layout_rows(form: &Form, element: &ComponentName, absolute: bool) -> Vec<
                 rows.push(row(
                     p,
                     "placement.x",
-                    "Abstand vom linken Rand",
+                    "Distance from the left edge",
                     any.clone(),
                     px(0),
                     px(position.x),
@@ -186,7 +186,7 @@ pub fn layout_rows(form: &Form, element: &ComponentName, absolute: bool) -> Vec<
                 rows.push(row(
                     p,
                     "placement.y",
-                    "Abstand vom oberen Rand",
+                    "Distance from the top edge",
                     any,
                     px(0),
                     px(position.y),
@@ -194,7 +194,7 @@ pub fn layout_rows(form: &Form, element: &ComponentName, absolute: bool) -> Vec<
                 rows.push(row(
                     p,
                     "placement.width",
-                    "Breite in Pixeln",
+                    "Width in pixels",
                     int(0, None),
                     px(0),
                     px(size.width),
@@ -202,7 +202,7 @@ pub fn layout_rows(form: &Form, element: &ComponentName, absolute: bool) -> Vec<
                 rows.push(row(
                     p,
                     "placement.height",
-                    "Höhe in Pixeln",
+                    "Height in pixels",
                     int(0, None),
                     px(0),
                     px(size.height),
@@ -210,25 +210,25 @@ pub fn layout_rows(form: &Form, element: &ComponentName, absolute: bool) -> Vec<
                 let edges = [
                     (
                         "placement.anchor_left",
-                        "Verankert am linken Rand",
+                        "Anchored to the left edge",
                         anchors.left,
                         true,
                     ),
                     (
                         "placement.anchor_top",
-                        "Verankert am oberen Rand",
+                        "Anchored to the top edge",
                         anchors.top,
                         true,
                     ),
                     (
                         "placement.anchor_right",
-                        "Verankert am rechten Rand (mit links: wächst in der Breite mit)",
+                        "Anchored to the right edge (with left: grows in width)",
                         anchors.right,
                         false,
                     ),
                     (
                         "placement.anchor_bottom",
-                        "Verankert am unteren Rand (mit oben: wächst in der Höhe mit)",
+                        "Anchored to the bottom edge (with top: grows in height)",
                         anchors.bottom,
                         false,
                     ),
@@ -272,7 +272,7 @@ pub fn layout_rows(form: &Form, element: &ComponentName, absolute: bool) -> Vec<
         rows.push(row(
             l,
             "layout.kind",
-            "Anordnung der Kinder",
+            "Arrangement of the children",
             PropertyType::Enum(kinds),
             Value::Enum("Vertical".into()),
             Value::Enum(kind),
@@ -281,7 +281,7 @@ pub fn layout_rows(form: &Form, element: &ComponentName, absolute: bool) -> Vec<
             rows.push(row(
                 l,
                 "layout.columns",
-                "Spalten des Rasters",
+                "Columns of the grid",
                 int(1, None),
                 Value::Int(2),
                 Value::Int(i64::from(columns)),
@@ -290,7 +290,7 @@ pub fn layout_rows(form: &Form, element: &ComponentName, absolute: bool) -> Vec<
         rows.push(row(
             l,
             "layout.spacing",
-            "Abstand zwischen den Kindern",
+            "Spacing between the children",
             int(0, None),
             Value::Int(8),
             Value::Int(i64::from(layout.spacing)),
@@ -298,7 +298,7 @@ pub fn layout_rows(form: &Form, element: &ComponentName, absolute: bool) -> Vec<
         rows.push(row(
             l,
             "layout.padding",
-            "Innenabstand an allen Seiten",
+            "Padding on all sides",
             int(0, None),
             Value::Int(12),
             Value::Int(i64::from(layout.padding.left)),
@@ -313,9 +313,9 @@ pub fn layout_rows(form: &Form, element: &ComponentName, absolute: bool) -> Vec<
 pub enum LayoutRowError {
     #[error("unbekanntes Element {0}")]
     UnknownElement(ComponentName),
-    #[error("unbekannte Layout-Zeile {0}")]
+    #[error("unknown layout row {0}")]
     UnknownRow(String),
-    #[error("ungültiger Wert für {0}")]
+    #[error("invalid value for {0}")]
     InvalidValue(String),
 }
 

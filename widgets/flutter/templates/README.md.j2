@@ -1,41 +1,33 @@
 # {{ project.name }} – Flutter
 
-Die Oberfläche ist eine Flutter-App, die Logik die Rust-Bibliothek im
-Projektordner (flutter_rust_bridge). Freya TDE erzeugt `lib/freya/*.g.dart`
-und die Brücke `lib/src/rust/`; `lib/main.dart` und `pubspec.yaml` gehören
-Ihnen.
-
 The UI is a Flutter app, the logic is the Rust library in the project folder
 (flutter_rust_bridge). Freya TDE generates `lib/freya/*.g.dart` and the bridge
 `lib/src/rust/`; `lib/main.dart` and `pubspec.yaml` are yours.
 
-## Starten / Run
+## Run
 
 ```sh
-cargo build                     # im Projektordner / in the project folder
+cargo build                     # in the project folder
 cd flutter
-flutter create --platforms={{ project.platforms | join(",") if project.platforms else "linux,windows,macos" }} .   # einmal / once
+flutter create --platforms={{ project.platforms | join(",") if project.platforms else "linux,windows,macos" }} .   # once
 flutter run
 ```
 
-`flutter create .` legt nur die fehlenden Plattform-Ordner an und lässt
-vorhandene Dateien stehen. / only adds the missing platform folders.
+`flutter create .` only adds the missing platform folders and leaves existing
+files alone.
 
-## Weitergeben / Release
+## Release
 
 ```sh
 cd flutter
 flutter build {{ (project.platforms | first) if project.platforms else "linux" }} --release
 ```
 
-`rust_builder/` (cargokit) baut die Rust-Bibliothek dabei selbst mit `cargo`
-und packt sie ins Programm (Linux `bundle/lib/`, Windows neben die `.exe`,
-macOS ins `.app`). Braucht `rustup` (cargokit prüft damit das Ziel).
-/ `rust_builder/` (cargokit) builds the Rust library with `cargo` and bundles
-it; needs `rustup`.
+`rust_builder/` (cargokit) builds the Rust library with `cargo` and bundles it
+into the program (Linux `bundle/lib/`, Windows next to the `.exe`, macOS into
+the `.app`). Needs `rustup` (cargokit uses it to check the target).
 
-## Fenster / Window
+## Window
 
-Titel, Größe, Mindest-/Höchstgröße, Position und Startzustand setzt
-`<Form>View.setupWindow()` (aus dem Designer, über window_manager) beim Start.
-/ Title, size, limits, position and start state come from the designer.
+Title, size, minimum/maximum size, position and start state are set by
+`<Form>View.setupWindow()` (from the designer, via window_manager) at start.

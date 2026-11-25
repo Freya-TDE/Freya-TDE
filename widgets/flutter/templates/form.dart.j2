@@ -191,8 +191,8 @@ SizedBox(
                     cells: [
                       for (var k = 0; k < c.items.length; k++)
                       {%- if c.props.editable and c.props.data_source %}
-                        // Bearbeitbar: die gewählte Zeile als Eingabefelder; Enter
-                        // speichert die Zeile, Esc verwirft sie.
+                        // Editable: the selected row as input fields; Enter
+                        // saves the row, Esc discards it.
                         DataCell(c.index == i
                             ? CallbackShortcuts(
                                 bindings: {
@@ -391,7 +391,7 @@ class _{{ view }}State extends State<{{ view }}> {
     super.initState();
     _apply(freyaOpen(form: {{ view }}.form));
     {%- if data_bound %}
-    // Daten, die im Hintergrund geladen werden, abholen.
+    // Fetch data loaded in the background.
     _poll = Timer.periodic(const Duration(milliseconds: 100), (_) {
       final state = freyaPoll(form: {{ view }}.form);
       if (state != null) _take(state);
@@ -416,14 +416,14 @@ class _{{ view }}State extends State<{{ view }}> {
   void _apply(List<FreyaControl> state) {
     final old = _controls;
     _controls = {for (final c in state) c.name: c};
-    // Eingabefelder bearbeitbarer Tabellen: neu, wenn eine andere Zeile gewählt ist.
+    // Input fields of editable tables: new when another row is selected.
     _dropCells((key) {
       final name = key.split(':').first;
       final before = old[name];
       final now = _controls[name];
       return before == null || now == null || before.index != now.index || before.rows.length != now.rows.length;
     });
-    // Texte, die ein Handler geändert hat, in die Eingabefelder übernehmen.
+    // Take texts a handler changed into the input fields.
     _edits.forEach((name, edit) {
       final text = _controls[name]?.text;
       if (text != null && text != edit.text) edit.text = text;
@@ -540,8 +540,8 @@ class _{{ view }}State extends State<{{ view }}> {
     {%- if c.placement.anchors.right or not c.placement.anchors.left %}{% set ext.grow_x = true %}{% endif %}
     {%- if c.placement.anchors.bottom or not c.placement.anchors.top %}{% set ext.grow_y = true %}{% endif %}
     {%- endfor %}
-    // Absolut: Fläche so groß wie das äußerste Kind; mit Ankern rechts bzw.
-    // unten so groß wie der verfügbare (begrenzte) Platz.
+    // Absolute: area as large as the outermost child; with anchors right or
+    // bottom as large as the available (bounded) space.
     return Padding(
       padding: {{ pad }},
       child: LayoutBuilder(builder: (context, box) {

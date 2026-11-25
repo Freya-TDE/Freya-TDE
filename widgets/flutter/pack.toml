@@ -399,7 +399,7 @@ name = "MainMenu"
 look = "menubar"
 category = "Flutter"
 icon = "menu"
-description = "Menu bar of the window (MenuBar): entries like `Datei/Öffnen | Ctrl+O`, `Datei/-` (separator)"
+description = "Menu bar of the window (MenuBar): entries like `File/Open | Ctrl+O`, `File/-` (separator)"
 [component.properties.items]
 type = "list"
 item = "text"
@@ -407,7 +407,7 @@ category = "Menu"
 description = "One entry per line: path with `/`, optional `| shortcut`, `-` = separator"
 [component.events.on_select]
 params = [{ name = "item", type = "&str" }]
-description = "An entry was chosen; `item` is its path, e.g. `Datei/Öffnen`"
+description = "An entry was chosen; `item` is its path, e.g. `File/Open`"
 [component.codegen]
 type = "crate::app::Control<String>"
 init = "crate::app::Control::new(String::new()).with_items::<&str>({{ rust.items }})"

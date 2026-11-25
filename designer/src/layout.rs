@@ -139,7 +139,7 @@ impl Props<'_> {
     }
 
     /// The top-level entries of the form's main menu (a component with
-    /// `look = "menubar"` and an `items` list like `Datei/Öffnen`), `None`
+    /// `look = "menubar"` and an `items` list like `File/Open`), `None`
     /// without main menu.
     pub fn menu_bar(&self) -> Option<Vec<String>> {
         let menu = self.form.components.iter().find(|c| {

@@ -12,12 +12,12 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  # Dieselbe Version wie flutter_rust_bridge in ../Cargo.toml.
+  # The same version as flutter_rust_bridge in ../Cargo.toml.
   flutter_rust_bridge: 2.13.0
-  # Baut die Rust-Bibliothek bei `flutter build` und packt sie ins Programm (cargokit).
+  # Builds the Rust library on `flutter build` and bundles it into the program (cargokit).
   {{ project.lib }}:
     path: rust_builder
-  # Fenstertitel, -größe, -position und Startzustand aus dem Designer.
+  # Window title, size, position and start state from the designer.
   window_manager: ^0.5.2
 
 flutter:

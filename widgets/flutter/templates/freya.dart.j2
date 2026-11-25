@@ -122,8 +122,8 @@ List<Widget> _menuChildren(List<_MenuNode> nodes, void Function(String path) onS
           ),
     ];
 
-/// A menu bar from entries like `Datei/Öffnen | Ctrl+O` and `Datei/-`;
-/// `onSelect` gets the path (`Datei/Öffnen`). Shortcuts are shown, not bound.
+/// A menu bar from entries like `File/Open | Ctrl+O` and `File/-`;
+/// `onSelect` gets the path (`File/Open`). Shortcuts are shown, not bound.
 Widget freyaMenuBar(FreyaControl c, void Function(String path) onSelect) {
   final root = _MenuNode('', '', submenu: true);
   for (final item in c.items) {

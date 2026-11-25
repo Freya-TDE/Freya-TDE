@@ -659,7 +659,7 @@ name = "MainMenu"
 look = "menubar"
 category = "GTK"
 icon = "menu"
-description = "Menu bar of the window: entries like `Datei/Öffnen | Ctrl+O`, `Datei/-` (separator)"
+description = "Menu bar of the window: entries like `File/Open | Ctrl+O`, `File/-` (separator)"
 [component.properties.items]
 type = "list"
 item = "text"
@@ -667,11 +667,11 @@ category = "Menu"
 description = "One entry per line: path with `/`, optional `| shortcut`, `-` = separator"
 [component.events.on_select]
 params = [{ name = "item", type = "&str" }]
-description = "An entry was chosen; `item` is its path, e.g. `Datei/Öffnen`"
+description = "An entry was chosen; `item` is its path, e.g. `File/Open`"
 [component.codegen]
 type = "gtk4::PopoverMenuBar"
 init = """{
-    // Menüs aus den Pfaden: `Datei/Öffnen | Ctrl+O`; `-` beginnt einen Abschnitt.
+    // Menüs aus den Pfaden: `File/Open | Ctrl+O`; `-` beginnt einen Abschnitt.
     let bar = gtk4::gio::Menu::new();
     let mut menus: Vec<(String, gtk4::gio::Menu, gtk4::gio::Menu)> = Vec::new();
     let items: Vec<&str> = {{ rust.items }};

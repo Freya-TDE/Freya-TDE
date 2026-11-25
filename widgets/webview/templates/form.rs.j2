@@ -179,7 +179,7 @@ impl {{ form.struct }} {
             "{{ c.name }}" => {
                 self.{{ c.name }}.freya_take(input);
             {%- if t == "backend:webview/RadioButton" %}
-                // Optionsfelder desselben Containers bilden eine Gruppe.
+                // Radio buttons of the same container form a group.
                 if self.{{ c.name }}.value {
                 {%- for p in containers %}{% if c.name in (p.children | map(attribute="name") | list) %}
                 {%- for o in p.children if o.type == "backend:webview/RadioButton" and o.name != c.name and o.field %}
@@ -189,7 +189,7 @@ impl {{ form.struct }} {
                 }
             {%- endif %}
             {%- if t == "backend:webview/DataGrid" and c.props.editable and c.props.data_source %}
-                // Bearbeitbar: Zellen, Esc und Zeilenwechsel an die Datenbindung.
+                // Editable: cells, Esc and row changes go to the data binding.
                 match event {
                     "on_select" => {
                         let index = self.{{ c.name }}.value.selected;

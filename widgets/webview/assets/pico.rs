@@ -1,5 +1,5 @@
 //! Pico CSS 2.1.1 (classless) – https://picocss.com – MIT License, Copyright (c) 2019-2024 Pico.
-//! Eingebettet für Formulare mit `style = Pico` (WebView-Backend von Freya TDE).
+//! Embedded for forms with `style = Pico` (WebView backend of Freya TDE).
 //! Embedded for forms with `style = Pico` (Freya TDE WebView backend).
 
 #[allow(dead_code)]

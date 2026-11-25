@@ -395,8 +395,8 @@ pub const FREYA_JS: &str = r####"
             const row = e.target.closest("tr");
             if (row && !e.target.closest("input")) send(name, "on_select", { index: row.sectionRowIndex });
           });
-          // Bearbeitbar: Doppelklick bearbeitet die Zelle, Enter speichert die Zeile,
-          // Esc verwirft sie, Verlassen des Felds übernimmt die Zelle.
+          // Editable: double click edits the cell, Enter saves the row,
+          // Esc discards it, leaving the field takes over the cell.
           if (el.dataset.editable) {
             el.tBodies[0].addEventListener("dblclick", (e) => {
               const td = e.target.closest("td");
@@ -536,7 +536,7 @@ pub fn freya_picture_url(path: &str, gamma: f64, opacity: f64) -> String {
             }
         }
     }
-    // Windows (WebView2) erreicht eigene Schemata über http://<schema>.localhost.
+    // Windows (WebView2) reaches custom schemes via http://<scheme>.localhost.
     if cfg!(windows) {
         format!("http://freya.localhost/{key}")
     } else {

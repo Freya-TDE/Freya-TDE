@@ -14,8 +14,8 @@ import 'src/rust/frb_generated.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // Die Rust-Bibliothek: beim Entwickeln aus ../target/debug (cargo build),
-  // sonst die von rust_builder (cargokit) ins Programm gepackte.
+  // The Rust library: while developing from ../target/debug (cargo build),
+  // otherwise the one rust_builder (cargokit) bundled into the program.
   await RustLib.init(
     externalLibrary: await loadExternalLibrary(
       ExternalLibraryLoaderConfig(
@@ -26,10 +26,10 @@ Future<void> main() async {
     ),
   );
 {%- if ui %}
-  // Fenster wie im Designer (Titel, Größe, Position, Startzustand).
+  // Window as in the designer (title, size, position, start state).
   await {{ ui[0].struct }}View.setupWindow();
 {%- endif %}
-  // App::init und `started` in src/lib.rs.
+  // App::init and `started` in src/lib.rs.
   freyaStart();
   runApp(const App());
 }
@@ -46,7 +46,7 @@ class App extends StatelessWidget {
       darkTheme: ThemeData(colorSchemeSeed: Colors.blue, brightness: Brightness.dark),
     {%- if ui %}
       themeMode: {{ ui[0].struct }}View.themeMode,
-      // Das erste Formular ist das Hauptformular; weitere öffnet z. B.
+      // The first form is the main form; open others e.g. with
       // Navigator.push(context, MaterialPageRoute(builder: (_) => const OtherFormView())).
       home: const {{ ui[0].struct }}View(),
     {%- else %}
