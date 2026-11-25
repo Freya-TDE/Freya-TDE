@@ -2213,7 +2213,7 @@ dependencies = [
 
 [[package]]
 name = "rncl"
-version = "0.3.5"
+version = "0.4.0"
 dependencies = [
  "ruf",
 ]
@@ -2234,7 +2234,7 @@ dependencies = [
 
 [[package]]
 name = "ruf"
-version = "0.3.5"
+version = "0.4.0"
 dependencies = [
  "gdk4-macos",
  "gdk4-win32",
@@ -2245,6 +2245,7 @@ dependencies = [
  "pangocairo",
  "regex",
  "sourceview5",
+ "toml_edit",
  "windows-sys 0.61.2",
 ]
 
