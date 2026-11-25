@@ -18,6 +18,7 @@
 //! *Skill-Tabelle der KI: eingebaute (vertrauenswürdige) Skills, eigene
 //! Skills eines Projekts nur nach Freigabe mit Prüfsumme.*
 
+use crate::tr;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -123,9 +124,11 @@ pub fn parse(text: &str) -> Result<(String, String, String), String> {
     let text = text.strip_prefix('\u{feff}').unwrap_or(text);
     let rest = text
         .strip_prefix("---")
-        .ok_or("Kopf (---) fehlt")?
+        .ok_or_else(|| tr!("skills.no_header"))?
         .trim_start_matches(['\r', '\n']);
-    let end = rest.find("\n---").ok_or("Ende des Kopfs (---) fehlt")?;
+    let end = rest
+        .find("\n---")
+        .ok_or_else(|| tr!("skills.no_header_end"))?;
     let (head, body) = rest.split_at(end);
     let body = body["\n---".len()..].trim_start_matches(['\r', '\n']);
     let mut fields = BTreeMap::new();
@@ -150,12 +153,10 @@ pub fn parse(text: &str) -> Result<(String, String, String), String> {
             .chars()
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
     if !valid_name {
-        return Err(format!(
-            "ungültiger Name „{name}“ (Kleinbuchstaben, Ziffern, -; höchstens 64 Zeichen)"
-        ));
+        return Err(tr!("skills.bad_name", name = name));
     }
     if description.is_empty() || description.chars().count() > 1024 {
-        return Err("description fehlt oder ist länger als 1024 Zeichen".into());
+        return Err(tr!("skills.bad_description"));
     }
     Ok((name, description, body.to_owned()))
 }
@@ -215,7 +216,7 @@ pub fn installed_pack() -> &'static Result<Option<SkillPack>, SkillIssue> {
         Some(dir) => match SKILL_PACK_KEY {
             None => Err(SkillIssue {
                 code: codes::SKILL_PACK_NO_KEY,
-                detail: "Skill-Paket gefunden, aber dieses Programm hat keinen Schlüssel zum Prüfen; es wird nicht geladen".into(),
+                detail: tr!("skills.no_key"),
                 path: Some(dir),
             }),
             Some(key) => load_pack(&dir, &key, env!("CARGO_PKG_VERSION")).map(Some),
@@ -272,13 +273,18 @@ pub fn load_pack(dir: &Path, key: &[u8; 32], freya_version: &str) -> Result<Skil
         .and_then(|s| from_hex(s.trim()))
         .and_then(|b| <[u8; 64]>::try_from(b).ok())
         .map(|b| Signature::from_bytes(&b));
-    let key = VerifyingKey::from_bytes(key)
-        .map_err(|e| issue(codes::SKILL_PACK_SIGNATURE, format!("Schlüssel: {e}"), None))?;
+    let key = VerifyingKey::from_bytes(key).map_err(|e| {
+        issue(
+            codes::SKILL_PACK_SIGNATURE,
+            tr!("skills.key_error", error = e),
+            None,
+        )
+    })?;
     let signed = signature.is_some_and(|s| key.verify(&manifest, &s).is_ok());
     if !signed {
         return Err(issue(
             codes::SKILL_PACK_SIGNATURE,
-            "Signatur des Skill-Pakets fehlt oder ist ungültig; es wird nicht geladen".into(),
+            tr!("skills.bad_signature"),
             Some(dir.join("pack.json.sig")),
         ));
     }
@@ -311,7 +317,7 @@ pub fn load_pack(dir: &Path, key: &[u8; 32], freya_version: &str) -> Result<Skil
         None => {
             return Err(issue(
                 codes::SKILL_PACK_INVALID,
-                format!("min_freya „{}“ ist keine Version", manifest.min_freya),
+                tr!("skills.bad_version", version = manifest.min_freya),
                 Some(manifest_path),
             ));
         }
@@ -335,7 +341,7 @@ pub fn load_pack(dir: &Path, key: &[u8; 32], freya_version: &str) -> Result<Skil
             if others || !skill.is_file() {
                 return Err(issue(
                     codes::SKILL_PACK_HASH,
-                    format!("nicht gelistete Datei in {}", path.display()),
+                    tr!("skills.unlisted_in", path = path.display()),
                     Some(path),
                 ));
             }
@@ -346,7 +352,7 @@ pub fn load_pack(dir: &Path, key: &[u8; 32], freya_version: &str) -> Result<Skil
         ) {
             return Err(issue(
                 codes::SKILL_PACK_HASH,
-                format!("nicht gelistete Datei {}", path.display()),
+                tr!("skills.unlisted", path = path.display()),
                 Some(path),
             ));
         }
@@ -360,8 +366,10 @@ pub fn load_pack(dir: &Path, key: &[u8; 32], freya_version: &str) -> Result<Skil
     {
         return Err(issue(
             codes::SKILL_PACK_HASH,
-            format!(
-                "Dateien des Pakets passen nicht zu pack.json (gelistet: {listed:?}, vorhanden: {found:?})"
+            tr!(
+                "skills.mismatch",
+                listed = format!("{listed:?}"),
+                found = format!("{found:?}")
             ),
             None,
         ));
@@ -379,7 +387,7 @@ pub fn load_pack(dir: &Path, key: &[u8; 32], freya_version: &str) -> Result<Skil
         if sha256(&text) != hash.to_ascii_lowercase() {
             return Err(issue(
                 codes::SKILL_PACK_HASH,
-                format!("{rel} wurde nach dem Signieren geändert"),
+                tr!("skills.changed", path = rel),
                 Some(path),
             ));
         }
@@ -424,7 +432,7 @@ impl SkillTable {
                 }),
                 Err(e) => table.issues.push(SkillIssue {
                     code: codes::SKILL_INVALID,
-                    detail: format!("eingebauter Skill ({source}): {e}"),
+                    detail: tr!("skills.builtin_invalid", source = source, error = e),
                     path: None,
                 }),
             }
@@ -493,9 +501,7 @@ impl SkillTable {
             if self.skills.iter().any(|s| s.name == name && s.trusted()) {
                 self.issues.push(SkillIssue {
                     code: codes::SKILL_SHADOWED,
-                    detail: format!(
-                        "Projekt-Skill „{name}“ heißt wie ein geprüfter Skill und wird nicht verwendet"
-                    ),
+                    detail: tr!("skills.shadowed", name = name),
                     path: Some(path),
                 });
                 continue;

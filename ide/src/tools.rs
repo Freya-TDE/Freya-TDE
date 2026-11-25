@@ -9,6 +9,7 @@
 //!
 //! *Rust-Werkzeuge der Werkzeugleiste ohne Oberfläche.*
 
+use crate::tr;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -217,7 +218,7 @@ pub fn run(
             let output = command.output()?;
             let mut text = text(&output);
             if text.contains("no such command") {
-                text.push_str("\nsqlx-cli fehlt: cargo install sqlx-cli --no-default-features --features rustls,postgres,mysql,sqlite\n");
+                text.push_str(&tr!("tools.sqlx_cli_missing"));
             }
             Ok(ToolReport {
                 success: output.status.success(),

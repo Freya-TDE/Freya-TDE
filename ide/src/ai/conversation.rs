@@ -19,6 +19,7 @@
 //! *Ein Gespräch mit der KI als Zustandsautomat: Verlauf, Werkzeuge,
 //! Rechte und Freigaben, ohne Netz und Oberfläche.*
 
+use crate::tr;
 use serde::Serialize;
 use serde_json::{Value, json};
 
@@ -215,7 +216,7 @@ impl Conversation {
         if self.steps > self.max_steps {
             return Err(AiError::new(
                 codes::TOO_MANY_STEPS,
-                format!("mehr als {} Schritte für eine Nachricht", self.max_steps),
+                tr!("ai.msg.too_many_steps", steps = self.max_steps),
             ));
         }
         for (id, name, input) in calls {

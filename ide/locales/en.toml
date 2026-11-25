@@ -834,3 +834,155 @@ build_running = "A build is already running."
 diff_staged = "{name} (staged)"
 diff_changes = "{name} (changes)"
 no_differences = "(no differences)"
+
+[git.error]
+auth_required = "Authentication failed or cancelled."
+rejected = "Push rejected: the remote has newer commits – pull first."
+merge_conflict = "Merge conflicts – resolve them and commit."
+diverged = "Local and remote branch have diverged (set pull.rebase or merge by hand)."
+signing_failed = "Signing failed (GPG passphrase cancelled or gpg-agent not reachable)."
+not_merged = "The branch is not fully merged – “Delete (force)” discards its commits."
+local_changes = "Local changes would be overwritten – commit or discard them first."
+network = "The remote is not reachable."
+failed = "git reports an error."
+
+[git.gh_error]
+gh_auth_required = "The GitHub CLI is not logged in – run `gh auth login` once in the terminal."
+pull_request_exists = "There is already a pull request for this branch."
+failed = "gh reports an error."
+
+[git.msg]
+detached = "No branch checked out (detached HEAD)."
+no_remote = "The repository has no remote."
+nothing_to_discard = "No changes to discard."
+empty_message = "The commit message is empty."
+conflicts = "There are still unresolved conflicts."
+nothing_to_amend = "There is no commit to amend yet."
+nothing_staged = "Nothing is staged."
+no_commit = "There is no commit yet."
+nothing_to_stash = "No changes to stash."
+amend_pushed = "The last commit is already pushed; a force push will be needed."
+no_commit_name = "(no commit)"
+refused = "Not run:"
+publish = "{branch} will be published to {remote}."
+untracked_deleted = "New files will be deleted (trash): {files}"
+pr_from_base = "{branch} is the main branch – create a branch of its own for a pull request first."
+gh_needed = "Pull requests need the GitHub CLI ({program} not found; https://cli.github.com)."
+no_branch = "The branch {name} does not exist."
+checked_out = "{name} is checked out – choose another branch first."
+bad_remote = "“{name}” with “{url}” is not a valid remote."
+remote_exists = "The remote {name} already exists."
+no_remote_named = "The remote {name} does not exist."
+bad_tag = "“{name}” is not a valid tag name."
+tag_exists = "The tag {name} already exists."
+no_tag = "The tag {name} does not exist."
+bad_branch = "“{name}” is not a valid branch name."
+branch_exists = "The branch {name} already exists."
+no_stash = "The stash {index} does not exist."
+git_missing = "git not found ({program}): {error}"
+gh_missing = "GitHub CLI not found ({program}): {error}"
+
+[msg]
+managed_only = "This project is only managed (created from a Cargo.toml); Freya TDE generates no code for it."
+no_form_open = "No form open."
+no_element = "{name} does not exist."
+unknown_type = "Unknown type {type}"
+no_events = "{type} has no events."
+
+[files]
+invalid_path = "“{path}” is not a path inside the project."
+invalid_name = "“{name}” is not allowed as a file or folder name."
+generated = "Freya TDE recreates {path} on the next “Generate Code”."
+protected = "{path} belongs to the project; the project removes or renames forms."
+exists = "{path} already exists."
+not_found = "{path} does not exist."
+into_itself = "{path} cannot be moved into itself."
+form_code = "{path} is the code of the form {stem}.ftdr."
+
+[codetools]
+generated = "generated files (.gen.rs) are not completed"
+edits_generated = "rust-analyzer would change a generated file"
+nothing = "nothing to complete here"
+
+[wizard.msg]
+invalid_name = "“{name}”: letters, digits, - and _, starting with a letter"
+library_ui = "A library has no user interface ({backend})."
+license = "Accept the license notice of {backend}"
+needs_web_server = "the WebSocket endpoint needs the web server (Axum)"
+
+[debug]
+adapter_failed = "{program} could not be started: {error}"
+ended = "The debug session has ended."
+not_stopped = "Only possible while the program is paused."
+
+[projects]
+unknown = "{path} is not in the project list."
+cycle = "{name} cannot be a subproject of its own subproject."
+not_cargo = "{path} has no Cargo.toml."
+
+[database]
+feature_hint = " – SQLx feature {features} goes into the Cargo.toml when code is generated"
+no_rust_type = " – no Rust type, please by hand: {columns}"
+
+[tools]
+sqlx_cli_missing = "\nsqlx-cli is missing: cargo install sqlx-cli --no-default-features --features rustls,postgres,mysql,sqlite\n"
+
+[snippets]
+taken = "Snippet “{name}” already exists"
+unknown = "no snippet “{name}”"
+no_name = "Snippet without a name"
+no_code = "Snippet “{name}” without code"
+
+[snippets.builtin]
+read_file = "Read file"
+read_file_description = "Reads a whole text file into a string"
+hashmap = "HashMap"
+hashmap_description = "New HashMap with string keys"
+lines = "Loop over lines"
+lines_description = "Loop over the lines of a text with their number"
+sleep = "Pause (Tokio)"
+sleep_description = "Waits asynchronously without blocking the user interface"
+dbg = "Debug output"
+dbg_description = "Prints a value with file and line (dbg!)"
+
+[settings.msg]
+no_config_dir = "no configuration folder"
+base_dir_missing = "Working folder missing: {path}"
+profile_unnamed = "AI profile without a name"
+profile_twice = "AI profile “{name}” exists twice"
+no_key = "AI profile “{name}” has no API key"
+profile_unknown = "unknown AI profile “{name}”"
+profile_exists = "AI profile “{name}” already exists"
+no_endpoint = "AI profile “{name}” needs an address"
+profile = "AI profile “{name}”"
+
+[ai.msg]
+no_model = "no model chosen"
+not_json = "Answer is not JSON: {error}"
+insecure = "The API key would go unencrypted (http://) to {host}; better use https://"
+event_not_json = "Event is not JSON: {error}"
+too_many_steps = "more than {steps} steps for one message"
+no_field = "Answer without {field}"
+stream_error = "Error in the data stream"
+
+[skills]
+no_header = "header (---) missing"
+no_header_end = "end of the header (---) missing"
+bad_name = "invalid name “{name}” (lowercase letters, digits, -; at most 64 characters)"
+bad_description = "description is missing or longer than 1024 characters"
+no_key = "Skill pack found, but this program has no key to verify it; it is not loaded"
+key_error = "Key: {error}"
+bad_signature = "The skill pack’s signature is missing or invalid; it is not loaded"
+bad_version = "min_freya “{version}” is not a version"
+unlisted_in = "unlisted file in {path}"
+unlisted = "unlisted file {path}"
+mismatch = "The pack’s files do not match pack.json (listed: {listed}, present: {found})"
+changed = "{path} was changed after signing"
+builtin_invalid = "built-in skill ({source}): {error}"
+shadowed = "Project skill “{name}” has the name of a verified skill and is not used"
+
+[problems]
+error = "Error"
+warning = "Warning"
+info = "Info"
+model = "Model"

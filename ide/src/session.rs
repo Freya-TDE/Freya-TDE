@@ -5,6 +5,7 @@
 //! The windows only forward input here and draw what [`Session::picture`]
 //! returns; tests (and later an AI) drive the same functions.
 
+use crate::tr;
 use std::path::{Path, PathBuf};
 
 use tdr_core::codegen::{self, Generation};
@@ -969,12 +970,9 @@ impl Session {
     pub fn write_code(&mut self) -> Result<(Generation, Vec<String>), String> {
         let dir = self
             .project_dir()
-            .ok_or("Das Projekt ist noch nicht gespeichert.")?;
+            .ok_or_else(|| tr!("ai.unsaved_project"))?;
         if !self.doc.project().generate {
-            return Err(
-                "Dieses Projekt wird nur verwaltet (aus einer Cargo.toml erstellt); Freya TDE erzeugt dafür keinen Code."
-                    .to_owned(),
-            );
+            return Err(tr!("msg.managed_only"));
         }
         self.doc.save(Some(&dir)).map_err(|e| e.to_string())?;
         let generation = self.generation().expect("saved project");
@@ -990,25 +988,25 @@ impl Session {
         element: &ComponentName,
         event: Option<&str>,
     ) -> Result<HandlerName, String> {
-        let form = self.form.clone().ok_or("Kein Formular geöffnet.")?;
+        let form = self.form.clone().ok_or_else(|| tr!("msg.no_form_open"))?;
         let (event, existing) = {
-            let f = self.form().ok_or("Kein Formular geöffnet.")?;
+            let f = self.form().ok_or_else(|| tr!("msg.no_form_open"))?;
             let component = f
                 .element(element)
-                .ok_or_else(|| format!("{element} gibt es nicht."))?
+                .ok_or_else(|| tr!("msg.no_element", name = element))?
                 .component();
             let ty = self
                 .doc
                 .registry()
                 .get(&component.type_ref)
-                .ok_or_else(|| format!("Unbekannter Typ {}", component.type_ref))?;
+                .ok_or_else(|| tr!("msg.unknown_type", type = component.type_ref))?;
             let event = match event {
                 Some(e) => e.to_owned(),
                 None => ty
                     .events
                     .first()
                     .map(|e| e.name.clone())
-                    .ok_or_else(|| format!("{} hat keine Ereignisse.", component.type_ref))?,
+                    .ok_or_else(|| tr!("msg.no_events", type = component.type_ref))?,
             };
             let existing = component.events.get(&event).cloned();
             (event, existing)

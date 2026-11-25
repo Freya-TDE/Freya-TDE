@@ -1,5 +1,6 @@
 //! The HTTP client for one AI profile (synchronous, rustls).
 
+use crate::tr;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -43,7 +44,7 @@ impl Client {
             .ok_or_else(|| {
                 AiError::new(
                     codes::ENDPOINT_MISSING,
-                    format!("KI-Profil „{}“ braucht eine Adresse", profile.name),
+                    tr!("settings.msg.no_endpoint", name = profile.name),
                 )
             })?
             .trim()
@@ -53,7 +54,7 @@ impl Client {
         if profile.provider.needs_key() && key.is_none() {
             return Err(AiError::new(
                 codes::KEY_MISSING,
-                format!("KI-Profil „{}“ hat keinen API-Key", profile.name),
+                tr!("settings.msg.no_key", name = profile.name),
             ));
         }
         let agent = ureq::Agent::config_builder()
@@ -82,7 +83,7 @@ impl Client {
         let profile = settings.ai.profile(name).ok_or_else(|| {
             AiError::new(
                 codes::PROFILE_UNKNOWN,
-                format!("unbekanntes KI-Profil „{name}“"),
+                tr!("settings.msg.profile_unknown", name = name),
             )
         })?;
         Self::new(profile, settings.key(name, store))
@@ -199,7 +200,7 @@ impl Client {
     /// Address and body of a chat request.
     fn chat_request(&self, req: &ChatRequest, stream: bool) -> Result<(String, Value), AiError> {
         if self.model.is_empty() {
-            return Err(AiError::new(codes::MODEL_MISSING, "kein Modell gewählt"));
+            return Err(AiError::new(codes::MODEL_MISSING, tr!("ai.msg.no_model")));
         }
         Ok(match self.provider.protocol() {
             AiProtocol::Anthropic => {
@@ -264,9 +265,8 @@ impl Client {
             .read_to_string()
             .map_err(transport_error)?;
         if (200..300).contains(&status) {
-            return serde_json::from_str(&text).map_err(|e| {
-                AiError::new(codes::BAD_RESPONSE, format!("Antwort ist kein JSON: {e}"))
-            });
+            return serde_json::from_str(&text)
+                .map_err(|e| AiError::new(codes::BAD_RESPONSE, tr!("ai.msg.not_json", error = e)));
         }
         let code = match status {
             401 | 403 => codes::AUTH_FAILED,

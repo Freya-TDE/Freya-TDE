@@ -10,6 +10,7 @@
 //! *Datenbanken zur Entwurfszeit über den Helfer `freya-tde-db`.*
 
 use crate::tools::NoConsole;
+use crate::tr;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
@@ -472,10 +473,7 @@ pub fn columns_summary(described: &Described) -> String {
         .map(|c| format!("{} ({})", c.name, c.sql_type))
         .collect();
     if !open.is_empty() {
-        text.push_str(&format!(
-            " – ohne Rust-Typ, bitte von Hand: {}",
-            open.join(", ")
-        ));
+        text.push_str(&tr!("database.no_rust_type", columns = open.join(", ")));
     }
     let mut features: Vec<&str> = described
         .columns
@@ -485,9 +483,9 @@ pub fn columns_summary(described: &Described) -> String {
     features.sort_unstable();
     features.dedup();
     if !features.is_empty() {
-        text.push_str(&format!(
-            " – SQLx-Feature {} kommt beim Code-Erzeugen in die Cargo.toml",
-            features.join(", ")
+        text.push_str(&tr!(
+            "database.feature_hint",
+            features = features.join(", ")
         ));
     }
     text

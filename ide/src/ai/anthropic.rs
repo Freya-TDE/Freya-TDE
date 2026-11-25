@@ -1,5 +1,6 @@
 //! Anthropic Messages API (`POST /v1/messages`).
 
+use crate::tr;
 use serde_json::{Value, json};
 
 use super::client::ModelInfo;
@@ -70,9 +71,12 @@ fn message(m: &Message) -> Value {
 }
 
 pub fn response(v: &Value) -> Result<ChatResponse, AiError> {
-    let blocks = v["content"]
-        .as_array()
-        .ok_or_else(|| AiError::new(codes::BAD_RESPONSE, "Antwort ohne content"))?;
+    let blocks = v["content"].as_array().ok_or_else(|| {
+        AiError::new(
+            codes::BAD_RESPONSE,
+            tr!("ai.msg.no_field", field = "content"),
+        )
+    })?;
     let mut parts = Vec::new();
     for b in blocks {
         match b["type"].as_str() {

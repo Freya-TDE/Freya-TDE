@@ -28,6 +28,7 @@
 //! assert_eq!(field_at(source, 3, 14), Some(("counter".to_owned(), "i32".to_owned())));
 //! ```
 
+use crate::tr;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -135,10 +136,7 @@ pub fn plan(
     order: MethodOrder,
 ) -> Result<Completion, CodetoolsIssue> {
     if generated(file) {
-        return Err(issue(
-            codes::GENERATED_FILE,
-            "generierte Dateien (.gen.rs) werden nicht vervollständigt",
-        ));
+        return Err(issue(codes::GENERATED_FILE, tr!("codetools.generated")));
     }
     // Eigene Felder zuerst: rust-analyzer will sie ins generierte Struct schreiben.
     if let Some((name, rust_type)) = field_at(source, line, column)
@@ -176,13 +174,10 @@ pub fn plan(
     {
         return Err(issue(
             codes::EDITS_GENERATED,
-            "rust-analyzer würde eine generierte Datei ändern",
+            tr!("codetools.edits_generated"),
         ));
     }
-    Err(issue(
-        codes::NOTHING,
-        "hier gibt es nichts zu vervollständigen",
-    ))
+    Err(issue(codes::NOTHING, tr!("codetools.nothing")))
 }
 
 /// rust-analyzer's generated method made fit for Freya TDE: `&mut self`,

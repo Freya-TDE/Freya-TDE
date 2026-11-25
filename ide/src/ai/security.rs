@@ -1,6 +1,7 @@
 //! Checks before a key leaves the machine.
 
 use super::{AiIssue, codes};
+use crate::tr;
 
 /// The host of an `http://` or `https://` address (without port; IPv6
 /// without brackets).
@@ -44,9 +45,7 @@ pub fn key_transport_risk(endpoint: &str, sends_key: bool) -> Option<AiIssue> {
     let (scheme, host) = host(endpoint)?;
     (scheme.eq_ignore_ascii_case("http") && !is_loopback(host)).then(|| AiIssue {
         code: codes::INSECURE_KEY_TRANSPORT,
-        detail: format!(
-            "Der API-Key ginge unverschlüsselt (http://) an {host}; besser https:// verwenden"
-        ),
+        detail: tr!("ai.msg.insecure", host = host),
     })
 }
 

@@ -2,6 +2,7 @@
 //! OpenAI, xAI, Mistral, DeepSeek, Groq, OpenRouter and the local servers
 //! (Ollama, LM Studio, llama.cpp, vLLM …).
 
+use crate::tr;
 use serde_json::{Value, json};
 
 use super::client::ModelInfo;
@@ -100,7 +101,10 @@ fn push_message(out: &mut Vec<Value>, m: &Message) {
 pub fn response(v: &Value) -> Result<ChatResponse, AiError> {
     let choice = &v["choices"][0];
     if choice.is_null() {
-        return Err(AiError::new(codes::BAD_RESPONSE, "Antwort ohne choices"));
+        return Err(AiError::new(
+            codes::BAD_RESPONSE,
+            tr!("ai.msg.no_field", field = "choices"),
+        ));
     }
     let msg = &choice["message"];
     let mut parts = Vec::new();

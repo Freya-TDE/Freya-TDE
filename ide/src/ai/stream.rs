@@ -4,6 +4,7 @@
 //! would have returned without streaming; the usual `response` functions
 //! read it. Text arrives piece by piece through a callback.
 
+use crate::tr;
 use std::io::BufRead;
 
 use serde_json::{Value, json};
@@ -73,7 +74,7 @@ impl Collector {
             return Ok(true);
         }
         let v: Value = serde_json::from_str(data).map_err(|e| {
-            AiError::new(codes::BAD_RESPONSE, format!("Ereignis ist kein JSON: {e}"))
+            AiError::new(codes::BAD_RESPONSE, tr!("ai.msg.event_not_json", error = e))
         })?;
         if event == Some("error") || v.get("error").is_some_and(|e| !e.is_null()) {
             return Err(stream_error(&v));
@@ -101,7 +102,7 @@ fn stream_error(v: &Value) -> AiError {
     let message = e["message"]
         .as_str()
         .or(e.as_str())
-        .unwrap_or("Fehler im Datenstrom");
+        .map_or_else(|| tr!("ai.msg.stream_error"), str::to_owned);
     let code = match e["type"].as_str().or(e["status"].as_str()) {
         Some("overloaded_error" | "rate_limit_error" | "RESOURCE_EXHAUSTED") => codes::RATE_LIMITED,
         Some("authentication_error" | "permission_error" | "PERMISSION_DENIED") => {

@@ -21,6 +21,7 @@
 //! assert!(settings.validate().is_empty());
 //! ```
 
+use crate::tr;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -486,7 +487,7 @@ impl Settings {
     pub fn save(&self) -> Result<PathBuf, SettingsError> {
         let file = Self::file().ok_or_else(|| SettingsError {
             code: codes::WRITE_FAILED,
-            detail: "kein Konfigurationsordner".into(),
+            detail: tr!("settings.msg.no_config_dir"),
         })?;
         self.save_to(&file)?;
         Ok(file)
@@ -530,23 +531,26 @@ impl Settings {
         {
             issue(
                 codes::BASE_DIR_MISSING,
-                format!("Arbeitsverzeichnis fehlt: {}", dir.display()),
+                tr!("settings.msg.base_dir_missing", path = dir.display()),
             );
         }
         let mut seen = std::collections::BTreeSet::new();
         for p in &self.ai.profiles {
             if p.name.trim().is_empty() {
-                issue(codes::PROFILE_NAME_EMPTY, "KI-Profil ohne Namen".into());
+                issue(
+                    codes::PROFILE_NAME_EMPTY,
+                    tr!("settings.msg.profile_unnamed"),
+                );
             } else if !seen.insert(p.name.as_str()) {
                 issue(
                     codes::PROFILE_DUPLICATE,
-                    format!("KI-Profil „{}“ gibt es zweimal", p.name),
+                    tr!("settings.msg.profile_twice", name = p.name),
                 );
             }
             if p.effective_endpoint().is_none() {
                 issue(
                     codes::ENDPOINT_MISSING,
-                    format!("KI-Profil „{}“ braucht eine Adresse", p.name),
+                    tr!("settings.msg.no_endpoint", name = p.name),
                 );
             }
             if let Some(endpoint) = p.effective_endpoint()
@@ -554,13 +558,17 @@ impl Settings {
             {
                 issue(
                     codes::INSECURE_KEY_TRANSPORT,
-                    format!("KI-Profil „{}“: {}", p.name, risk.detail),
+                    format!(
+                        "{}: {}",
+                        tr!("settings.msg.profile", name = p.name),
+                        risk.detail
+                    ),
                 );
             }
             if p.provider.needs_key() && !p.has_key() && std::env::var_os(KEY_ENV).is_none() {
                 issue(
                     codes::KEY_MISSING,
-                    format!("KI-Profil „{}“ hat keinen API-Key", p.name),
+                    tr!("settings.msg.no_key", name = p.name),
                 );
             }
         }
@@ -574,7 +582,7 @@ impl Settings {
             if self.ai.profile(name).is_none() {
                 issue(
                     codes::PROFILE_UNKNOWN,
-                    format!("unbekanntes KI-Profil „{name}“"),
+                    tr!("settings.msg.profile_unknown", name = name),
                 );
             }
         }
@@ -597,7 +605,7 @@ impl Settings {
             .find(|p| p.name == profile)
             .ok_or_else(|| SettingsError {
                 code: codes::PROFILE_UNKNOWN,
-                detail: format!("unbekanntes KI-Profil „{profile}“"),
+                detail: tr!("settings.msg.profile_unknown", name = profile),
             })?;
         match store.set(&p.account(), key) {
             Ok(()) => {
@@ -658,7 +666,7 @@ impl Settings {
         if self.ai.profile(new).is_some() {
             return Err(SettingsError {
                 code: codes::PROFILE_DUPLICATE,
-                detail: format!("KI-Profil „{new}“ gibt es schon"),
+                detail: tr!("settings.msg.profile_exists", name = new),
             });
         }
         let key = self
@@ -672,7 +680,7 @@ impl Settings {
             .find(|p| p.name == old)
             .ok_or_else(|| SettingsError {
                 code: codes::PROFILE_UNKNOWN,
-                detail: format!("unbekanntes KI-Profil „{old}“"),
+                detail: tr!("settings.msg.profile_unknown", name = old),
             })?;
         p.name = new.to_owned();
         if self.ai.default_profile.as_deref() == Some(old) {
@@ -714,7 +722,7 @@ impl SettingsEdit {
         if new.is_empty() {
             return Err(SettingsError {
                 code: codes::PROFILE_NAME_EMPTY,
-                detail: "KI-Profil ohne Namen".into(),
+                detail: tr!("settings.msg.profile_unnamed"),
             });
         }
         if old == new {
@@ -724,7 +732,7 @@ impl SettingsEdit {
         if ai.profile(new).is_some() {
             return Err(SettingsError {
                 code: codes::PROFILE_DUPLICATE,
-                detail: format!("KI-Profil „{new}“ gibt es schon"),
+                detail: tr!("settings.msg.profile_exists", name = new),
             });
         }
         let p = ai
@@ -733,7 +741,7 @@ impl SettingsEdit {
             .find(|p| p.name == old)
             .ok_or_else(|| SettingsError {
                 code: codes::PROFILE_UNKNOWN,
-                detail: format!("unbekanntes KI-Profil „{old}“"),
+                detail: tr!("settings.msg.profile_unknown", name = old),
             })?;
         p.name = new.to_owned();
         if ai.default_profile.as_deref() == Some(old) {
@@ -808,7 +816,7 @@ impl SettingsEdit {
         let p = self.settings.ai.profile(profile).ok_or_else(|| {
             crate::ai::AiError::new(
                 crate::ai::codes::PROFILE_UNKNOWN,
-                format!("unbekanntes KI-Profil „{profile}“"),
+                tr!("settings.msg.profile_unknown", name = profile),
             )
         })?;
         crate::ai::Client::new(p, self.key(profile, store))

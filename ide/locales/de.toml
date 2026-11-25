@@ -834,3 +834,155 @@ build_running = "Es läuft bereits ein Build."
 diff_staged = "{name} (gestaged)"
 diff_changes = "{name} (Änderungen)"
 no_differences = "(keine Unterschiede)"
+
+[git.error]
+auth_required = "Anmeldung fehlgeschlagen oder abgebrochen."
+rejected = "Push abgelehnt: Das Remote hat neuere Commits – zuerst pullen."
+merge_conflict = "Konflikte beim Zusammenführen – bitte auflösen und committen."
+diverged = "Lokaler und entfernter Zweig sind auseinandergelaufen (pull.rebase einstellen oder von Hand zusammenführen)."
+signing_failed = "Signieren fehlgeschlagen (GPG-Passphrase abgebrochen oder gpg-agent nicht erreichbar)."
+not_merged = "Der Zweig ist noch nicht zusammengeführt – „Löschen (erzwingen)“ verwirft seine Commits."
+local_changes = "Lokale Änderungen würden überschrieben – erst committen oder verwerfen."
+network = "Das Remote ist nicht erreichbar."
+failed = "git meldet einen Fehler."
+
+[git.gh_error]
+gh_auth_required = "Die GitHub-CLI ist nicht angemeldet – einmal `gh auth login` im Terminal ausführen."
+pull_request_exists = "Für diesen Zweig gibt es schon einen Pull Request."
+failed = "gh meldet einen Fehler."
+
+[git.msg]
+detached = "Kein Zweig ausgecheckt (losgelöster HEAD)."
+no_remote = "Das Repository hat kein Remote."
+nothing_to_discard = "Keine Änderungen zum Verwerfen."
+empty_message = "Die Commit-Nachricht ist leer."
+conflicts = "Es gibt noch ungelöste Konflikte."
+nothing_to_amend = "Es gibt noch keinen Commit zum Ändern."
+nothing_staged = "Es ist nichts gestaged."
+no_commit = "Es gibt noch keinen Commit."
+nothing_to_stash = "Keine Änderungen zum Zurücklegen."
+amend_pushed = "Der letzte Commit ist schon gepusht; danach ist ein erzwungener Push nötig."
+no_commit_name = "(kein Commit)"
+refused = "Nicht ausgeführt:"
+publish = "{branch} wird auf {remote} veröffentlicht."
+untracked_deleted = "Neue Dateien werden gelöscht (Papierkorb): {files}"
+pr_from_base = "{branch} ist der Hauptzweig – für einen Pull Request zuerst einen eigenen Zweig anlegen."
+gh_needed = "Für Pull Requests wird die GitHub-CLI gebraucht ({program} nicht gefunden; https://cli.github.com)."
+no_branch = "Den Zweig {name} gibt es nicht."
+checked_out = "{name} ist ausgecheckt – erst einen anderen Zweig wählen."
+bad_remote = "„{name}“ mit „{url}“ ist kein gültiges Remote."
+remote_exists = "Das Remote {name} gibt es schon."
+no_remote_named = "Das Remote {name} gibt es nicht."
+bad_tag = "„{name}“ ist kein gültiger Tag-Name."
+tag_exists = "Den Tag {name} gibt es schon."
+no_tag = "Den Tag {name} gibt es nicht."
+bad_branch = "„{name}“ ist kein gültiger Zweigname."
+branch_exists = "Den Zweig {name} gibt es schon."
+no_stash = "Den Stash {index} gibt es nicht."
+git_missing = "git nicht gefunden ({program}): {error}"
+gh_missing = "GitHub-CLI nicht gefunden ({program}): {error}"
+
+[msg]
+managed_only = "Dieses Projekt wird nur verwaltet (aus einer Cargo.toml erstellt); Freya TDE erzeugt dafür keinen Code."
+no_form_open = "Kein Formular geöffnet."
+no_element = "{name} gibt es nicht."
+unknown_type = "Unbekannter Typ {type}"
+no_events = "{type} hat keine Ereignisse."
+
+[files]
+invalid_path = "„{path}“ ist kein Pfad innerhalb des Projekts."
+invalid_name = "„{name}“ ist als Datei- oder Ordnername nicht erlaubt."
+generated = "{path} erzeugt Freya TDE beim nächsten „Code erzeugen“ neu."
+protected = "{path} gehört zum Projekt; Formulare entfernt oder benennt das Projekt um."
+exists = "{path} gibt es schon."
+not_found = "{path} gibt es nicht."
+into_itself = "{path} kann nicht in sich selbst landen."
+form_code = "{path} ist der Code des Formulars {stem}.ftdr."
+
+[codetools]
+generated = "generierte Dateien (.gen.rs) werden nicht vervollständigt"
+edits_generated = "rust-analyzer würde eine generierte Datei ändern"
+nothing = "hier gibt es nichts zu vervollständigen"
+
+[wizard.msg]
+invalid_name = "„{name}“: Buchstaben, Ziffern, - und _, beginnend mit einem Buchstaben"
+library_ui = "Eine Bibliothek hat keine Oberfläche ({backend})."
+license = "Lizenzhinweis von {backend} bestätigen"
+needs_web_server = "der WebSocket-Endpunkt braucht den Webserver (Axum)"
+
+[debug]
+adapter_failed = "{program} konnte nicht gestartet werden: {error}"
+ended = "Die Debug-Sitzung ist beendet."
+not_stopped = "Nur möglich, solange das Programm angehalten ist."
+
+[projects]
+unknown = "{path} steht nicht in der Projektliste."
+cycle = "{name} kann nicht Unterprojekt seines eigenen Unterprojekts sein."
+not_cargo = "{path} hat keine Cargo.toml."
+
+[database]
+feature_hint = " – SQLx-Feature {features} kommt beim Code-Erzeugen in die Cargo.toml"
+no_rust_type = " – ohne Rust-Typ, bitte von Hand: {columns}"
+
+[tools]
+sqlx_cli_missing = "\nsqlx-cli fehlt: cargo install sqlx-cli --no-default-features --features rustls,postgres,mysql,sqlite\n"
+
+[snippets]
+taken = "Snippet „{name}“ gibt es schon"
+unknown = "kein Snippet „{name}“"
+no_name = "Snippet ohne Namen"
+no_code = "Snippet „{name}“ ohne Code"
+
+[snippets.builtin]
+read_file = "Datei lesen"
+read_file_description = "Liest eine Textdatei vollständig in einen String"
+hashmap = "HashMap"
+hashmap_description = "Neue HashMap mit String-Schlüsseln"
+lines = "Zeilen durchlaufen"
+lines_description = "Schleife über die Zeilen eines Textes mit Nummer"
+sleep = "Pause (Tokio)"
+sleep_description = "Wartet asynchron, ohne die Oberfläche zu blockieren"
+dbg = "Debug-Ausgabe"
+dbg_description = "Gibt einen Wert mit Datei und Zeile aus (dbg!)"
+
+[settings.msg]
+no_config_dir = "kein Konfigurationsordner"
+base_dir_missing = "Arbeitsverzeichnis fehlt: {path}"
+profile_unnamed = "KI-Profil ohne Namen"
+profile_twice = "KI-Profil „{name}“ gibt es zweimal"
+no_key = "KI-Profil „{name}“ hat keinen API-Key"
+profile_unknown = "unbekanntes KI-Profil „{name}“"
+profile_exists = "KI-Profil „{name}“ gibt es schon"
+no_endpoint = "KI-Profil „{name}“ braucht eine Adresse"
+profile = "KI-Profil „{name}“"
+
+[ai.msg]
+no_model = "kein Modell gewählt"
+not_json = "Antwort ist kein JSON: {error}"
+insecure = "Der API-Key ginge unverschlüsselt (http://) an {host}; besser https:// verwenden"
+event_not_json = "Ereignis ist kein JSON: {error}"
+too_many_steps = "mehr als {steps} Schritte für eine Nachricht"
+no_field = "Antwort ohne {field}"
+stream_error = "Fehler im Datenstrom"
+
+[skills]
+no_header = "Kopf (---) fehlt"
+no_header_end = "Ende des Kopfs (---) fehlt"
+bad_name = "ungültiger Name „{name}“ (Kleinbuchstaben, Ziffern, -; höchstens 64 Zeichen)"
+bad_description = "description fehlt oder ist länger als 1024 Zeichen"
+no_key = "Skill-Paket gefunden, aber dieses Programm hat keinen Schlüssel zum Prüfen; es wird nicht geladen"
+key_error = "Schlüssel: {error}"
+bad_signature = "Signatur des Skill-Pakets fehlt oder ist ungültig; es wird nicht geladen"
+bad_version = "min_freya „{version}“ ist keine Version"
+unlisted_in = "nicht gelistete Datei in {path}"
+unlisted = "nicht gelistete Datei {path}"
+mismatch = "Dateien des Pakets passen nicht zu pack.json (gelistet: {listed}, vorhanden: {found})"
+changed = "{path} wurde nach dem Signieren geändert"
+builtin_invalid = "eingebauter Skill ({source}): {error}"
+shadowed = "Projekt-Skill „{name}“ heißt wie ein geprüfter Skill und wird nicht verwendet"
+
+[problems]
+error = "Fehler"
+warning = "Warnung"
+info = "Hinweis"
+model = "Modell"

@@ -13,6 +13,7 @@
 //! Anlegen.*
 
 use crate::tools::NoConsole;
+use crate::tr;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -280,10 +281,7 @@ impl NewProject {
         {
             errors.push(WizardIssue::new(
                 codes::INVALID_NAME,
-                format!(
-                    "„{}“: Buchstaben, Ziffern, - und _, beginnend mit einem Buchstaben",
-                    self.name
-                ),
+                tr!("wizard.msg.invalid_name", name = self.name),
             ));
         }
         if !self.parent.is_dir() {
@@ -311,7 +309,7 @@ impl NewProject {
             ProjectKind::Library if self.backend != NO_BACKEND => {
                 errors.push(WizardIssue::new(
                     codes::LIBRARY_WITH_BACKEND,
-                    format!("Eine Bibliothek hat keine Oberfläche ({}).", self.backend),
+                    tr!("wizard.msg.library_ui", backend = self.backend),
                 ));
             }
             ProjectKind::Binary if self.backend != NO_BACKEND => {
@@ -325,7 +323,7 @@ impl NewProject {
                         if notice.is_some() && !self.license_accepted {
                             errors.push(WizardIssue::new(
                                 codes::LICENSE_NOT_ACCEPTED,
-                                format!("Lizenzhinweis von {} bestätigen", self.backend),
+                                tr!("wizard.msg.license", backend = self.backend),
                             ));
                         }
                     }
@@ -358,7 +356,7 @@ impl NewProject {
             {
                 errors.push(WizardIssue::new(
                     codes::NEEDS_WEB_SERVER,
-                    "der WebSocket-Endpunkt braucht den Webserver (Axum)",
+                    tr!("wizard.msg.needs_web_server"),
                 ));
             }
             if url_missing {

@@ -21,6 +21,7 @@
 //! assert_eq!(done.line, 5); // der Cursor rückt mit der neuen use-Zeile
 //! ```
 
+use crate::tr;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -75,34 +76,34 @@ impl Default for SnippetStore {
 pub fn builtin() -> Vec<Snippet> {
     vec![
         Snippet::new(
-            "Datei lesen",
-            "Liest eine Textdatei vollständig in einen String",
+            &tr!("snippets.builtin.read_file"),
+            &tr!("snippets.builtin.read_file_description"),
             "use std::fs;",
-            "let text = fs::read_to_string(\"datei.txt\")?;",
+            "let text = fs::read_to_string(\"file.txt\")?;",
         ),
         Snippet::new(
-            "HashMap",
-            "Neue HashMap mit String-Schlüsseln",
+            &tr!("snippets.builtin.hashmap"),
+            &tr!("snippets.builtin.hashmap_description"),
             "use std::collections::HashMap;",
             "let mut map: HashMap<String, i32> = HashMap::new();",
         ),
         Snippet::new(
-            "Zeilen durchlaufen",
-            "Schleife über die Zeilen eines Textes mit Nummer",
+            &tr!("snippets.builtin.lines"),
+            &tr!("snippets.builtin.lines_description"),
             "",
-            "for (nummer, zeile) in text.lines().enumerate() {\n    println!(\"{}: {zeile}\", nummer + 1);\n}",
+            "for (number, line) in text.lines().enumerate() {\n    println!(\"{}: {line}\", number + 1);\n}",
         ),
         Snippet::new(
-            "Pause (Tokio)",
-            "Wartet asynchron, ohne die Oberfläche zu blockieren",
+            &tr!("snippets.builtin.sleep"),
+            &tr!("snippets.builtin.sleep_description"),
             "use std::time::Duration;",
             "tokio::time::sleep(Duration::from_millis(500)).await;",
         ),
         Snippet::new(
-            "Debug-Ausgabe",
-            "Gibt einen Wert mit Datei und Zeile aus (dbg!)",
+            &tr!("snippets.builtin.dbg"),
+            &tr!("snippets.builtin.dbg_description"),
             "",
-            "dbg!(&wert);",
+            "dbg!(&value);",
         ),
     ]
 }
@@ -170,19 +171,16 @@ impl SnippetStore {
     pub fn put(&mut self, old: Option<&str>, snippet: Snippet) -> Result<(), SnippetIssue> {
         let name = snippet.name.trim();
         if name.is_empty() {
-            return Err(issue(codes::NAME_EMPTY, "Snippet ohne Namen"));
+            return Err(issue(codes::NAME_EMPTY, tr!("snippets.no_name")));
         }
         if snippet.code.trim().is_empty() {
             return Err(issue(
                 codes::CODE_EMPTY,
-                format!("Snippet „{name}“ ohne Code"),
+                tr!("snippets.no_code", name = name),
             ));
         }
         if old != Some(name) && self.get(name).is_some() {
-            return Err(issue(
-                codes::NAME_TAKEN,
-                format!("Snippet „{name}“ gibt es schon"),
-            ));
+            return Err(issue(codes::NAME_TAKEN, tr!("snippets.taken", name = name)));
         }
         let snippet = Snippet {
             name: name.to_owned(),
@@ -200,7 +198,7 @@ impl SnippetStore {
             None if old.is_some() => {
                 return Err(issue(
                     codes::UNKNOWN,
-                    format!("kein Snippet „{}“", old.unwrap_or_default()),
+                    tr!("snippets.unknown", name = old.unwrap_or_default()),
                 ));
             }
             None => self.snippets.push(snippet),
@@ -218,7 +216,7 @@ impl SnippetStore {
     /// is pinned now.
     pub fn toggle_pinned(&mut self, name: &str) -> Result<bool, SnippetIssue> {
         if self.get(name).is_none() {
-            return Err(issue(codes::UNKNOWN, format!("kein Snippet „{name}“")));
+            return Err(issue(codes::UNKNOWN, tr!("snippets.unknown", name = name)));
         }
         if let Some(i) = self.pinned.iter().position(|n| n == name) {
             self.pinned.remove(i);

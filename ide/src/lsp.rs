@@ -8,6 +8,7 @@
 //! the client converts to the encoding the server chose (UTF-8 or UTF-16).
 
 use crate::tools::NoConsole;
+use crate::tr;
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
@@ -598,7 +599,9 @@ fn handle(
         if let Some(error) = message.get("error") {
             on_event(LspEvent::Error {
                 request: Some(id),
-                message: error["message"].as_str().unwrap_or("Fehler").to_owned(),
+                message: error["message"]
+                    .as_str()
+                    .map_or_else(|| tr!("problems.error"), str::to_owned),
             });
             return;
         }

@@ -338,7 +338,7 @@ impl PanelWindow {
                 ),
             )
             .with_color(severity_color(problem.severity))
-            .with_badge(problem.severity.label());
+            .with_badge(&problem.severity.label());
             if let Some(group) = items.last_mut() {
                 group.children.push(item);
             }

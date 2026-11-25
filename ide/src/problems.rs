@@ -3,6 +3,7 @@
 //! sorted deterministically, with where they lead (file and line or the
 //! element in the designer).
 
+use crate::tr;
 use std::path::PathBuf;
 
 use serde::Serialize;
@@ -17,12 +18,12 @@ pub enum ProblemSeverity {
 }
 
 impl ProblemSeverity {
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Error => "Fehler",
-            Self::Warning => "Warnung",
-            Self::Info => "Hinweis",
-        }
+    pub fn label(self) -> String {
+        tr!(match self {
+            Self::Error => "problems.error",
+            Self::Warning => "problems.warning",
+            Self::Info => "problems.info",
+        })
     }
 }
 
@@ -49,13 +50,13 @@ pub enum ProblemSource {
 }
 
 impl ProblemSource {
-    pub fn label(self) -> &'static str {
+    pub fn label(self) -> String {
         match self {
-            Self::Model => "Modell",
-            Self::Codegen => "Code",
-            Self::Build => "Build",
-            Self::RustAnalyzer => "rust-analyzer",
-            Self::Ai => "KI",
+            Self::Model => tr!("problems.model"),
+            Self::Codegen => "Code".to_owned(),
+            Self::Build => "Build".to_owned(),
+            Self::RustAnalyzer => "rust-analyzer".to_owned(),
+            Self::Ai => tr!("ai.title"),
         }
     }
 }

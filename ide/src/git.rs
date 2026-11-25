@@ -10,6 +10,7 @@
 //!
 //! Paths are relative to the repository root and use `/`.
 
+use crate::tr;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::Arc;
@@ -136,7 +137,7 @@ impl Status {
         let name = match (&self.branch, &self.head) {
             (Some(b), _) => b.clone(),
             (None, Some(h)) => h.chars().take(8).collect(),
-            (None, None) => "(kein Commit)".to_owned(),
+            (None, None) => tr!("git.msg.no_commit_name"),
         };
         if self.has_staged() {
             format!("{name}+")
@@ -740,53 +741,32 @@ impl GitError {
             || has("passphrase")
             || has("Host key verification failed")
         {
-            (
-                "auth_required",
-                "Anmeldung fehlgeschlagen oder abgebrochen.",
-            )
+            ("auth_required", "git.error.auth_required")
         } else if has("[rejected]") || has("non-fast-forward") || has("fetch first") {
-            (
-                "rejected",
-                "Push abgelehnt: Das Remote hat neuere Commits – zuerst pullen.",
-            )
+            ("rejected", "git.error.rejected")
         } else if has("CONFLICT") || has("Automatic merge failed") {
-            (
-                "merge_conflict",
-                "Konflikte beim Zusammenführen – bitte auflösen und committen.",
-            )
+            ("merge_conflict", "git.error.merge_conflict")
         } else if has("divergent branches") || has("Not possible to fast-forward") {
-            (
-                "diverged",
-                "Lokaler und entfernter Zweig sind auseinandergelaufen (pull.rebase einstellen oder von Hand zusammenführen).",
-            )
+            ("diverged", "git.error.diverged")
         } else if has("gpg failed to sign") || has("failed to write commit object") {
-            (
-                "signing_failed",
-                "Signieren fehlgeschlagen (GPG-Passphrase abgebrochen oder gpg-agent nicht erreichbar).",
-            )
+            ("signing_failed", "git.error.signing_failed")
         } else if has("not fully merged") {
-            (
-                "not_merged",
-                "Der Zweig ist noch nicht zusammengeführt – „Löschen (erzwingen)“ verwirft seine Commits.",
-            )
+            ("not_merged", "git.error.not_merged")
         } else if has("would be overwritten") {
-            (
-                "local_changes",
-                "Lokale Änderungen würden überschrieben – erst committen oder verwerfen.",
-            )
+            ("local_changes", "git.error.local_changes")
         } else if has("Could not resolve host")
             || has("unable to access")
             || has("Connection timed out")
             || has("Connection refused")
             || has("Could not read from remote repository")
         {
-            ("network", "Das Remote ist nicht erreichbar.")
+            ("network", "git.error.network")
         } else {
-            ("failed", "git meldet einen Fehler.")
+            ("failed", "git.error.failed")
         };
         Self {
             code,
-            detail: detail.to_owned(),
+            detail: tr!(detail),
             output,
             issues: Vec::new(),
         }
@@ -796,21 +776,15 @@ impl GitError {
     fn from_gh_output(output: String) -> Self {
         let has = |s: &str| output.contains(s);
         let (code, detail) = if has("gh auth login") || has("not logged") || has("authentication") {
-            (
-                "gh_auth_required",
-                "Die GitHub-CLI ist nicht angemeldet – einmal `gh auth login` im Terminal ausführen.",
-            )
+            ("gh_auth_required", "git.gh_error.gh_auth_required")
         } else if has("already exists") {
-            (
-                "pull_request_exists",
-                "Für diesen Zweig gibt es schon einen Pull Request.",
-            )
+            ("pull_request_exists", "git.gh_error.pull_request_exists")
         } else {
-            ("failed", "gh meldet einen Fehler.")
+            ("failed", "git.gh_error.failed")
         };
         Self {
             code,
-            detail: detail.to_owned(),
+            detail: tr!(detail),
             output,
             issues: Vec::new(),
         }
@@ -1234,38 +1208,31 @@ impl Git {
                 .or(remotes.first())
                 .cloned())
         };
-        let push = |commands: &mut Vec<Vec<String>>,
-                    issues: &mut Vec<GitIssue>|
-         -> Result<(), GitError> {
-            let Some(branch) = &status.branch else {
-                issues.push(error(
-                    "detached_head",
-                    "Kein Zweig ausgecheckt (losgelöster HEAD).".into(),
-                ));
-                return Ok(());
-            };
-            if status.upstream.is_some() {
-                commands.push(cmd(&["push"], &[]));
-                return Ok(());
-            }
-            match remote()? {
-                Some(remote) => {
-                    issues.push(warning(
-                        "no_upstream",
-                        format!("{branch} wird auf {remote} veröffentlicht."),
-                    ));
-                    commands.push(cmd(&["push", "-u", &remote, branch], &[]));
+        let push =
+            |commands: &mut Vec<Vec<String>>, issues: &mut Vec<GitIssue>| -> Result<(), GitError> {
+                let Some(branch) = &status.branch else {
+                    issues.push(error("detached_head", tr!("git.msg.detached")));
+                    return Ok(());
+                };
+                if status.upstream.is_some() {
+                    commands.push(cmd(&["push"], &[]));
+                    return Ok(());
                 }
-                None => issues.push(error("no_remote", "Das Repository hat kein Remote.".into())),
-            }
-            Ok(())
-        };
+                match remote()? {
+                    Some(remote) => {
+                        issues.push(warning(
+                            "no_upstream",
+                            tr!("git.msg.publish", branch = branch, remote = remote),
+                        ));
+                        commands.push(cmd(&["push", "-u", &remote, branch], &[]));
+                    }
+                    None => issues.push(error("no_remote", tr!("git.msg.no_remote"))),
+                }
+                Ok(())
+            };
         let pull = |commands: &mut Vec<Vec<String>>, issues: &mut Vec<GitIssue>| {
             if status.branch.is_none() {
-                issues.push(error(
-                    "detached_head",
-                    "Kein Zweig ausgecheckt (losgelöster HEAD).".into(),
-                ));
+                issues.push(error("detached_head", tr!("git.msg.detached")));
             } else if status.upstream.is_none() {
                 issues.push(error(
                     "no_upstream",
@@ -1313,16 +1280,13 @@ impl Git {
                 if !delete.is_empty() {
                     issues.push(warning(
                         "untracked_deleted",
-                        format!(
-                            "Neue Dateien werden gelöscht (Papierkorb): {}",
-                            delete.join(", ")
-                        ),
+                        tr!("git.msg.untracked_deleted", files = delete.join(", ")),
                     ));
                 }
                 if commands.is_empty() && delete.is_empty() {
                     issues.push(error(
                         "nothing_to_discard",
-                        "Keine Änderungen zum Verwerfen.".into(),
+                        tr!("git.msg.nothing_to_discard"),
                     ));
                 }
             }
@@ -1332,32 +1296,19 @@ impl Git {
                 then,
             } => {
                 if message.trim().is_empty() {
-                    issues.push(error(
-                        "empty_message",
-                        "Die Commit-Nachricht ist leer.".into(),
-                    ));
+                    issues.push(error("empty_message", tr!("git.msg.empty_message")));
                 }
                 if status.has_conflicts() {
-                    issues.push(error(
-                        "conflicts",
-                        "Es gibt noch ungelöste Konflikte.".into(),
-                    ));
+                    issues.push(error("conflicts", tr!("git.msg.conflicts")));
                 }
                 if *amend {
                     if status.head.is_none() {
-                        issues.push(error(
-                            "no_commit",
-                            "Es gibt noch keinen Commit zum Ändern.".into(),
-                        ));
+                        issues.push(error("no_commit", tr!("git.msg.nothing_to_amend")));
                     } else if status.upstream.is_some() && status.ahead == 0 {
-                        issues.push(warning(
-                            "amend_pushed",
-                            "Der letzte Commit ist schon gepusht; danach ist ein erzwungener Push nötig."
-                                .into(),
-                        ));
+                        issues.push(warning("amend_pushed", tr!("git.msg.amend_pushed")));
                     }
                 } else if !status.has_staged() {
-                    issues.push(error("nothing_staged", "Es ist nichts gestaged.".into()));
+                    issues.push(error("nothing_staged", tr!("git.msg.nothing_staged")));
                 }
                 let mut commit = vec!["commit", "-F", "-"];
                 if *amend {
@@ -1381,18 +1332,13 @@ impl Git {
                         {
                             issues.push(error(
                                 "pull_request_from_base",
-                                format!(
-                                    "{branch} ist der Hauptzweig – für einen Pull Request zuerst einen eigenen Zweig anlegen."
-                                ),
+                                tr!("git.msg.pr_from_base", branch = branch),
                             ));
                         }
                         if !run_gh(&self.root, &["--version"]).is_ok_and(|o| o.success) {
                             issues.push(error(
                                 "gh_missing",
-                                format!(
-                                    "Für Pull Requests wird die GitHub-CLI gebraucht ({} nicht gefunden; https://cli.github.com).",
-                                    gh_program().display()
-                                ),
+                                tr!("git.msg.gh_needed", program = gh_program().display()),
                             ));
                         }
                         let mut create = cmd(&["gh", "pr", "create", "--fill"], &[]);
@@ -1408,7 +1354,7 @@ impl Git {
             }
             GitOp::Fetch => {
                 if remote()?.is_none() {
-                    issues.push(error("no_remote", "Das Repository hat kein Remote.".into()));
+                    issues.push(error("no_remote", tr!("git.msg.no_remote")));
                 }
                 commands.push(cmd(&["fetch", "--prune"], &[]));
             }
@@ -1428,7 +1374,7 @@ impl Git {
                     }
                     None => issues.push(error(
                         "unknown_branch",
-                        format!("Den Zweig {branch} gibt es nicht."),
+                        tr!("git.msg.no_branch", name = branch),
                     )),
                     Some(b) if b.remote => {
                         // origin/feature → lokaler Zweig feature mit Upstream.
@@ -1452,14 +1398,10 @@ impl Git {
             }
             GitOp::UndoLastCommit => {
                 if status.head.is_none() {
-                    issues.push(error("no_commit", "Es gibt noch keinen Commit.".into()));
+                    issues.push(error("no_commit", tr!("git.msg.no_commit")));
                 } else {
                     if status.upstream.is_some() && status.ahead == 0 {
-                        issues.push(warning(
-                            "undo_pushed",
-                            "Der letzte Commit ist schon gepusht; danach ist ein erzwungener Push nötig."
-                                .into(),
-                        ));
+                        issues.push(warning("undo_pushed", tr!("git.msg.amend_pushed")));
                     }
                     let has_parent = self
                         .git(&["rev-parse", "--verify", "-q", "HEAD~1"], None)
@@ -1474,7 +1416,7 @@ impl Git {
             }
             GitOp::FetchAll => {
                 if remote()?.is_none() {
-                    issues.push(error("no_remote", "Das Repository hat kein Remote.".into()));
+                    issues.push(error("no_remote", tr!("git.msg.no_remote")));
                 }
                 commands.push(cmd(&["fetch", "--all", "--prune"], &[]));
             }
@@ -1486,10 +1428,7 @@ impl Git {
             }
             GitOp::RenameBranch { name } => {
                 if status.branch.is_none() {
-                    issues.push(error(
-                        "detached_head",
-                        "Kein Zweig ausgecheckt (losgelöster HEAD).".into(),
-                    ));
+                    issues.push(error("detached_head", tr!("git.msg.detached")));
                 }
                 self.check_branch_name(name, &mut issues)?;
                 commands.push(cmd(&["branch", "-m", name], &[]));
@@ -1502,11 +1441,11 @@ impl Git {
                 {
                     None => issues.push(error(
                         "unknown_branch",
-                        format!("Den Zweig {name} gibt es nicht."),
+                        tr!("git.msg.no_branch", name = name),
                     )),
                     Some(b) if b.current => issues.push(error(
                         "current_branch",
-                        format!("{name} ist ausgecheckt – erst einen anderen Zweig wählen."),
+                        tr!("git.msg.checked_out", name = name),
                     )),
                     Some(_) => {}
                 }
@@ -1521,14 +1460,11 @@ impl Git {
                 if !known {
                     issues.push(error(
                         "unknown_branch",
-                        format!("Den Zweig {branch} gibt es nicht."),
+                        tr!("git.msg.no_branch", name = branch),
                     ));
                 }
                 if status.has_conflicts() {
-                    issues.push(error(
-                        "conflicts",
-                        "Es gibt noch ungelöste Konflikte.".into(),
-                    ));
+                    issues.push(error("conflicts", tr!("git.msg.conflicts")));
                 }
                 if matches!(op, GitOp::Merge { .. }) {
                     commands.push(cmd(&["merge", "--no-edit", branch], &[]));
@@ -1548,12 +1484,12 @@ impl Git {
                 if !valid || url.trim().is_empty() {
                     issues.push(error(
                         "invalid_remote",
-                        format!("„{name}“ mit „{url}“ ist kein gültiges Remote."),
+                        tr!("git.msg.bad_remote", name = name, url = url),
                     ));
                 } else if self.remotes()?.contains(name) {
                     issues.push(error(
                         "remote_exists",
-                        format!("Das Remote {name} gibt es schon."),
+                        tr!("git.msg.remote_exists", name = name),
                     ));
                 }
                 commands.push(cmd(&["remote", "add", name, url.trim()], &[]));
@@ -1562,7 +1498,7 @@ impl Git {
                 if !self.remotes()?.contains(name) {
                     issues.push(error(
                         "unknown_remote",
-                        format!("Das Remote {name} gibt es nicht."),
+                        tr!("git.msg.no_remote_named", name = name),
                     ));
                 }
                 commands.push(cmd(&["remote", "remove", name], &[]));
@@ -1576,10 +1512,7 @@ impl Git {
                     .iter()
                     .any(|f| *include_untracked || f.unstaged != Some(Change::Untracked));
                 if !changes {
-                    issues.push(error(
-                        "nothing_to_stash",
-                        "Keine Änderungen zum Zurücklegen.".into(),
-                    ));
+                    issues.push(error("nothing_to_stash", tr!("git.msg.nothing_to_stash")));
                 }
                 let mut stash = vec!["stash", "push"];
                 if *include_untracked {
@@ -1610,16 +1543,13 @@ impl Git {
                 if !valid {
                     issues.push(error(
                         "invalid_tag_name",
-                        format!("„{name}“ ist kein gültiger Tag-Name."),
+                        tr!("git.msg.bad_tag", name = name),
                     ));
                 } else if self.tags()?.contains(name) {
-                    issues.push(error(
-                        "tag_exists",
-                        format!("Den Tag {name} gibt es schon."),
-                    ));
+                    issues.push(error("tag_exists", tr!("git.msg.tag_exists", name = name)));
                 }
                 if status.head.is_none() {
-                    issues.push(error("no_commit", "Es gibt noch keinen Commit.".into()));
+                    issues.push(error("no_commit", tr!("git.msg.no_commit")));
                 }
                 if message.trim().is_empty() {
                     commands.push(cmd(&["tag", name], &[]));
@@ -1629,10 +1559,7 @@ impl Git {
             }
             GitOp::DeleteTag { name } => {
                 if !self.tags()?.contains(name) {
-                    issues.push(error(
-                        "unknown_tag",
-                        format!("Den Tag {name} gibt es nicht."),
-                    ));
+                    issues.push(error("unknown_tag", tr!("git.msg.no_tag", name = name)));
                 }
                 commands.push(cmd(&["tag", "-d", name], &[]));
             }
@@ -1652,7 +1579,7 @@ impl Git {
             }
             GitOp::PushTags => match remote()? {
                 Some(remote) => commands.push(cmd(&["push", &remote, "--tags"], &[])),
-                None => issues.push(error("no_remote", "Das Repository hat kein Remote.".into())),
+                None => issues.push(error("no_remote", tr!("git.msg.no_remote"))),
             },
         }
         Ok(Preview {
@@ -1669,7 +1596,7 @@ impl Git {
         if preview.has_errors() {
             return Err(GitError {
                 code: "refused",
-                detail: "Nicht ausgeführt:".to_owned(),
+                detail: tr!("git.msg.refused"),
                 output: String::new(),
                 issues: preview
                     .issues
@@ -1754,13 +1681,13 @@ impl Git {
             issues.push(GitIssue {
                 severity: Severity::Error,
                 code: "invalid_branch_name",
-                detail: format!("„{name}“ ist kein gültiger Zweigname."),
+                detail: tr!("git.msg.bad_branch", name = name),
             });
         } else if self.branches()?.iter().any(|b| !b.remote && b.name == name) {
             issues.push(GitIssue {
                 severity: Severity::Error,
                 code: "branch_exists",
-                detail: format!("Den Zweig {name} gibt es schon."),
+                detail: tr!("git.msg.branch_exists", name = name),
             });
         }
         Ok(())
@@ -1771,7 +1698,7 @@ impl Git {
             issues.push(GitIssue {
                 severity: Severity::Error,
                 code: "unknown_stash",
-                detail: format!("Den Stash {index} gibt es nicht."),
+                detail: tr!("git.msg.no_stash", index = index),
             });
         }
         Ok(())
@@ -1835,7 +1762,11 @@ fn run_git(
     let mut child = command.spawn().map_err(|e| {
         GitError::new(
             "git_missing",
-            format!("git nicht gefunden ({}): {e}", program.display()),
+            tr!(
+                "git.msg.git_missing",
+                program = program.display(),
+                error = e
+            ),
         )
     })?;
     if let (Some(text), Some(mut pipe)) = (stdin, child.stdin.take()) {
@@ -1873,7 +1804,7 @@ fn run_gh(dir: &Path, args: &[&str]) -> Result<GitOutput, GitError> {
     let output = command.output().map_err(|e| {
         GitError::new(
             "gh_missing",
-            format!("GitHub-CLI nicht gefunden ({}): {e}", program.display()),
+            tr!("git.msg.gh_missing", program = program.display(), error = e),
         )
     })?;
     Ok(GitOutput {

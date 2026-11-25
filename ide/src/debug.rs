@@ -21,6 +21,7 @@
 mod store;
 
 use crate::tools::NoConsole;
+use crate::tr;
 use std::collections::{BTreeMap, HashMap};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
@@ -823,7 +824,7 @@ impl Shared {
         let error = || {
             text(&body["error"]["format"])
                 .or_else(|| text(&message["message"]))
-                .unwrap_or_else(|| "Fehler".into())
+                .unwrap_or_else(|| tr!("problems.error"))
         };
         match pending {
             Pending::Initialize => {
@@ -1188,9 +1189,10 @@ impl DebugSession {
             .map_err(|e| {
                 DebugError::new(
                     "adapter_failed",
-                    format!(
-                        "{} konnte nicht gestartet werden: {e}",
-                        adapter.program.display()
+                    tr!(
+                        "debug.adapter_failed",
+                        program = adapter.program.display(),
+                        error = e
                     ),
                 )
             })?;
@@ -1319,10 +1321,7 @@ impl DebugSession {
         let shared = &self.shared;
         let mut data = shared.lock();
         if data.snap.is_ended() {
-            return Err(DebugError::new(
-                "not_running",
-                "Die Debug-Sitzung ist beendet.",
-            ));
+            return Err(DebugError::new("not_running", tr!("debug.ended")));
         }
         let stopped = data.snap.is_stopped();
         let thread = data.snap.thread.unwrap_or(0);
@@ -1330,10 +1329,7 @@ impl DebugSession {
             if stopped {
                 Ok(())
             } else {
-                Err(DebugError::new(
-                    "not_stopped",
-                    "Nur möglich, solange das Programm angehalten ist.",
-                ))
+                Err(DebugError::new("not_stopped", tr!("debug.not_stopped")))
             }
         };
         let resume = |data: &mut Data| {

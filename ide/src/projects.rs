@@ -14,6 +14,7 @@
 //! assert!(list.tree(&[]).is_empty());
 //! ```
 
+use crate::tr;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -178,7 +179,7 @@ impl ProjectList {
                 ProjectError::new(
                     "unknown_project",
                     &ptdr,
-                    format!("{} steht nicht in der Projektliste.", ptdr.display()),
+                    tr!("projects.unknown", path = ptdr.display()),
                 )
             })
     }
@@ -232,10 +233,7 @@ impl ProjectList {
                         return Err(ProjectError::new(
                             "cycle",
                             &p,
-                            format!(
-                                "{} kann nicht Unterprojekt seines eigenen Unterprojekts sein.",
-                                self.projects[index].name
-                            ),
+                            tr!("projects.cycle", name = self.projects[index].name),
                         ));
                     }
                     current = self.get(&p).and_then(|e| e.parent.clone());
@@ -423,7 +421,7 @@ pub fn plan_from_cargo(dir: &Path, with_members: bool) -> Result<Vec<CargoProjec
         ProjectError::new(
             "not_cargo",
             &dir,
-            format!("{} hat keine Cargo.toml.", dir.display()),
+            tr!("projects.not_cargo", path = dir.display()),
         )
     })?;
     let toml: toml::Table = toml::from_str(&text).map_err(|e| {

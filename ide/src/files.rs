@@ -16,6 +16,7 @@
 //! assert_eq!(plan.issues[0].code, "invalid_path");
 //! ```
 
+use crate::tr;
 use std::path::{Component, Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -250,7 +251,7 @@ fn resolve(root: &Path, path: &str) -> Result<PathBuf, FileIssue> {
     {
         return Err(issue(
             "invalid_path",
-            format!("„{path}“ ist kein Pfad innerhalb des Projekts."),
+            tr!("files.invalid_path", path = path),
         ));
     }
     for name in path.split('/') {
@@ -263,7 +264,7 @@ fn resolve(root: &Path, path: &str) -> Result<PathBuf, FileIssue> {
         {
             return Err(issue(
                 "invalid_name",
-                format!("„{name}“ ist als Datei- oder Ordnername nicht erlaubt."),
+                tr!("files.invalid_name", name = name),
             ));
         }
     }
@@ -334,17 +335,13 @@ pub fn plan(root: &Path, op: &FileOp, protected: &[String]) -> Plan {
                 severity: Severity::Warning,
                 code: "generated",
                 path: path.to_owned(),
-                detail: format!("{path} erzeugt Freya TDE beim nächsten „Code erzeugen“ neu."),
+                detail: tr!("files.generated", path = path),
             });
         }
     };
     let check_protected = |path: &str, issues: &mut Vec<FileIssue>| {
         if let Some(p) = protected.iter().find(|p| is_within(p, path)) {
-            issues.push(error(
-                "protected",
-                path,
-                format!("{p} gehört zum Projekt; Formulare entfernt oder benennt das Projekt um."),
-            ));
+            issues.push(error("protected", path, tr!("files.protected", path = p)));
         }
     };
     let target_free = |path: &str, at: &Path, issues: &mut Vec<FileIssue>| {
@@ -352,7 +349,7 @@ pub fn plan(root: &Path, op: &FileOp, protected: &[String]) -> Plan {
             issues.push(error(
                 "already_exists",
                 path,
-                format!("{path} gibt es schon."),
+                tr!("files.exists", path = path),
             ));
         }
     };
@@ -360,7 +357,11 @@ pub fn plan(root: &Path, op: &FileOp, protected: &[String]) -> Plan {
         match resolve(root, path) {
             Ok(at) if at.exists() => Some(at),
             Ok(_) => {
-                issues.push(error("not_found", path, format!("{path} gibt es nicht.")));
+                issues.push(error(
+                    "not_found",
+                    path,
+                    tr!("files.not_found", path = path),
+                ));
                 None
             }
             Err(issue) => {
@@ -406,7 +407,7 @@ pub fn plan(root: &Path, op: &FileOp, protected: &[String]) -> Plan {
                 issues.push(error(
                     "into_itself",
                     to,
-                    format!("{from} kann nicht in sich selbst landen."),
+                    tr!("files.into_itself", path = from),
                 ));
             }
             if let Some(at) = at {
@@ -434,7 +435,7 @@ pub fn plan(root: &Path, op: &FileOp, protected: &[String]) -> Plan {
                 issues.push(error(
                     "not_found",
                     &outside.display().to_string(),
-                    format!("{} gibt es nicht.", outside.display()),
+                    tr!("files.not_found", path = outside.display()),
                 ));
             } else {
                 changes.push(Change {
@@ -471,7 +472,7 @@ pub fn plan(root: &Path, op: &FileOp, protected: &[String]) -> Plan {
             severity: Severity::Warning,
             code: "form_source",
             path: path.clone(),
-            detail: format!("{path} ist der Code des Formulars {stem}.ftdr."),
+            detail: tr!("files.form_code", path = path, stem = stem),
         });
     }
     Plan { changes, issues }

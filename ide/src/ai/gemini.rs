@@ -1,6 +1,7 @@
 //! Google Gemini (`POST /v1beta/models/<model>:generateContent`, streamed
 //! `:streamGenerateContent?alt=sse`).
 
+use crate::tr;
 use serde_json::{Map, Value, json};
 
 use super::client::ModelInfo;
@@ -126,7 +127,10 @@ pub fn response(v: &Value) -> Result<ChatResponse, AiError> {
                 model: format!("{model} ({reason})").trim().to_owned(),
             });
         }
-        return Err(AiError::new(codes::BAD_RESPONSE, "Antwort ohne candidates"));
+        return Err(AiError::new(
+            codes::BAD_RESPONSE,
+            tr!("ai.msg.no_field", field = "candidates"),
+        ));
     };
     let mut parts = Vec::new();
     for (n, p) in candidate["content"]["parts"]
