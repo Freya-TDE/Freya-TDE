@@ -68,6 +68,8 @@ fn main() {
     }
 
     let args = args();
+    // Die Sprache schon für den Startbildschirm.
+    freya_tde::i18n::init_from_settings();
     let app = Application::new();
     app.set_name(about::PRODUCT);
     about::set_program_icon();

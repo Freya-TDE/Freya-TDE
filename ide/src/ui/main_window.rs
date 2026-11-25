@@ -1,6 +1,7 @@
 //! Main window: menu bar, component palette (one tab per category, like
 //! Delphi) and status line.
 
+use crate::tr;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -31,9 +32,6 @@ struct SnippetTab {
     combo: RnclComboBox,
 }
 
-/// First entry of the snippet drop-down.
-const PICK: &str = "Snippet einfügen …";
-
 pub struct MainWindow {
     pub window: RnclWindow,
     pointer: RnclButton,
@@ -53,93 +51,133 @@ pub struct MainWindow {
 pub(super) fn menu_bar() -> MenuBar {
     vec![
         (
-            "Datei".into(),
+            tr!("menu.title.file"),
             Menu::new()
-                .item("file.new", "Neues Projekt …", Some("Ctrl+N"))
-                .item("file.open", "Projekt öffnen …", Some("Ctrl+O"))
-                .item("file.save", "Speichern", Some("Ctrl+S"))
+                .item("file.new", &tr!("menu.file.new"), Some("Ctrl+N"))
+                .item("file.open", &tr!("menu.file.open"), Some("Ctrl+O"))
+                .item("file.save", &tr!("menu.file.save"), Some("Ctrl+S"))
                 .separator()
-                .item("file.projects", "Projekt-Manager", None)
+                .item("file.projects", &tr!("menu.file.projects"), None)
+                .item("file.from_cargo", &tr!("menu.file.from_cargo"), None)
+                .separator()
+                .item("file.settings", &tr!("menu.file.settings"), Some("Ctrl+,"))
+                .separator()
+                .item("file.quit", &tr!("menu.file.quit"), Some("Ctrl+Q")),
+        ),
+        (
+            tr!("menu.title.edit"),
+            Menu::new()
+                .item("edit.undo", &tr!("menu.edit.undo"), Some("Ctrl+Z"))
+                .item("edit.redo", &tr!("menu.edit.redo"), Some("Ctrl+Shift+Z"))
+                .separator()
+                .item("edit.delete", &tr!("menu.edit.delete"), None),
+        ),
+        (
+            tr!("menu.title.project"),
+            Menu::new()
+                .item("project.add_form", &tr!("menu.project.add_form"), None)
+                .item("project.add_data", &tr!("menu.project.add_data"), None)
+                .separator()
                 .item(
-                    "file.from_cargo",
-                    "Projekt aus Cargo.toml erstellen …",
-                    None,
+                    "project.generate",
+                    &tr!("menu.project.generate"),
+                    Some("Ctrl+G"),
                 )
-                .separator()
-                .item("file.settings", "Einstellungen …", Some("Ctrl+,"))
-                .separator()
-                .item("file.quit", "Beenden", Some("Ctrl+Q")),
-        ),
-        (
-            "Bearbeiten".into(),
-            Menu::new()
-                .item("edit.undo", "Rückgängig", Some("Ctrl+Z"))
-                .item("edit.redo", "Wiederholen", Some("Ctrl+Shift+Z"))
-                .separator()
-                .item("edit.delete", "Auswahl löschen", None),
-        ),
-        (
-            "Projekt".into(),
-            Menu::new()
-                .item("project.add_form", "Formular hinzufügen", None)
-                .item("project.add_data", "Datenmodul hinzufügen", None)
-                .separator()
-                .item("project.generate", "Code erzeugen", Some("Ctrl+G"))
-                .item("project.build", "Bauen", Some("Ctrl+F9")),
+                .item("project.build", &tr!("menu.project.build"), Some("Ctrl+F9")),
         ),
         (
             // Wie Delphi/Lazarus: Start, Schritte, Haltepunkte.
-            "Start".into(),
+            tr!("menu.title.start"),
             Menu::new()
-                .item("start.run", "Starten / Weiter", Some("F9"))
+                .item("start.run", &tr!("menu.start.run"), Some("F9"))
                 .item(
                     "start.run_plain",
-                    "Ohne Debugger starten",
+                    &tr!("menu.start.run_plain"),
                     Some("Ctrl+Shift+F9"),
                 )
-                .item("start.pause", "Anhalten", None)
-                .item("start.stop", "Programm beenden", Some("Ctrl+F2"))
+                .item("start.pause", &tr!("menu.start.pause"), None)
+                .item("start.stop", &tr!("menu.start.stop"), Some("Ctrl+F2"))
                 .separator()
-                .item("start.step_into", "Einzelne Anweisung", Some("F7"))
-                .item("start.step_over", "Gesamte Routine", Some("F8"))
-                .item("start.step_out", "Bis Rückgabe", Some("Shift+F8"))
-                .item("start.run_to", "Bis Cursor", Some("F4"))
+                .item("start.step_into", &tr!("menu.start.step_into"), Some("F7"))
+                .item("start.step_over", &tr!("menu.start.step_over"), Some("F8"))
+                .item(
+                    "start.step_out",
+                    &tr!("menu.start.step_out"),
+                    Some("Shift+F8"),
+                )
+                .item("start.run_to", &tr!("menu.start.run_to"), Some("F4"))
                 .separator()
-                .item("start.toggle_bp", "Haltepunkt umschalten", Some("F5"))
-                .item("start.add_watch", "Ausdruck überwachen …", Some("Ctrl+F5"))
-                .item("start.remove_all_bp", "Alle Haltepunkte entfernen", None),
+                .item("start.toggle_bp", &tr!("menu.start.toggle_bp"), Some("F5"))
+                .item(
+                    "start.add_watch",
+                    &tr!("menu.start.add_watch"),
+                    Some("Ctrl+F5"),
+                )
+                .item(
+                    "start.remove_all_bp",
+                    &tr!("menu.start.remove_all_bp"),
+                    None,
+                ),
         ),
         (
-            "Fenster".into(),
+            tr!("menu.title.window"),
             Menu::new()
-                .item("window.designer", "Designer", Some("F12"))
-                .item("window.inspector", "Objektinspektor", Some("F11"))
-                .item("window.structure", "Struktur", None)
-                .item("window.messages", "Meldungen", None)
-                .item("window.problems", "Probleme", Some("Ctrl+Shift+M"))
-                .item("window.output", "Ausgabe", Some("Ctrl+Shift+U"))
-                .item("window.terminal", "Terminal", Some("Ctrl+Shift+T"))
-                .item("window.code", "Code", None)
-                .item("window.project", "Dateien", None)
-                .item("window.project_manager", "Projekt-Manager", None)
-                .item("window.git", "Quellcodeverwaltung", Some("Ctrl+Shift+G"))
-                .item("window.debugger", "Debugger", Some("Ctrl+Shift+D"))
-                .item("window.database", "Datenbank", Some("Ctrl+Shift+B"))
-                .item("window.ai", "KI", Some("Ctrl+Shift+K"))
+                .item("window.designer", &tr!("menu.window.designer"), Some("F12"))
+                .item(
+                    "window.inspector",
+                    &tr!("menu.window.inspector"),
+                    Some("F11"),
+                )
+                .item("window.structure", &tr!("menu.window.structure"), None)
+                .item("window.messages", &tr!("menu.window.messages"), None)
+                .item(
+                    "window.problems",
+                    &tr!("menu.window.problems"),
+                    Some("Ctrl+Shift+M"),
+                )
+                .item(
+                    "window.output",
+                    &tr!("menu.window.output"),
+                    Some("Ctrl+Shift+U"),
+                )
+                .item(
+                    "window.terminal",
+                    &tr!("menu.window.terminal"),
+                    Some("Ctrl+Shift+T"),
+                )
+                .item("window.code", &tr!("menu.window.code"), None)
+                .item("window.project", &tr!("menu.window.project"), None)
+                .item(
+                    "window.project_manager",
+                    &tr!("menu.window.project_manager"),
+                    None,
+                )
+                .item("window.git", &tr!("menu.window.git"), Some("Ctrl+Shift+G"))
+                .item(
+                    "window.debugger",
+                    &tr!("menu.window.debugger"),
+                    Some("Ctrl+Shift+D"),
+                )
+                .item(
+                    "window.database",
+                    &tr!("menu.window.database"),
+                    Some("Ctrl+Shift+B"),
+                )
+                .item("window.ai", &tr!("menu.window.ai"), Some("Ctrl+Shift+K"))
                 .item(
                     "window.debug_console",
-                    "Debug-Konsole",
+                    &tr!("menu.window.debug_console"),
                     Some("Ctrl+Shift+Y"),
                 )
                 .separator()
-                .item("window.reset", "Standardanordnung", None),
+                .item("window.reset", &tr!("menu.window.reset"), None),
         ),
         (
-            "Hilfe".into(),
+            tr!("menu.title.help"),
             Menu::new()
-                .item("help.shortcuts", "Tastenkürzel", None)
+                .item("help.shortcuts", &tr!("menu.help.shortcuts"), None)
                 .separator()
-                .item("help.about", "Über Freya TDE", None),
+                .item("help.about", &tr!("menu.help.about"), None),
         ),
     ]
 }
@@ -148,16 +186,14 @@ impl MainWindow {
     pub fn build() -> Self {
         let window = RnclWindow::new("Freya TDE");
         window.set_menu_bar(menu_bar());
-        let pointer = RnclButton::new(&window, "Zeiger");
-        pointer
-            .widget()
-            .set_tool_tip("Auswählen statt platzieren (Esc)");
+        let pointer = RnclButton::new(&window, &tr!("main.pointer"));
+        pointer.widget().set_tool_tip(&tr!("main.pointer_tip"));
         pointer.widget().set_image(icons::icon("pointer").as_ref());
         let tools = crate::tools::Tool::ALL
             .iter()
             .map(|tool| {
-                let button = RnclButton::new(&window, tool.label());
-                button.widget().set_tool_tip(tool.description());
+                let button = RnclButton::new(&window, &tool.label());
+                button.widget().set_tool_tip(&tool.description());
                 button.widget().set_image(icons::icon(tool.icon()).as_ref());
                 (button, *tool)
             })
@@ -328,7 +364,8 @@ impl MainWindow {
         let store = ide.snippets.borrow().clone();
         let names: Vec<String> = store.snippets.iter().map(|s| s.name.clone()).collect();
         // Erster Eintrag als Aufforderung: jede Wahl fügt ein, danach zurück.
-        let mut items = vec![PICK.to_owned()];
+        // Erster Eintrag der Drop-down.
+        let mut items = vec![tr!("main.snippets.pick")];
         items.extend(names.iter().cloned());
         let mut tips = vec![String::new()];
         tips.extend(store.snippets.iter().map(|s| s.description.clone()));
@@ -338,9 +375,7 @@ impl MainWindow {
         combo.set_item_tooltips(&tips);
         combo.set_current_index(0);
         combo.set_geometry(4, y, 220, ROW);
-        combo.widget().set_tool_tip(
-            "Wählen fügt das Snippet am Cursor im Code ein; Rechtsklick: bearbeiten, löschen, ablegen",
-        );
+        combo.widget().set_tool_tip(&tr!("main.snippets.combo_tip"));
         let mut x = 236;
         for (index, snippet) in store.snippets.iter().enumerate() {
             if !store.pinned.contains(&snippet.name) {
@@ -352,9 +387,12 @@ impl MainWindow {
             button.set_geometry(x, y, width, ROW);
             x += width + 4;
             let tip = if snippet.description.is_empty() {
-                "Rechtsklick: lösen, bearbeiten".to_owned()
+                tr!("main.snippets.button_tip")
             } else {
-                format!("{} (Rechtsklick: lösen, bearbeiten)", snippet.description)
+                tr!(
+                    "main.snippets.button_tip_with",
+                    description = snippet.description
+                )
             };
             button.widget().set_tool_tip(&tip);
             let name = snippet.name.clone();
@@ -362,8 +400,16 @@ impl MainWindow {
             let widget = button.widget().clone();
             button.widget().on_context_menu(move |x, y| {
                 let menu = Menu::new()
-                    .item(&format!("snip.unpin.{index}"), "Vom Reiter lösen", None)
-                    .item(&format!("snip.edit.{index}"), "Bearbeiten …", None);
+                    .item(
+                        &format!("snip.unpin.{index}"),
+                        &tr!("main.snippets.unpin"),
+                        None,
+                    )
+                    .item(
+                        &format!("snip.edit.{index}"),
+                        &tr!("main.snippets.edit"),
+                        None,
+                    );
                 widget.popup_menu(&menu, x, y);
             });
         }
@@ -408,17 +454,17 @@ impl MainWindow {
                     })
             };
             let menu = Menu::new()
-                .submenu("Bearbeiten", submenu("edit", false))
-                .submenu("Löschen", submenu("delete", false))
-                .submenu("Auf Reiter ablegen", submenu("pin", true))
+                .submenu(&tr!("main.snippets.edit_menu"), submenu("edit", false))
+                .submenu(&tr!("main.snippets.delete_menu"), submenu("delete", false))
+                .submenu(&tr!("main.snippets.pin_menu"), submenu("pin", true))
                 .separator()
-                .item("snip.new", "Neues Snippet erstellen …", None);
+                .item("snip.new", &tr!("main.snippets.new"), None);
             combo_widget.popup_menu(&menu, x, y);
         });
         // Rechtsklick auf die freie Fläche des Reiters.
         let page_widget = page.widget().clone();
         page.widget().on_context_menu(move |x, y| {
-            let menu = Menu::new().item("snip.new", "Neues Snippet erstellen …", None);
+            let menu = Menu::new().item("snip.new", &tr!("main.snippets.new"), None);
             page_widget.popup_menu(&menu, x, y);
         });
         *self.snippet_tab.borrow_mut() = Some(SnippetTab { combo });
@@ -452,8 +498,8 @@ impl MainWindow {
             "delete"
                 if ruf::dialog::confirm(
                     Some(self.window.widget()),
-                    "Snippet löschen",
-                    &format!("Snippet „{name}“ löschen?"),
+                    &tr!("main.snippets.delete_title"),
+                    &tr!("main.snippets.delete_question", name = name),
                 ) =>
             {
                 ide.remove_snippet(&name);
@@ -479,10 +525,7 @@ impl MainWindow {
             }
         }
         if let Some(armed) = armed {
-            self.set_status(&format!(
-                "Klicken Sie in den Designer, um {} zu platzieren (Esc bricht ab).",
-                armed.name
-            ));
+            self.set_status(&tr!("main.place_hint", name = armed.name));
         }
     }
 }

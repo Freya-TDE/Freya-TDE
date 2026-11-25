@@ -41,17 +41,22 @@ impl Tool {
         Tool::SqlxPrepare,
     ];
 
-    /// Text of the button.
-    pub fn label(self) -> &'static str {
+    /// Key of its texts (`tool.<key>.label`, `tool.<key>.tip`).
+    fn key(self) -> &'static str {
         match self {
-            Tool::Check => "Check",
-            Tool::Clippy => "Clippy",
-            Tool::Fmt => "Format",
-            Tool::Test => "Test",
-            Tool::Update => "Update",
-            Tool::Doc => "Doku",
-            Tool::SqlxPrepare => "SQLx",
+            Tool::Check => "check",
+            Tool::Clippy => "clippy",
+            Tool::Fmt => "fmt",
+            Tool::Test => "test",
+            Tool::Update => "update",
+            Tool::Doc => "doc",
+            Tool::SqlxPrepare => "sqlx",
         }
+    }
+
+    /// Text of the button.
+    pub fn label(self) -> String {
+        crate::tr!(&format!("tool.{}.label", self.key()))
     }
 
     /// Name of its icon (built-in set, `ide/assets/palette/`).
@@ -68,24 +73,8 @@ impl Tool {
     }
 
     /// What it does (tooltip).
-    pub fn description(self) -> &'static str {
-        match self {
-            Tool::Check => "cargo check: Projekt prüfen, Meldungen unter Probleme",
-            Tool::Clippy => {
-                "cargo clippy: Hinweise zu Stil und typischen Fehlern, Meldungen unter Probleme"
-            }
-            Tool::Fmt => {
-                "rustfmt: eigene Dateien formatieren (generierte .gen.rs bleiben unverändert)"
-            }
-            Tool::Test => "cargo test: Tests ausführen, Ausgabe im Kanal Build",
-            Tool::Update => {
-                "cargo update: Abhängigkeiten im Cargo.lock aktualisieren (mit Vorschau)"
-            }
-            Tool::Doc => "cargo doc: Dokumentation des Projekts bauen und im Browser öffnen",
-            Tool::SqlxPrepare => {
-                "cargo sqlx prepare: Offline-Daten für sqlx::query! erzeugen (braucht sqlx-cli und eine Datenbank)"
-            }
-        }
+    pub fn description(self) -> String {
+        crate::tr!(&format!("tool.{}.tip", self.key()))
     }
 
     /// The command line shown in the output.
@@ -93,7 +82,7 @@ impl Tool {
         match self {
             Tool::Check => "cargo check",
             Tool::Clippy => "cargo clippy",
-            Tool::Fmt => "rustfmt (je Datei)",
+            Tool::Fmt => "rustfmt",
             Tool::Test => "cargo test",
             Tool::Update => "cargo update",
             Tool::Doc => "cargo doc --no-deps",

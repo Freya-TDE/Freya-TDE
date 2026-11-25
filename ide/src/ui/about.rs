@@ -3,6 +3,7 @@
 //! The pictures live in `ide/assets/` (from `images/Freya-F.svg` and
 //! `images/Freya-TDE-Logo.svg`) and are compiled into the program.
 
+use crate::tr;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
@@ -105,14 +106,15 @@ impl Splash {
         window.set_size(SPLASH_W, SPLASH_H);
         let canvas = RnclCanvas::new(&window);
         canvas.set_geometry(0, 0, SPLASH_W, SPLASH_H);
-        let version = format!("Version {VERSION}");
+        let version = tr!("about.version", version = VERSION);
+        let tagline = tr!("about.tagline");
         canvas.set_shapes(card(
             SPLASH_W,
             SPLASH_H,
             190,
             &[
                 (PRODUCT, 24, true, INK),
-                ("Top-Down Editor für Rust", 14, false, GRAY),
+                (&tagline, 14, false, GRAY),
                 (&version, 12, false, GRAY),
             ],
         ));
@@ -156,10 +158,10 @@ pub struct AboutWindow {
 
 impl AboutWindow {
     pub fn build() -> Self {
-        let window = RnclWindow::new(&format!("Über {PRODUCT}"));
+        let window = RnclWindow::new(&tr!("about.title", product = PRODUCT));
         window.set_size(ABOUT_W, ABOUT_H);
         let canvas = RnclCanvas::new(&window);
-        let close = RnclButton::new(&window, "Schließen");
+        let close = RnclButton::new(&window, &tr!("about.close"));
         let about = Self {
             window,
             canvas,
@@ -173,11 +175,11 @@ impl AboutWindow {
     pub fn lines() -> Vec<String> {
         vec![
             PRODUCT.to_owned(),
-            "Top-Down Editor für Rust".to_owned(),
-            format!("Version {VERSION}"),
-            format!("Oberfläche: RUF/RNCL auf {}", ruf::toolkit()),
+            tr!("about.tagline"),
+            tr!("about.version", version = VERSION),
+            tr!("about.toolkit", toolkit = ruf::toolkit()),
             "© 2026 Dragon Software".to_owned(),
-            format!("Lizenz: {}", env!("CARGO_PKG_LICENSE")),
+            tr!("about.license", license = env!("CARGO_PKG_LICENSE")),
         ]
     }
 

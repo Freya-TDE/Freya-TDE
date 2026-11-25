@@ -1,0 +1,432 @@
+# Deutsche Texte von Freya TDE. Neue Sprache: en.toml kopieren (z. B. fr.toml),
+# Werte übersetzen, Schlüssel und {Platzhalter} unverändert lassen.
+
+[language]
+name = "Deutsch"
+
+[menu.title]
+file = "Datei"
+edit = "Bearbeiten"
+project = "Projekt"
+start = "Start"
+window = "Fenster"
+help = "Hilfe"
+code = "Code"
+view = "Ansicht"
+
+[menu.file]
+new = "Neues Projekt …"
+open = "Projekt öffnen …"
+save = "Speichern"
+projects = "Projekt-Manager"
+from_cargo = "Projekt aus Cargo.toml erstellen …"
+settings = "Einstellungen …"
+quit = "Beenden"
+
+[menu.edit]
+undo = "Rückgängig"
+redo = "Wiederholen"
+delete = "Auswahl löschen"
+
+[menu.project]
+add_form = "Formular hinzufügen"
+add_data = "Datenmodul hinzufügen"
+generate = "Code erzeugen"
+build = "Bauen"
+
+[menu.start]
+run = "Starten / Weiter"
+run_plain = "Ohne Debugger starten"
+pause = "Anhalten"
+stop = "Programm beenden"
+step_into = "Einzelne Anweisung"
+step_over = "Gesamte Routine"
+step_out = "Bis Rückgabe"
+run_to = "Bis Cursor"
+toggle_bp = "Haltepunkt umschalten"
+add_watch = "Ausdruck überwachen …"
+remove_all_bp = "Alle Haltepunkte entfernen"
+
+[menu.window]
+designer = "Designer"
+inspector = "Objektinspektor"
+structure = "Struktur"
+messages = "Meldungen"
+problems = "Probleme"
+output = "Ausgabe"
+terminal = "Terminal"
+code = "Code"
+project = "Dateien"
+project_manager = "Projekt-Manager"
+git = "Quellcodeverwaltung"
+debugger = "Debugger"
+database = "Datenbank"
+ai = "KI"
+debug_console = "Debug-Konsole"
+reset = "Standardanordnung"
+
+[menu.help]
+shortcuts = "Tastenkürzel"
+about = "Über Freya TDE"
+
+[main]
+pointer = "Zeiger"
+pointer_tip = "Auswählen statt platzieren (Esc)"
+place_hint = "Klicken Sie in den Designer, um {name} zu platzieren (Esc bricht ab)."
+
+[main.snippets]
+pick = "Snippet einfügen …"
+combo_tip = "Wählen fügt das Snippet am Cursor im Code ein; Rechtsklick: bearbeiten, löschen, ablegen"
+button_tip = "Rechtsklick: lösen, bearbeiten"
+button_tip_with = "{description} (Rechtsklick: lösen, bearbeiten)"
+unpin = "Vom Reiter lösen"
+edit = "Bearbeiten …"
+edit_menu = "Bearbeiten"
+delete_menu = "Löschen"
+pin_menu = "Auf Reiter ablegen"
+new = "Neues Snippet erstellen …"
+delete_title = "Snippet löschen"
+delete_question = "Snippet „{name}“ löschen?"
+
+[tool.check]
+label = "Check"
+tip = "cargo check: Projekt prüfen, Meldungen unter Probleme"
+
+[tool.clippy]
+label = "Clippy"
+tip = "cargo clippy: Hinweise zu Stil und typischen Fehlern, Meldungen unter Probleme"
+
+[tool.fmt]
+label = "Format"
+tip = "rustfmt: eigene Dateien formatieren (generierte .gen.rs bleiben unverändert)"
+
+[tool.test]
+label = "Test"
+tip = "cargo test: Tests ausführen, Ausgabe im Kanal Build"
+
+[tool.update]
+label = "Update"
+tip = "cargo update: Abhängigkeiten im Cargo.lock aktualisieren (mit Vorschau)"
+
+[tool.doc]
+label = "Doku"
+tip = "cargo doc: Dokumentation des Projekts bauen und im Browser öffnen"
+
+[tool.sqlx]
+label = "SQLx"
+tip = "cargo sqlx prepare: Offline-Daten für sqlx::query! erzeugen (braucht sqlx-cli und eine Datenbank)"
+
+[tool.status]
+error = "{tool}: {error}"
+no_messages = "{tool}: keine Meldungen."
+messages = "{tool}: {count} Meldungen (Probleme)."
+done = "{tool}: fertig."
+failed = "{tool}: fehlgeschlagen (Ausgabe)."
+
+[settings]
+tab_ai = "KI"
+language_hint = "Gilt ab dem nächsten Start von Freya TDE und für den CT-Editor."
+title = "Einstellungen"
+tab_general = "Allgemein"
+work_dir = "Arbeitsverzeichnis"
+language = "Sprache"
+appearance = "Darstellung"
+new_methods = "Neue Methoden"
+work_dir_placeholder = "leer = Home-Ordner, z. B. ~/DevArea/RUST"
+work_dir_hint = "Hier beginnen Dateidialoge und der Assistent für neue Projekte."
+theme_system = "System (Standard)"
+new_methods_tip = "Wohin „Code vervollständigen“ (Strg+Umschalt+C) neue Methoden setzt"
+new = "Neu"
+remove = "Entfernen"
+name = "Name"
+provider = "Anbieter"
+model = "Modell"
+address = "Adresse"
+api_key = "API-Key"
+default_profile = "Standardprofil"
+this_project = "Für dieses Projekt"
+ai_rights = "Rechte der KI"
+model_placeholder = "z. B. llama3.2 – oder abrufen"
+fetch = "Abrufen"
+fetch_tip = "Modelle des Anbieters abrufen (mit Adresse und Key dieses Profils)"
+remove_key = "Key entfernen"
+show_ai_new = "KI-Fenster bei neuem Projekt anzeigen"
+show_ai_always = "KI-Fenster immer anzeigen"
+cancel = "Abbrechen"
+none = "(keins)"
+address_required = "Pflicht, z. B. http://localhost:1234/v1"
+key_new = "Neuer Key – wird mit OK gespeichert."
+key_removed = "Key wird bei OK entfernt."
+key_keyring = "Key im Schlüsselbund."
+key_file = "Key in der Einstellungsdatei (kein Schlüsselbund)."
+key_not_needed = "Kein Key nötig."
+key_none = "Noch kein Key."
+saved = "Einstellungen gespeichert."
+no_models = "Der Server nennt keine Modelle."
+one_model = "1 Modell gefunden"
+choose_work_dir = "Arbeitsverzeichnis wählen"
+address_empty = "leer = {address}"
+key_saved_placeholder = "gespeichert – zum Ändern neuen Key eingeben"
+hint_none = "Noch keine KI angebunden: „Neu“ legt ein Profil an (Anthropic, OpenAI, Ollama oder ein OpenAI-kompatibler Server wie LM Studio). Mehrere Profile sind möglich; je Projekt lässt sich eines wählen."
+hint_unsaved = "Profil und Rechte je Projekt lassen sich wählen, sobald das Projekt gespeichert ist."
+hint_project = "Ohne eigene Wahl nutzt ein Projekt das Standardprofil; die Rechte gelten nur für dieses Projekt (Lesen ist immer erlaubt)."
+profile_n = "Profil {n}"
+asking_models = "Frage {provider} nach Modellen …"
+models_found = "{count} Modelle gefunden"
+models_choose = "{found} – bitte eines wählen."
+models_error = "Modelle abrufen: {detail} ({code})"
+name_rejected = "Name nicht übernommen: {detail}"
+
+[label]
+system = "System"
+theme_light = "Hell"
+theme_dark = "Dunkel"
+local_network = "lokal/Netzwerk"
+openai_compatible = "OpenAI-kompatibel (eigener Server)"
+permission_read = "nur lesen"
+permission_preview = "mit Vorschau"
+permission_autonomous = "selbstständig"
+order_after_caller = "hinter der aufrufenden Methode"
+order_alphabetical = "alphabetisch"
+order_end = "am Ende des impl-Blocks"
+
+[wizard]
+title = "Neues Projekt"
+kind = "Art"
+kind_binary = "Programm (mit Oberfläche)"
+kind_library = "Bibliothek (Datenmodule, ohne Oberfläche)"
+name = "Name"
+name_placeholder = "z. B. laden (Cargo-Paketname)"
+parent = "Übergeordneter Ordner"
+rust_version = "Rust-Version"
+platforms_hint = "Für welche Systeme? Der Designer zeigt das erste; Unterschiede werden zu cfg-Zweigen."
+toolkit = "UI-Toolkit"
+accept = "Lizenzhinweis gelesen, Projekt trotzdem anlegen"
+components_hint = "Im Datenmodul „services“ anlegen (Tokio kommt bei Bedarf dazu):"
+database = "Datenbank (SQLx)"
+web = "Webserver (Axum)"
+ws_endpoint = "… mit WebSocket-Endpunkt"
+http = "HTTP-Client (reqwest)"
+http_placeholder = "Basis-URL, z. B. https://api.example.com (optional)"
+runtime = "Tokio-Laufzeit für eigenen async-Code"
+git = "Git-Repository anlegen (.gitignore mit /target)"
+commit = "… und das neue Projekt committen"
+cancel = "Abbrechen"
+back = "< Zurück"
+next = "Weiter >"
+finish = "Anlegen"
+no_ui = "Ohne Oberfläche (nur Komponenten)"
+more_toolkits = "Weitere Toolkits (z. B. WebView) kommen als eigene Backend-Packs dazu."
+open_points = "Noch zu klären:\n"
+library = "Bibliothek"
+components_in = "Komponenten in services:\n"
+files = "Dateien:\n"
+keep_changes = "Ungespeicherte Änderungen behalten"
+choose_parent = "Übergeordneten Ordner wählen"
+page_kind = "Was soll entstehen?"
+page_place = "Name und Ort"
+page_platforms = "Zielsysteme"
+page_ui = "Oberfläche"
+page_components = "Komponenten"
+page_summary = "Git und Zusammenfassung"
+license_notice = "{name} (Lizenzhinweis)"
+step = "<b>Schritt {step} von {count}: {title}</b>"
+kind_library_hint = "Eine Bibliothek (lib.rs) mit Datenmodulen: Komponenten wie Datenbank, Redis oder\nWebserver als öffentlicher Service-Container App, den andere Crates nutzen.\nKeine Oberfläche; async-Komponenten laufen auf der Tokio-Laufzeit des Aufrufers."
+kind_binary_hint = "Ein Programm (main.rs) mit Formularen für ein UI-Toolkit und optional\nDatenmodulen für Datenbank, Redis, Webserver …"
+project_dir = "Projektordner: {path}"
+kind_binary_summary = "Programm, Oberfläche {backend}"
+created = "Projekt {name} angelegt."
+
+[menu.code]
+save = "Speichern"
+save_all = "Alle speichern"
+close = "Schließen"
+complete = "Vervollständigen"
+definition = "Gehe zu Definition"
+codetools = "Code vervollständigen (Methode, Feld, Trait)"
+fold_all = "Alles falten"
+unfold_all = "Alles aufklappen"
+designer = "Designer"
+
+[code]
+save_snippet = "Als Snippet speichern …"
+grip_tip = "Auf die Reiterleiste des Code-Fensters ziehen: wieder als Reiter zeigen"
+unsaved_title = "Ungespeicherte Änderungen"
+unsaved_close = "{path} schließen und Änderungen verwerfen?"
+
+[designer]
+tray_empty = "Nicht-visuelle Komponenten (Datenbank, WebSocket, Timer …) erscheinen hier"
+
+[window]
+designer = "Designer"
+inspector = "Objektinspektor"
+structure = "Struktur"
+snippet = "Snippet"
+
+[inspector]
+expect_number = "eine Zahl erwartet, z. B. 1.5"
+expect_point = "einen Punkt erwartet, z. B. 10, 20"
+expect_size = "eine Größe erwartet, z. B. 640 × 480"
+expect_color = "eine Farbe erwartet, z. B. #3366ff"
+set_by_selection = "wird über die Auswahl gesetzt"
+color_placeholder = "Standard oder #rrggbb"
+properties = "Eigenschaften"
+events = "Ereignisse"
+none_selected = "Kein Element ausgewählt."
+many_selected = "Mehrere Elemente ausgewählt."
+general = "Allgemein"
+backend_only = " (nur für dieses UI-Backend)"
+platforms_only = " (nur {platforms})"
+list_placeholder = "Einträge mit ; trennen"
+reset_tip = "Auf den Standardwert zurücksetzen"
+handler_placeholder = "Handler (… legt ihn an und springt hin)"
+
+[inspector.db]
+title = "Datenbank"
+connection = "Verbindung"
+test = "Testen"
+schema = "Schema"
+window = "Datenbank-Fenster"
+from_database = "Aus Datenbank übernehmen"
+keys = "Schlüssel"
+from_kind = "Aus der Art übernehmen"
+
+[color]
+white = "Weiß"
+light_gray = "Hellgrau"
+gray = "Grau"
+dark_gray = "Dunkelgrau"
+black = "Schwarz"
+red = "Rot"
+orange = "Orange"
+yellow = "Gelb"
+green = "Grün"
+blue = "Blau"
+light_blue = "Hellblau"
+violet = "Violett"
+
+[dock]
+grip_tip = "Ziehen: auf ein anderes Fenster ablegen legt beide als Reiter zusammen, ins Freie ziehen trennt wieder"
+unknown = "unbekanntes Fenster: {guest} oder {host}"
+has_tabs = "{title} enthält schon Reiter"
+
+[structure]
+data_module = "{name} (Datenmodul)"
+
+[snippet]
+name = "Name"
+description = "Kurzbeschreibung"
+use_line = "use-Zeile"
+code = "Code"
+description_placeholder = "erscheint beim Darüberfahren in der Liste"
+use_placeholder = "z. B. use std::fs;  (leer = keine)"
+select_first = "Als Snippet speichern: erst Code markieren."
+edit_title = "Snippet bearbeiten"
+new_title = "Neues Snippet"
+
+[about]
+title = "Über {product}"
+tagline = "Top-Down Editor für Rust"
+version = "Version {version}"
+toolkit = "Oberfläche: RUF/RNCL auf {toolkit}"
+license = "Lizenz: {license}"
+close = "Schließen"
+
+[shortcut.file]
+new = "Öffnet den Assistenten für ein neues Projekt (Programm oder Bibliothek, Oberfläche, Komponenten, Git)."
+open = "Öffnet eine Projektdatei (.ptdr)."
+save = "Speichert Projekt und Formulare."
+settings = "Einstellungen: Arbeitsverzeichnis, Sprache, Darstellung und KI-Profile."
+quit = "Beendet Freya TDE (fragt bei ungespeicherten Änderungen)."
+
+[shortcut.code]
+codetools = "Legt an, was an der Cursorstelle fehlt: Methodenrumpf, eigenes Formular-Feld oder fehlende Trait-Methoden (wie die Lazarus CodeTools)."
+save = "Speichert die Datei im vorderen Reiter."
+save_all = "Speichert alle geänderten Dateien."
+close = "Schließt den vorderen Reiter."
+complete = "Zeigt Vorschläge (rust-analyzer)."
+definition = "Springt zur Definition des Worts am Cursor."
+designer = "Wechselt zwischen Designer und Code."
+
+[shortcut.edit]
+undo = "Nimmt die letzte Änderung im Designer zurück."
+redo = "Stellt die zurückgenommene Änderung wieder her."
+
+[shortcut.project]
+generate = "Erzeugt den Rust-Code aus den Formularen."
+build = "Erzeugt den Code und baut das Projekt (cargo build)."
+
+[shortcut.start]
+run = "Baut und startet das Programm im Debugger; angehalten: weiter."
+run_plain = "Baut und startet das Programm ohne Debugger."
+stop = "Beendet das Programm im Debugger."
+step_into = "Führt eine Zeile aus und springt in aufgerufene Funktionen."
+step_over = "Führt eine Zeile aus, Aufrufe laufen ganz durch."
+step_out = "Läuft bis zum Rücksprung in die aufrufende Funktion."
+run_to = "Läuft bis zur Zeile mit dem Cursor (startet bei Bedarf)."
+toggle_bp = "Setzt oder entfernt den Haltepunkt in der Cursorzeile."
+add_watch = "Überwacht einen Ausdruck (vorbelegt mit dem Wort am Cursor)."
+
+[shortcut.window]
+designer = "Zeigt den Designer (im Code-Fenster: zwischen Code und Designer wechseln)."
+inspector = "Zeigt den Objektinspektor."
+problems = "Zeigt die Probleme (Modell, Code, Build, rust-analyzer)."
+output = "Zeigt die Ausgabe (Build, Programm, Git, rust-analyzer)."
+terminal = "Zeigt das Terminal und startet die Shell im Projektordner."
+git = "Zeigt die Quellcodeverwaltung."
+debugger = "Zeigt das Debugger-Fenster (Variablen, Aufrufstapel …)."
+database = "Zeigt das Fenster Datenbank (Tabellen, Spalten, Routinen, Redis-Schlüssel)."
+debug_console = "Zeigt die Debug-Konsole."
+ai = "Zeigt das Fenster KI (Gespräch, Profil-Auswahl, Vorschläge)."
+
+[shortcut.designer]
+code = "Wechselt zwischen Designer und Code."
+
+[shortcut.ai]
+send = "Schickt die Nachricht an die KI."
+
+[shortcut.git]
+commit = "Committet die gestagten Änderungen mit der Nachricht."
+refresh = "Liest Status und Graph neu ein."
+
+[shortcut.term]
+copy = "Kopiert die Auswahl im Terminal."
+paste = "Fügt die Zwischenablage ins Terminal ein."
+
+[shortcuts]
+all_windows = "Alle Fenster"
+context_menu = "Kontextmenü"
+no_menu = "Ohne Menü"
+intro = "Tastenkürzel von Freya TDE\nDie Kürzel des Hauptmenüs gelten in allen Fenstern; das eigene Menü eines\nFensters geht vor (z. B. F5 = Aktualisieren in der Quellcodeverwaltung).\n"
+
+[shortcuts.scope]
+designer = "Designer"
+code = "Code"
+debug_console = "Debug-Konsole"
+debugger = "Debugger"
+terminal = "Terminal"
+
+[shortcuts.extra]
+esc = "Abbrechen"
+esc_tip = "Bricht das Platzieren ab und hebt die Auswahl auf."
+delete = "Löschen"
+delete_tip = "Löscht die gewählten Elemente."
+ctrl_click = "Gehe zu Definition"
+ctrl_click_tip = "Springt zur Definition des angeklickten Worts."
+gutter = "Haltepunkt"
+gutter_tip = "Setzt bzw. entfernt einen Haltepunkt; Rechtsklick: Bedingung, Logpoint, bis hier ausführen."
+evaluate = "Auswerten"
+evaluate_tip = "Wertet den Ausdruck im gewählten Rahmen aus; ` am Anfang schickt einen Befehl an den Debugger."
+watch = "Überwachen"
+watch_tip = "Fügt den Ausdruck im Feld „Überwacht“ hinzu."
+scrollback = "Rückschau"
+scrollback_tip = "Blättert in der Ausgabe (auch mit dem Mausrad)."
+
+[keys]
+ctrl = "Strg"
+shift = "Umschalt"
+space = "Leertaste"
+del = "Entf"
+click = "Klick"
+gutter = "Klick in den Rand"
+pageupdown = "Bild↑/↓"

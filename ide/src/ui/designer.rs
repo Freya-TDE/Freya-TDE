@@ -13,6 +13,7 @@
 //! No form or platform selector: a form is opened together with its `.rs`
 //! file, and the look is the project's target system.
 
+use crate::tr;
 use std::cell::Cell;
 use std::rc::Rc;
 
@@ -39,7 +40,7 @@ pub struct DesignerWindow {
 
 impl DesignerWindow {
     pub fn build() -> Self {
-        let window = RnclWindow::new("Designer");
+        let window = RnclWindow::new(&tr!("window.designer"));
         window.set_menu_bar(menu_bar());
         let scroll = RnclScrollView::new(&window);
         let canvas = RnclCanvas::new(scroll.content());
@@ -106,8 +107,7 @@ impl DesignerWindow {
             shapes.push(Shape::Text {
                 x: 12,
                 y: BAR / 2 - 9,
-                text: "Nicht-visuelle Komponenten (Datenbank, WebSocket, Timer …) erscheinen hier"
-                    .to_owned(),
+                text: tr!("designer.tray_empty"),
                 color: rgb(theme.colors.text),
                 size: 13,
                 bold: false,
@@ -199,7 +199,7 @@ impl DesignerWindow {
         let session = ide.session();
         let title = match session.form_name() {
             Some(form) => format!("Designer – {form}.rs ({})", session.platform()),
-            None => "Designer".to_owned(),
+            None => tr!("window.designer"),
         };
         self.window.set_title(&title);
         drop(session);
@@ -252,8 +252,8 @@ fn drop_marker(
 
 pub(super) fn menu_bar() -> MenuBar {
     vec![(
-        "Ansicht".into(),
-        Menu::new().item("designer.code", "Code", Some("F12")),
+        tr!("menu.title.view"),
+        Menu::new().item("designer.code", &tr!("menu.title.code"), Some("F12")),
     )]
 }
 

@@ -5,6 +5,7 @@
 //! Enter or after a short typing pause). Platform overrides are kept when
 //! the base value changes; ↺ resets a property to its default.
 
+use crate::tr;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -49,13 +50,13 @@ fn parse(text: &str, ty: &PropertyType) -> Result<Value, String> {
             .replace(',', ".")
             .parse()
             .map(Value::Float)
-            .map_err(|_| "eine Zahl erwartet, z. B. 1.5".to_owned()),
+            .map_err(|_| tr!("inspector.expect_number")),
         PropertyType::Point => numbers(text)
             .map(|(x, y)| Value::Point(Point { x, y }))
-            .ok_or_else(|| "einen Punkt erwartet, z. B. 10, 20".to_owned()),
+            .ok_or_else(|| tr!("inspector.expect_point")),
         PropertyType::Size => numbers(text)
             .map(|(width, height)| Value::Size(Size { width, height }))
-            .ok_or_else(|| "eine Größe erwartet, z. B. 640 × 480".to_owned()),
+            .ok_or_else(|| tr!("inspector.expect_size")),
         PropertyType::Color => {
             // Leer = Standardfarbe; aus „Rot #c0392b“ zählt die Hex-Angabe.
             if text.trim().is_empty() {
@@ -76,7 +77,7 @@ fn parse(text: &str, ty: &PropertyType) -> Result<Value, String> {
                 _ => None,
             }
             .map(Value::Color)
-            .ok_or_else(|| "eine Farbe erwartet, z. B. #3366ff".to_owned())
+            .ok_or_else(|| tr!("inspector.expect_color"))
         }
         PropertyType::List(inner) => {
             let items: Result<Vec<Value>, String> = text
@@ -94,26 +95,36 @@ fn parse(text: &str, ty: &PropertyType) -> Result<Value, String> {
         PropertyType::Bool
         | PropertyType::Int { .. }
         | PropertyType::Enum(_)
-        | PropertyType::Reference(_) => Err("wird über die Auswahl gesetzt".to_owned()),
+        | PropertyType::Reference(_) => Err(tr!("inspector.set_by_selection")),
     }
 }
 
-/// Colours offered in the inspector (name and value).
-const COLOR_PRESETS: &[&str] = &[
-    "",
-    "Weiß #ffffff",
-    "Hellgrau #f0f0f0",
-    "Grau #808080",
-    "Dunkelgrau #333333",
-    "Schwarz #000000",
-    "Rot #c0392b",
-    "Orange #e67e22",
-    "Gelb #f1c40f",
-    "Grün #27ae60",
-    "Blau #2980b9",
-    "Hellblau #d6eaf8",
-    "Violett #8e44ad",
+/// Colours offered in the inspector (key of the name and value).
+const COLOR_PRESETS: &[(&str, &str)] = &[
+    ("white", "#ffffff"),
+    ("light_gray", "#f0f0f0"),
+    ("gray", "#808080"),
+    ("dark_gray", "#333333"),
+    ("black", "#000000"),
+    ("red", "#c0392b"),
+    ("orange", "#e67e22"),
+    ("yellow", "#f1c40f"),
+    ("green", "#27ae60"),
+    ("blue", "#2980b9"),
+    ("light_blue", "#d6eaf8"),
+    ("violet", "#8e44ad"),
 ];
+
+/// The colour presets as shown („Weiß #ffffff“), first an empty entry.
+fn color_presets() -> Vec<String> {
+    std::iter::once(String::new())
+        .chain(
+            COLOR_PRESETS
+                .iter()
+                .map(|(key, value)| format!("{} {value}", tr!(&format!("color.{key}")))),
+        )
+        .collect()
+}
 
 /// Value → text for a text field.
 fn format(value: &Value) -> String {
@@ -157,16 +168,16 @@ type ApplyValue = dyn Fn(&Rc<Ide>, Value);
 
 impl InspectorWindow {
     pub fn build() -> Self {
-        let window = RnclWindow::new("Objektinspektor");
+        let window = RnclWindow::new(&tr!("window.inspector"));
         let pane = super::dock::DockPane::new(
             &window,
             crate::desktop::window::INSPECTOR,
-            "Objektinspektor",
+            &tr!("window.inspector"),
         );
         let element = RnclComboBox::new(&pane.root);
         let tabs = RnclTabView::new(&pane.root);
-        let props_page = tabs.add_tab("Eigenschaften");
-        let events_page = tabs.add_tab("Ereignisse");
+        let props_page = tabs.add_tab(&tr!("inspector.properties"));
+        let events_page = tabs.add_tab(&tr!("inspector.events"));
         let props = RnclScrollView::new(&props_page);
         let events = RnclScrollView::new(&events_page);
         let note = RnclLabel::new(&pane.root, "");
@@ -295,9 +306,9 @@ impl InspectorWindow {
         self.element.set_current_index(index);
         *self.listed.borrow_mut() = names;
         let note = match session.selection().len() {
-            0 => "Kein Element ausgewählt.",
-            1 => "",
-            _ => "Mehrere Elemente ausgewählt.",
+            0 => tr!("inspector.none_selected"),
+            1 => String::new(),
+            _ => tr!("inspector.many_selected"),
         };
         drop(session);
 
@@ -306,7 +317,7 @@ impl InspectorWindow {
         }
         self.flush();
         self.clear();
-        self.note.set_text(note);
+        self.note.set_text(&note);
         self.note.widget().set_visible(target.is_none());
         self.tabs.widget().set_visible(target.is_some());
         if let Some(target) = &target {
@@ -377,9 +388,9 @@ impl InspectorWindow {
             if category.as_ref() != Some(&row.category) {
                 category = Some(row.category.clone());
                 let title = if row.category.is_empty() {
-                    "Allgemein"
+                    tr!("inspector.general")
                 } else {
-                    row.category.as_str()
+                    row.category.clone()
                 };
                 let header = RnclLabel::new(page, &format!("<b>{title}</b>"));
                 lines.push(Line {
@@ -409,31 +420,33 @@ impl InspectorWindow {
             crate::database::REDIS_READ_TYPE.0,
             crate::database::REDIS_READ_TYPE.1,
         );
-        let actions: &[(&str, &str, Option<DbJob>)] = if element_type.as_ref() == Some(&pool) {
-            &[
-                ("Verbindung", "Testen", Some(DbJob::Test)),
-                ("Schema", "Datenbank-Fenster", None),
+        let t = |key: &str| tr!(&format!("inspector.db.{key}"));
+        let actions: Vec<(String, String, Option<DbJob>)> = if element_type.as_ref() == Some(&pool)
+        {
+            vec![
+                (t("connection"), t("test"), Some(DbJob::Test)),
+                (t("schema"), t("window"), None),
             ]
         } else if element_type.as_ref() == Some(&query) {
-            &[
-                ("columns", "Aus Datenbank übernehmen", Some(DbJob::Columns)),
-                ("Verbindung", "Testen", Some(DbJob::Test)),
+            vec![
+                ("columns".into(), t("from_database"), Some(DbJob::Columns)),
+                (t("connection"), t("test"), Some(DbJob::Test)),
             ]
         } else if element_type.as_ref() == Some(&redis_client) {
-            &[
-                ("Verbindung", "Testen", Some(DbJob::Test)),
-                ("Schlüssel", "Datenbank-Fenster", None),
+            vec![
+                (t("connection"), t("test"), Some(DbJob::Test)),
+                (t("keys"), t("window"), None),
             ]
         } else if element_type.as_ref() == Some(&redis_read) {
-            &[
-                ("columns", "Aus der Art übernehmen", Some(DbJob::Columns)),
-                ("Verbindung", "Testen", Some(DbJob::Test)),
+            vec![
+                ("columns".into(), t("from_kind"), Some(DbJob::Columns)),
+                (t("connection"), t("test"), Some(DbJob::Test)),
             ]
         } else {
-            &[]
+            Vec::new()
         };
         if !actions.is_empty() {
-            let header = RnclLabel::new(page, "<b>Datenbank</b>");
+            let header = RnclLabel::new(page, &format!("<b>{}</b>", t("title")));
             lines.push(Line {
                 label: header.widget().clone(),
                 editor: None,
@@ -441,10 +454,9 @@ impl InspectorWindow {
             });
         }
         for (label, caption, job) in actions {
-            let label = RnclLabel::new(page, label);
-            let button = RnclButton::new(page, caption);
+            let label = RnclLabel::new(page, &label);
+            let button = RnclButton::new(page, &caption);
             let path = target.clone();
-            let job = *job;
             button.on_clicked(with0(ide, move |ide| {
                 // Eine laufende Texteingabe (z. B. SQL) zuerst übernehmen.
                 ide.inspector.flush();
@@ -487,11 +499,11 @@ impl InspectorWindow {
         let label = RnclLabel::new(page, &format!("{shown}{marker}"));
         let mut tip = row.description.clone();
         if row.backend_specific {
-            tip.push_str(" (nur für dieses UI-Backend)");
+            tip.push_str(&tr!("inspector.backend_only"));
         }
         if !row.platforms.is_empty() {
             let platforms: Vec<String> = row.platforms.iter().map(ToString::to_string).collect();
-            tip.push_str(&format!(" (nur {})", platforms.join(", ")));
+            tip.push_str(&tr!("inspector.platforms_only", platforms = platforms.join(", ")));
         }
         label.widget().set_tool_tip(tip.trim());
 
@@ -572,8 +584,8 @@ impl InspectorWindow {
                 // Auswahl mit Vorgaben, eigene Werte als #rrggbb, leer = Standard.
                 let combo = RnclComboBox::new(page);
                 combo.set_editable(true);
-                combo.set_items(COLOR_PRESETS);
-                combo.set_placeholder("Standard oder #rrggbb");
+                combo.set_items(&color_presets());
+                combo.set_placeholder(&tr!("inspector.color_placeholder"));
                 combo.set_current_text(&effective.as_ref().map(format).unwrap_or_default());
                 let f = combo.clone();
                 combo.on_text_changed(with(ide, move |ide, _: String| {
@@ -616,7 +628,7 @@ impl InspectorWindow {
                 let field = RnclTextField::new(page);
                 field.set_text(&effective.as_ref().map(format).unwrap_or_default());
                 if matches!(ty, PropertyType::List(_)) {
-                    field.set_placeholder("Einträge mit ; trennen");
+                    field.set_placeholder(&tr!("inspector.list_placeholder"));
                 }
                 let ty = ty.clone();
                 let f = field.clone();
@@ -655,7 +667,7 @@ impl InspectorWindow {
             let button = RnclButton::new(page, "↺");
             button
                 .widget()
-                .set_tool_tip("Auf den Standardwert zurücksetzen");
+                .set_tool_tip(&tr!("inspector.reset_tip"));
             let (form, element, property) = (
                 target.form.clone().expect("qualified"),
                 target.name.clone(),
@@ -704,7 +716,7 @@ impl InspectorWindow {
         label.widget().set_tool_tip(tip.trim());
         let field = RnclTextField::new(page);
         field.set_text(row.handler.as_ref().map(HandlerName::as_str).unwrap_or(""));
-        field.set_placeholder("Handler (… legt ihn an und springt hin)");
+        field.set_placeholder(&tr!("inspector.handler_placeholder"));
         let (form, element, event) = (
             target.form.clone().expect("qualified"),
             target.name.clone(),

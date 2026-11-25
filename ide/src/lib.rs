@@ -14,6 +14,7 @@ pub mod desktop;
 pub mod files;
 pub mod flutter;
 pub mod git;
+pub mod i18n;
 pub mod lsp;
 pub mod output;
 pub mod problems;

@@ -276,6 +276,8 @@ impl Ide {
     /// Builds all windows, restores their places and opens `project` (or a
     /// new, unsaved one).
     pub fn start(project: Option<&Path>) -> Rc<Self> {
+        // Die Sprache vor dem Aufbau der Fenster (gilt ab dem Start).
+        crate::i18n::init_from_settings();
         let pack_dirs = pack_dirs();
         let (registry, packs) = full_registry(&pack_dirs);
         let backend = default_backend(&registry);

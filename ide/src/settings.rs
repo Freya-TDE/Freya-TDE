@@ -57,11 +57,12 @@ impl Language {
         }
     }
 
-    pub fn label(self) -> &'static str {
+    /// Name in the menu; the languages in themselves.
+    pub fn label(self) -> String {
         match self {
-            Language::System => "System",
-            Language::German => "Deutsch",
-            Language::English => "English",
+            Language::System => crate::tr!("label.system"),
+            Language::German => "Deutsch".to_owned(),
+            Language::English => "English".to_owned(),
         }
     }
 }
@@ -89,12 +90,12 @@ impl Theme {
         }
     }
 
-    pub fn label(self) -> &'static str {
-        match self {
-            Theme::System => "System",
-            Theme::Light => "Hell",
-            Theme::Dark => "Dunkel",
-        }
+    pub fn label(self) -> String {
+        crate::tr!(match self {
+            Theme::System => "label.system",
+            Theme::Light => "label.theme_light",
+            Theme::Dark => "label.theme_dark",
+        })
     }
 }
 
@@ -158,7 +159,14 @@ impl AiProvider {
         AiProvider::OpenAiCompatible,
     ];
 
-    pub fn label(self) -> &'static str {
+    pub fn label(self) -> String {
+        let local = || crate::tr!("label.local_network");
+        match self {
+            AiProvider::Ollama => return format!("Ollama ({})", local()),
+            AiProvider::LmStudio => return format!("LM Studio ({})", local()),
+            AiProvider::OpenAiCompatible => return crate::tr!("label.openai_compatible"),
+            _ => {}
+        }
         match self {
             AiProvider::Anthropic => "Anthropic (Claude)",
             AiProvider::OpenAi => "OpenAI",
@@ -168,10 +176,11 @@ impl AiProvider {
             AiProvider::DeepSeek => "DeepSeek",
             AiProvider::Groq => "Groq",
             AiProvider::OpenRouter => "OpenRouter",
-            AiProvider::Ollama => "Ollama (lokal/Netzwerk)",
-            AiProvider::LmStudio => "LM Studio (lokal/Netzwerk)",
-            AiProvider::OpenAiCompatible => "OpenAI-kompatibel (eigener Server)",
+            AiProvider::Ollama | AiProvider::LmStudio | AiProvider::OpenAiCompatible => {
+                unreachable!()
+            }
         }
+        .to_owned()
     }
 
     /// The endpoint used when the profile gives none.
@@ -291,12 +300,12 @@ impl AiPermission {
         AiPermission::Autonomous,
     ];
 
-    pub fn label(self) -> &'static str {
-        match self {
-            AiPermission::ReadOnly => "nur lesen",
-            AiPermission::Preview => "mit Vorschau",
-            AiPermission::Autonomous => "selbstständig",
-        }
+    pub fn label(self) -> String {
+        crate::tr!(match self {
+            AiPermission::ReadOnly => "label.permission_read",
+            AiPermission::Preview => "label.permission_preview",
+            AiPermission::Autonomous => "label.permission_autonomous",
+        })
     }
 }
 

@@ -2,6 +2,7 @@
 //! the menu definitions (so the page cannot go stale) plus the keys that
 //! are not in a menu. [`shortcuts`] returns them as data (e.g. for an AI).
 
+use crate::tr;
 use std::rc::Rc;
 
 use rncl::prelude::*;
@@ -23,60 +24,14 @@ pub struct Shortcut {
     pub description: String,
 }
 
-/// What a menu command does (by menu id).
-fn description(id: &str) -> &'static str {
-    match id {
-        "file.new" => {
-            "Öffnet den Assistenten für ein neues Projekt (Programm oder Bibliothek, Oberfläche, Komponenten, Git)."
-        }
-        "file.open" => "Öffnet eine Projektdatei (.ptdr).",
-        "file.save" => "Speichert Projekt und Formulare.",
-        "code.codetools" => {
-            "Legt an, was an der Cursorstelle fehlt: Methodenrumpf, eigenes Formular-Feld oder fehlende Trait-Methoden (wie die Lazarus CodeTools)."
-        }
-        "file.settings" => {
-            "Einstellungen: Arbeitsverzeichnis, Sprache, Darstellung und KI-Profile."
-        }
-        "file.quit" => "Beendet Freya TDE (fragt bei ungespeicherten Änderungen).",
-        "edit.undo" => "Nimmt die letzte Änderung im Designer zurück.",
-        "edit.redo" => "Stellt die zurückgenommene Änderung wieder her.",
-        "project.generate" => "Erzeugt den Rust-Code aus den Formularen.",
-        "project.build" => "Erzeugt den Code und baut das Projekt (cargo build).",
-        "start.run" => "Baut und startet das Programm im Debugger; angehalten: weiter.",
-        "start.run_plain" => "Baut und startet das Programm ohne Debugger.",
-        "start.stop" => "Beendet das Programm im Debugger.",
-        "start.step_into" => "Führt eine Zeile aus und springt in aufgerufene Funktionen.",
-        "start.step_over" => "Führt eine Zeile aus, Aufrufe laufen ganz durch.",
-        "start.step_out" => "Läuft bis zum Rücksprung in die aufrufende Funktion.",
-        "start.run_to" => "Läuft bis zur Zeile mit dem Cursor (startet bei Bedarf).",
-        "start.toggle_bp" => "Setzt oder entfernt den Haltepunkt in der Cursorzeile.",
-        "start.add_watch" => "Überwacht einen Ausdruck (vorbelegt mit dem Wort am Cursor).",
-        "window.designer" => {
-            "Zeigt den Designer (im Code-Fenster: zwischen Code und Designer wechseln)."
-        }
-        "window.inspector" => "Zeigt den Objektinspektor.",
-        "window.problems" => "Zeigt die Probleme (Modell, Code, Build, rust-analyzer).",
-        "window.output" => "Zeigt die Ausgabe (Build, Programm, Git, rust-analyzer).",
-        "window.terminal" => "Zeigt das Terminal und startet die Shell im Projektordner.",
-        "window.git" => "Zeigt die Quellcodeverwaltung.",
-        "window.debugger" => "Zeigt das Debugger-Fenster (Variablen, Aufrufstapel …).",
-        "window.database" => {
-            "Zeigt das Fenster Datenbank (Tabellen, Spalten, Routinen, Redis-Schlüssel)."
-        }
-        "window.debug_console" => "Zeigt die Debug-Konsole.",
-        "code.save" => "Speichert die Datei im vorderen Reiter.",
-        "code.save_all" => "Speichert alle geänderten Dateien.",
-        "code.close" => "Schließt den vorderen Reiter.",
-        "code.complete" => "Zeigt Vorschläge (rust-analyzer).",
-        "code.definition" => "Springt zur Definition des Worts am Cursor.",
-        "code.designer" | "designer.code" => "Wechselt zwischen Designer und Code.",
-        "window.ai" => "Zeigt das Fenster KI (Gespräch, Profil-Auswahl, Vorschläge).",
-        "ai.send" => "Schickt die Nachricht an die KI.",
-        "git.commit" => "Committet die gestagten Änderungen mit der Nachricht.",
-        "git.refresh" => "Liest Status und Graph neu ein.",
-        "term.copy" => "Kopiert die Auswahl im Terminal.",
-        "term.paste" => "Fügt die Zwischenablage ins Terminal ein.",
-        _ => "",
+/// What a menu command does (by menu id; texts `shortcut.<id>`).
+fn description(id: &str) -> String {
+    let key = format!("shortcut.{id}");
+    crate::i18n::ensure();
+    if ruf::i18n::has(&key) {
+        tr!(&key)
+    } else {
+        String::new()
     }
 }
 
@@ -94,7 +49,7 @@ fn collect(menu: &Menu, path: &str, scope: &str, out: &mut Vec<Shortcut>) {
                 menu: path.to_owned(),
                 keys: keys.clone(),
                 command: label.trim_end_matches(" …").to_owned(),
-                description: description(id).to_owned(),
+                description: description(id),
             }),
             MenuEntry::Submenu { label, menu } => {
                 collect(menu, &format!("{path} › {label}"), scope, out);
@@ -108,102 +63,69 @@ fn collect(menu: &Menu, path: &str, scope: &str, out: &mut Vec<Shortcut>) {
 pub fn shortcuts() -> Vec<Shortcut> {
     let mut out = Vec::new();
     let bars = [
-        ("Alle Fenster", super::main_window::menu_bar()),
-        ("Code", super::code::menu_bar()),
-        ("Designer", super::designer::menu_bar()),
+        (tr!("shortcuts.all_windows"), super::main_window::menu_bar()),
+        (tr!("menu.title.code"), super::code::menu_bar()),
+        (tr!("window.designer"), super::designer::menu_bar()),
         (
-            "Quellcodeverwaltung",
+            tr!("menu.window.git"),
             vec![("Git".to_owned(), super::git_window::more_actions())],
         ),
         (
-            "Terminal",
-            vec![("Kontextmenü".to_owned(), super::panel::terminal_menu())],
+            tr!("menu.window.terminal"),
+            vec![(tr!("shortcuts.context_menu"), super::panel::terminal_menu())],
         ),
-        ("KI", vec![("KI".to_owned(), super::ai_window::menu())]),
+        (
+            tr!("menu.window.ai"),
+            vec![(tr!("menu.window.ai"), super::ai_window::menu())],
+        ),
     ];
     for (scope, bar) in bars {
         for (title, menu) in bar {
-            collect(&menu, &title, scope, &mut out);
+            collect(&menu, &title, &scope, &mut out);
         }
     }
-    // Tasten ohne Menüeintrag.
+    // Tasten ohne Menüeintrag: Bereich, Tasten, Schlüssel des Texts.
     let extra = [
-        (
-            "Designer",
-            "Esc",
-            "Abbrechen",
-            "Bricht das Platzieren ab und hebt die Auswahl auf.",
-        ),
-        (
-            "Designer",
-            "Entf",
-            "Löschen",
-            "Löscht die gewählten Elemente.",
-        ),
-        (
-            "Code",
-            "Ctrl+Klick",
-            "Gehe zu Definition",
-            "Springt zur Definition des angeklickten Worts.",
-        ),
-        (
-            "Code",
-            "Klick in den Rand",
-            "Haltepunkt",
-            "Setzt bzw. entfernt einen Haltepunkt; Rechtsklick: Bedingung, Logpoint, bis hier ausführen.",
-        ),
-        (
-            "Debug-Konsole",
-            "Enter",
-            "Auswerten",
-            "Wertet den Ausdruck im gewählten Rahmen aus; ` am Anfang schickt einen Befehl an den Debugger.",
-        ),
-        (
-            "Debugger",
-            "Enter",
-            "Überwachen",
-            "Fügt den Ausdruck im Feld „Überwacht“ hinzu.",
-        ),
-        (
-            "Terminal",
-            "Shift+Bild↑/↓",
-            "Rückschau",
-            "Blättert in der Ausgabe (auch mit dem Mausrad).",
-        ),
+        ("designer", "Esc", "esc"),
+        ("designer", "Del", "delete"),
+        ("code", "Ctrl+Click", "ctrl_click"),
+        ("code", "Gutter", "gutter"),
+        ("debug_console", "Enter", "evaluate"),
+        ("debugger", "Enter", "watch"),
+        ("terminal", "Shift+PageUpDown", "scrollback"),
     ];
-    out.extend(
-        extra
-            .into_iter()
-            .map(|(scope, keys, command, description)| Shortcut {
-                scope: scope.into(),
-                menu: String::new(),
-                keys: keys.into(),
-                command: command.into(),
-                description: description.into(),
-            }),
-    );
+    out.extend(extra.into_iter().map(|(scope, keys, key)| Shortcut {
+        scope: tr!(&format!("shortcuts.scope.{scope}")),
+        menu: String::new(),
+        keys: keys.into(),
+        command: tr!(&format!("shortcuts.extra.{key}")),
+        description: tr!(&format!("shortcuts.extra.{key}_tip")),
+    }));
     out
 }
 
-/// Keys for display: German names, on macOS the symbols (Ctrl = ⌘).
+/// Keys for display: names of the language, on macOS the symbols (Ctrl = ⌘).
 pub fn display_keys(keys: &str) -> String {
     if cfg!(target_os = "macos") {
         keys.split('+')
             .map(|part| match part {
-                "Ctrl" => "⌘",
-                "Shift" => "⇧",
-                "Alt" => "⌥",
-                other => other,
+                "Ctrl" => "⌘".to_owned(),
+                "Shift" => "⇧".to_owned(),
+                "Alt" => "⌥".to_owned(),
+                "Del" | "Click" | "Gutter" | "PageUpDown" => {
+                    tr!(&format!("keys.{}", part.to_lowercase()))
+                }
+                other => other.to_owned(),
             })
             .collect::<Vec<_>>()
             .join("")
     } else {
         keys.split('+')
             .map(|part| match part {
-                "Ctrl" => "Strg",
-                "Shift" => "Umschalt",
-                "Space" => "Leertaste",
-                other => other,
+                "Ctrl" | "Shift" | "Space" | "Del" | "Click" | "Gutter" | "PageUpDown" => {
+                    tr!(&format!("keys.{}", part.to_lowercase()))
+                }
+                other => other.to_owned(),
             })
             .collect::<Vec<_>>()
             .join("+")
@@ -219,11 +141,7 @@ pub fn page() -> String {
         .max()
         .unwrap_or(10)
         + 3;
-    let mut text = String::from(
-        "Tastenkürzel von Freya TDE\n\
-         Die Kürzel des Hauptmenüs gelten in allen Fenstern; das eigene Menü eines\n\
-         Fensters geht vor (z. B. F5 = Aktualisieren in der Quellcodeverwaltung).\n",
-    );
+    let mut text = tr!("shortcuts.intro");
     let mut scope = "";
     let mut menu = "";
     for s in &list {
@@ -237,7 +155,8 @@ pub fn page() -> String {
         }
         if s.menu != menu {
             menu = &s.menu;
-            let title = if menu.is_empty() { "Ohne Menü" } else { menu };
+            let no_menu = tr!("shortcuts.no_menu");
+            let title = if menu.is_empty() { no_menu.as_str() } else { menu };
             text.push_str(&format!("\n  {title}\n"));
         }
         let keys = display_keys(&s.keys);
@@ -258,7 +177,7 @@ pub struct ShortcutsWindow {
 
 impl ShortcutsWindow {
     pub fn build() -> Self {
-        let window = RnclWindow::new("Tastenkürzel");
+        let window = RnclWindow::new(&tr!("menu.help.shortcuts"));
         let text = RnclTextArea::new(&window);
         text.set_read_only(true);
         text.set_monospace(true);
@@ -282,6 +201,9 @@ mod tests {
 
     #[test]
     fn listed_and_described() {
+        // Die Prüfung nennt die deutschen Menünamen.
+        crate::i18n::ensure();
+        ruf::i18n::set_language("de");
         let list = shortcuts();
         let f9 = list.iter().find(|s| s.keys == "F9").expect("F9");
         assert_eq!(f9.scope, "Alle Fenster");
@@ -304,6 +226,8 @@ mod tests {
 
     #[test]
     fn key_names() {
+        crate::i18n::ensure();
+        ruf::i18n::set_language("de");
         if !cfg!(target_os = "macos") {
             assert_eq!(display_keys("Ctrl+Shift+F9"), "Strg+Umschalt+F9");
         } else {

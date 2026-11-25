@@ -8,6 +8,7 @@
 //! *Struktur und Objektinspektor per Ziehen als Reiter zusammenlegen und
 //! wieder trennen.*
 
+use crate::tr;
 use std::rc::Rc;
 
 use rncl::prelude::*;
@@ -22,7 +23,7 @@ const DRAG: &str = "freya-view:";
 /// The dockable content of a tool window.
 pub struct DockPane {
     pub name: &'static str,
-    pub title: &'static str,
+    pub title: String,
     /// Everything the window shows (moves into a tab when docked).
     pub root: RnclPanel,
     /// Drag handle at the top of `root`.
@@ -34,19 +35,19 @@ pub struct DockPane {
 }
 
 impl DockPane {
-    pub fn new(window: &RnclWindow, name: &'static str, title: &'static str) -> Self {
+    pub fn new(window: &RnclWindow, name: &'static str, title: &str) -> Self {
         let tabs = RnclTabView::new(window);
         tabs.widget().set_visible(false);
         let root = RnclPanel::new(window);
         let grip = RnclLabel::new(&root, &format!("⠿ {title}"));
         grip.widget().set_tool_tip(
-            "Ziehen: auf ein anderes Fenster ablegen legt beide als Reiter zusammen, ins Freie ziehen trennt wieder",
+            &tr!("dock.grip_tip"),
         );
         grip.widget().set_mouse_cursor("grab");
         grip.widget().set_drag_text(&format!("{DRAG}{name}"));
         Self {
             name,
-            title,
+            title: title.to_owned(),
             root,
             grip,
             tabs,
@@ -57,7 +58,7 @@ impl DockPane {
     /// Like [`DockPane::new`], plus a content area below the grip that
     /// follows the pane's size: the window builds its content on
     /// [`DockPane::body`] and lays it out when the body is resized.
-    pub fn with_body(window: &RnclWindow, name: &'static str, title: &'static str) -> Self {
+    pub fn with_body(window: &RnclWindow, name: &'static str, title: &str) -> Self {
         let mut pane = Self::new(window, name, title);
         let body = RnclPanel::new(&pane.root);
         let (grip, b) = (pane.grip.clone(), body.clone());
@@ -137,23 +138,23 @@ impl Ide {
         }
         let ((g, g_window), (h, h_window)) = match (self.pane(guest), self.pane(&host)) {
             (Some(g), Some(h)) => (g, h),
-            _ => return Err(format!("unbekanntes Fenster: {guest} oder {host}")),
+            _ => return Err(tr!("dock.unknown", guest = guest, host = host)),
         };
         if self.docked.borrow().values().any(|v| v == guest) {
-            return Err(format!("{} enthält schon Reiter", g.title));
+            return Err(tr!("dock.has_tabs", title = g.title));
         }
         if self.docked.borrow().contains_key(guest) {
             self.undock_view(guest);
         }
         let size = h_window.size();
         if !h.tabbed() {
-            let page = h.tabs.add_tab(h.title);
+            let page = h.tabs.add_tab(&h.title);
             h.root.widget().set_parent(page.widget());
             h.tabs.set_geometry(0, 0, size.width, size.height);
             h.tabs.widget().set_visible(true);
             follow(&page, &h.root);
         }
-        let page = h.tabs.add_tab(g.title);
+        let page = h.tabs.add_tab(&g.title);
         g.root.widget().set_parent(page.widget());
         follow(&page, &g.root);
         h.tabs.set_current_index(h.tabs.tab_count() - 1);
@@ -175,7 +176,7 @@ impl Ide {
         g.root.widget().set_parent(g_window.widget());
         let size = g_window.size();
         g.root.set_geometry(0, 0, size.width, size.height);
-        if let Some(index) = h.tabs.tab_titles().iter().position(|t| t == g.title) {
+        if let Some(index) = h.tabs.tab_titles().iter().position(|t| *t == g.title) {
             h.tabs.remove_tab(index as i32);
         }
         g_window.show();
@@ -198,7 +199,7 @@ impl Ide {
             return false;
         };
         if let (Some((pane, _)), Some((h, h_window))) = (self.pane(name), self.pane(&host)) {
-            if let Some(index) = h.tabs.tab_titles().iter().position(|t| t == pane.title) {
+            if let Some(index) = h.tabs.tab_titles().iter().position(|t| *t == pane.title) {
                 h.tabs.set_current_index(index as i32);
             }
             h_window.show();

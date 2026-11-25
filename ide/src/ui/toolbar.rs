@@ -1,6 +1,7 @@
 //! Actions of the main window's tool bar (Rust tools) and of the palette tab
 //! "Snippets"; the logic is in [`crate::tools`] and [`crate::snippets`].
 
+use crate::tr;
 use std::path::PathBuf;
 
 use rncl::prelude::*;
@@ -191,7 +192,11 @@ impl Ide {
                     channel::BUILD,
                     &format!("{} konnte nicht starten: {error}", tool.command_line()),
                 );
-                self.main.set_status(&format!("{}: {error}", tool.label()));
+                self.main.set_status(&tr!(
+                    "tool.status.error",
+                    tool = tool.label(),
+                    error = error
+                ));
                 self.show_panel(Tab::Output);
             }
             ToolDone::UpdatePreview(text) => {
@@ -247,14 +252,18 @@ impl Ide {
                 let problems = report.build.as_ref().map_or(0, |b| b.messages.len());
                 let status = match (report.success, tool) {
                     (true, Tool::Check | Tool::Clippy) if problems == 0 => {
-                        format!("{}: keine Meldungen.", tool.label())
+                        tr!("tool.status.no_messages", tool = tool.label())
                     }
                     (true, Tool::Check | Tool::Clippy) => {
-                        format!("{}: {problems} Meldungen (Probleme).", tool.label())
+                        tr!(
+                            "tool.status.messages",
+                            tool = tool.label(),
+                            count = problems
+                        )
                     }
                     (true, Tool::Fmt) => format!("Formatiert: {} Datei(en).", report.changed.len()),
-                    (true, _) => format!("{}: fertig.", tool.label()),
-                    (false, _) => format!("{}: fehlgeschlagen (Ausgabe).", tool.label()),
+                    (true, _) => tr!("tool.status.done", tool = tool.label()),
+                    (false, _) => tr!("tool.status.failed", tool = tool.label()),
                 };
                 self.main.set_status(&status);
                 if !report.success || problems > 0 {

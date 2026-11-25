@@ -1,0 +1,432 @@
+# English texts of Freya TDE. New language: copy this file (e.g. fr.toml),
+# translate the values, keep the keys and {placeholders} unchanged.
+
+[language]
+name = "English"
+
+[menu.title]
+file = "File"
+edit = "Edit"
+project = "Project"
+start = "Run"
+window = "Window"
+help = "Help"
+code = "Code"
+view = "View"
+
+[menu.file]
+new = "New Project …"
+open = "Open Project …"
+save = "Save"
+projects = "Project Manager"
+from_cargo = "Create Project from Cargo.toml …"
+settings = "Settings …"
+quit = "Quit"
+
+[menu.edit]
+undo = "Undo"
+redo = "Redo"
+delete = "Delete Selection"
+
+[menu.project]
+add_form = "Add Form"
+add_data = "Add Data Module"
+generate = "Generate Code"
+build = "Build"
+
+[menu.start]
+run = "Run / Continue"
+run_plain = "Run without Debugger"
+pause = "Pause"
+stop = "Stop Program"
+step_into = "Step Into"
+step_over = "Step Over"
+step_out = "Step Out"
+run_to = "Run to Cursor"
+toggle_bp = "Toggle Breakpoint"
+add_watch = "Add Watch …"
+remove_all_bp = "Remove All Breakpoints"
+
+[menu.window]
+designer = "Designer"
+inspector = "Object Inspector"
+structure = "Structure"
+messages = "Messages"
+problems = "Problems"
+output = "Output"
+terminal = "Terminal"
+code = "Code"
+project = "Files"
+project_manager = "Project Manager"
+git = "Source Control"
+debugger = "Debugger"
+database = "Database"
+ai = "AI"
+debug_console = "Debug Console"
+reset = "Default Layout"
+
+[menu.help]
+shortcuts = "Keyboard Shortcuts"
+about = "About Freya TDE"
+
+[main]
+pointer = "Pointer"
+pointer_tip = "Select instead of place (Esc)"
+place_hint = "Click into the designer to place {name} (Esc cancels)."
+
+[main.snippets]
+pick = "Insert snippet …"
+combo_tip = "Choosing inserts the snippet at the cursor in the code; right click: edit, delete, pin"
+button_tip = "Right click: unpin, edit"
+button_tip_with = "{description} (right click: unpin, edit)"
+unpin = "Unpin from Tab"
+edit = "Edit …"
+edit_menu = "Edit"
+delete_menu = "Delete"
+pin_menu = "Pin to Tab"
+new = "Create New Snippet …"
+delete_title = "Delete Snippet"
+delete_question = "Delete snippet “{name}”?"
+
+[tool.check]
+label = "Check"
+tip = "cargo check: check the project, messages under Problems"
+
+[tool.clippy]
+label = "Clippy"
+tip = "cargo clippy: hints on style and typical mistakes, messages under Problems"
+
+[tool.fmt]
+label = "Format"
+tip = "rustfmt: format your own files (generated .gen.rs stay untouched)"
+
+[tool.test]
+label = "Test"
+tip = "cargo test: run the tests, output in the Build channel"
+
+[tool.update]
+label = "Update"
+tip = "cargo update: update the dependencies in Cargo.lock (with preview)"
+
+[tool.doc]
+label = "Docs"
+tip = "cargo doc: build the project documentation and open it in the browser"
+
+[tool.sqlx]
+label = "SQLx"
+tip = "cargo sqlx prepare: create offline data for sqlx::query! (needs sqlx-cli and a database)"
+
+[tool.status]
+error = "{tool}: {error}"
+no_messages = "{tool}: no messages."
+messages = "{tool}: {count} messages (Problems)."
+done = "{tool}: done."
+failed = "{tool}: failed (Output)."
+
+[settings]
+tab_ai = "AI"
+language_hint = "Applies from the next start of Freya TDE and to the CT-Editor."
+title = "Settings"
+tab_general = "General"
+work_dir = "Working folder"
+language = "Language"
+appearance = "Appearance"
+new_methods = "New methods"
+work_dir_placeholder = "empty = home folder, e.g. ~/Projects/rust"
+work_dir_hint = "File dialogs and the new project wizard start here."
+theme_system = "System (default)"
+new_methods_tip = "Where “Complete code” (Ctrl+Shift+C) puts new methods"
+new = "New"
+remove = "Remove"
+name = "Name"
+provider = "Provider"
+model = "Model"
+address = "Address"
+api_key = "API key"
+default_profile = "Default profile"
+this_project = "For this project"
+ai_rights = "AI permissions"
+model_placeholder = "e.g. llama3.2 – or fetch"
+fetch = "Fetch"
+fetch_tip = "Fetch the provider’s models (with this profile’s address and key)"
+remove_key = "Remove key"
+show_ai_new = "Show AI window for a new project"
+show_ai_always = "Always show AI window"
+cancel = "Cancel"
+none = "(none)"
+address_required = "required, e.g. http://localhost:1234/v1"
+key_new = "New key – saved with OK."
+key_removed = "Key will be removed with OK."
+key_keyring = "Key in the keyring."
+key_file = "Key in the settings file (no keyring)."
+key_not_needed = "No key needed."
+key_none = "No key yet."
+saved = "Settings saved."
+no_models = "The server lists no models."
+one_model = "1 model found"
+choose_work_dir = "Choose working folder"
+address_empty = "empty = {address}"
+key_saved_placeholder = "saved – enter a new key to change it"
+hint_none = "No AI connected yet: “New” creates a profile (Anthropic, OpenAI, Ollama or an OpenAI-compatible server such as LM Studio). Several profiles are possible; each project can choose one."
+hint_unsaved = "Profile and permissions per project can be chosen once the project is saved."
+hint_project = "Without its own choice a project uses the default profile; the permissions apply to this project only (reading is always allowed)."
+profile_n = "Profile {n}"
+asking_models = "Asking {provider} for models …"
+models_found = "{count} models found"
+models_choose = "{found} – please choose one."
+models_error = "Fetching models: {detail} ({code})"
+name_rejected = "Name not taken: {detail}"
+
+[label]
+system = "System"
+theme_light = "Light"
+theme_dark = "Dark"
+local_network = "local/network"
+openai_compatible = "OpenAI-compatible (own server)"
+permission_read = "read only"
+permission_preview = "with preview"
+permission_autonomous = "autonomous"
+order_after_caller = "after the calling method"
+order_alphabetical = "alphabetical"
+order_end = "at the end of the impl block"
+
+[wizard]
+title = "New Project"
+kind = "Kind"
+kind_binary = "Program (with user interface)"
+kind_library = "Library (data modules, no user interface)"
+name = "Name"
+name_placeholder = "e.g. shop (Cargo package name)"
+parent = "Parent folder"
+rust_version = "Rust version"
+platforms_hint = "Which systems? The designer shows the first one; differences become cfg branches."
+toolkit = "UI toolkit"
+accept = "License notice read, create the project anyway"
+components_hint = "Create in the data module “services” (Tokio is added when needed):"
+database = "Database (SQLx)"
+web = "Web server (Axum)"
+ws_endpoint = "… with WebSocket endpoint"
+http = "HTTP client (reqwest)"
+http_placeholder = "Base URL, e.g. https://api.example.com (optional)"
+runtime = "Tokio runtime for your own async code"
+git = "Create Git repository (.gitignore with /target)"
+commit = "… and commit the new project"
+cancel = "Cancel"
+back = "< Back"
+next = "Next >"
+finish = "Create"
+no_ui = "No user interface (components only)"
+more_toolkits = "More toolkits (e.g. WebView) come as backend packs of their own."
+open_points = "Still to settle:\n"
+library = "Library"
+components_in = "Components in services:\n"
+files = "Files:\n"
+keep_changes = "Keep unsaved changes"
+choose_parent = "Choose parent folder"
+page_kind = "What do you want to create?"
+page_place = "Name and location"
+page_platforms = "Target systems"
+page_ui = "User interface"
+page_components = "Components"
+page_summary = "Git and summary"
+license_notice = "{name} (license notice)"
+step = "<b>Step {step} of {count}: {title}</b>"
+kind_library_hint = "A library (lib.rs) with data modules: components such as database, Redis or\nweb server as a public service container App that other crates use.\nNo user interface; async components run on the caller’s Tokio runtime."
+kind_binary_hint = "A program (main.rs) with forms for a UI toolkit and optionally\ndata modules for database, Redis, web server …"
+project_dir = "Project folder: {path}"
+kind_binary_summary = "Program, user interface {backend}"
+created = "Project {name} created."
+
+[menu.code]
+save = "Save"
+save_all = "Save All"
+close = "Close"
+complete = "Complete"
+definition = "Go to Definition"
+codetools = "Complete Code (Method, Field, Trait)"
+fold_all = "Fold All"
+unfold_all = "Unfold All"
+designer = "Designer"
+
+[code]
+save_snippet = "Save as Snippet …"
+grip_tip = "Drag onto the code window’s tab bar: show as a tab again"
+unsaved_title = "Unsaved Changes"
+unsaved_close = "Close {path} and discard the changes?"
+
+[designer]
+tray_empty = "Non-visual components (database, WebSocket, timer …) appear here"
+
+[window]
+designer = "Designer"
+inspector = "Object Inspector"
+structure = "Structure"
+snippet = "Snippet"
+
+[inspector]
+expect_number = "a number expected, e.g. 1.5"
+expect_point = "a point expected, e.g. 10, 20"
+expect_size = "a size expected, e.g. 640 × 480"
+expect_color = "a colour expected, e.g. #3366ff"
+set_by_selection = "set through the selection"
+color_placeholder = "default or #rrggbb"
+properties = "Properties"
+events = "Events"
+none_selected = "No element selected."
+many_selected = "Several elements selected."
+general = "General"
+backend_only = " (only for this UI backend)"
+platforms_only = " (only {platforms})"
+list_placeholder = "separate entries with ;"
+reset_tip = "Reset to the default value"
+handler_placeholder = "Handler (… creates it and jumps there)"
+
+[inspector.db]
+title = "Database"
+connection = "Connection"
+test = "Test"
+schema = "Schema"
+window = "Database window"
+from_database = "Take from database"
+keys = "Keys"
+from_kind = "Take from kind"
+
+[color]
+white = "White"
+light_gray = "Light gray"
+gray = "Gray"
+dark_gray = "Dark gray"
+black = "Black"
+red = "Red"
+orange = "Orange"
+yellow = "Yellow"
+green = "Green"
+blue = "Blue"
+light_blue = "Light blue"
+violet = "Violet"
+
+[dock]
+grip_tip = "Drag: dropping on another window puts both together as tabs, dragging into the open separates them again"
+unknown = "unknown window: {guest} or {host}"
+has_tabs = "{title} already holds tabs"
+
+[structure]
+data_module = "{name} (data module)"
+
+[snippet]
+name = "Name"
+description = "Short description"
+use_line = "use line"
+code = "Code"
+description_placeholder = "shown when hovering in the list"
+use_placeholder = "e.g. use std::fs;  (empty = none)"
+select_first = "Save as snippet: select code first."
+edit_title = "Edit Snippet"
+new_title = "New Snippet"
+
+[about]
+title = "About {product}"
+tagline = "Top-down editor for Rust"
+version = "Version {version}"
+toolkit = "User interface: RUF/RNCL on {toolkit}"
+license = "License: {license}"
+close = "Close"
+
+[shortcut.file]
+new = "Opens the wizard for a new project (program or library, user interface, components, Git)."
+open = "Opens a project file (.ptdr)."
+save = "Saves project and forms."
+settings = "Settings: working folder, language, appearance and AI profiles."
+quit = "Quits Freya TDE (asks about unsaved changes)."
+
+[shortcut.code]
+codetools = "Creates what is missing at the cursor: method body, own form field or missing trait methods (like the Lazarus CodeTools)."
+save = "Saves the file in the front tab."
+save_all = "Saves all changed files."
+close = "Closes the front tab."
+complete = "Shows suggestions (rust-analyzer)."
+definition = "Jumps to the definition of the word at the cursor."
+designer = "Switches between designer and code."
+
+[shortcut.edit]
+undo = "Undoes the last change in the designer."
+redo = "Redoes the undone change."
+
+[shortcut.project]
+generate = "Generates the Rust code from the forms."
+build = "Generates the code and builds the project (cargo build)."
+
+[shortcut.start]
+run = "Builds and starts the program in the debugger; when paused: continue."
+run_plain = "Builds and starts the program without the debugger."
+stop = "Stops the program in the debugger."
+step_into = "Runs one line and steps into called functions."
+step_over = "Runs one line, calls run through completely."
+step_out = "Runs until returning to the calling function."
+run_to = "Runs to the line with the cursor (starts if needed)."
+toggle_bp = "Sets or removes the breakpoint in the cursor line."
+add_watch = "Watches an expression (filled with the word at the cursor)."
+
+[shortcut.window]
+designer = "Shows the designer (in the code window: switch between code and designer)."
+inspector = "Shows the object inspector."
+problems = "Shows the problems (model, code, build, rust-analyzer)."
+output = "Shows the output (build, program, Git, rust-analyzer)."
+terminal = "Shows the terminal and starts the shell in the project folder."
+git = "Shows source control."
+debugger = "Shows the debugger window (variables, call stack …)."
+database = "Shows the database window (tables, columns, routines, Redis keys)."
+debug_console = "Shows the debug console."
+ai = "Shows the AI window (conversation, profile choice, proposals)."
+
+[shortcut.designer]
+code = "Switches between designer and code."
+
+[shortcut.ai]
+send = "Sends the message to the AI."
+
+[shortcut.git]
+commit = "Commits the staged changes with the message."
+refresh = "Reads status and graph again."
+
+[shortcut.term]
+copy = "Copies the selection in the terminal."
+paste = "Pastes the clipboard into the terminal."
+
+[shortcuts]
+all_windows = "All windows"
+context_menu = "Context menu"
+no_menu = "Without menu"
+intro = "Keyboard shortcuts of Freya TDE\nThe shortcuts of the main menu work in all windows; a window’s own menu\ncomes first (e.g. F5 = Refresh in source control).\n"
+
+[shortcuts.scope]
+designer = "Designer"
+code = "Code"
+debug_console = "Debug console"
+debugger = "Debugger"
+terminal = "Terminal"
+
+[shortcuts.extra]
+esc = "Cancel"
+esc_tip = "Cancels placing and clears the selection."
+delete = "Delete"
+delete_tip = "Deletes the selected elements."
+ctrl_click = "Go to definition"
+ctrl_click_tip = "Jumps to the definition of the clicked word."
+gutter = "Breakpoint"
+gutter_tip = "Sets or removes a breakpoint; right click: condition, logpoint, run to here."
+evaluate = "Evaluate"
+evaluate_tip = "Evaluates the expression in the selected frame; ` at the start sends a command to the debugger."
+watch = "Watch"
+watch_tip = "Adds the expression to “Watched”."
+scrollback = "Scrollback"
+scrollback_tip = "Scrolls through the output (also with the mouse wheel)."
+
+[keys]
+ctrl = "Ctrl"
+shift = "Shift"
+space = "Space"
+del = "Del"
+click = "Click"
+gutter = "Click in the gutter"
+pageupdown = "PageUp/Down"

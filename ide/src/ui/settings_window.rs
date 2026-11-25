@@ -1,11 +1,12 @@
-//! Window "Einstellungen" (File → Settings, Ctrl+,): tab "Allgemein"
+//! Window &tr!("settings.title") (File → Settings, Ctrl+,): tab &tr!("settings.tab_general")
 //! (working directory, language, appearance) and tab "KI" (profiles, default
 //! profile, profile and permission of the current project, AI window;
-//! "Abrufen" fetches the models of the shown profile, a key that would go
+//! &tr!("settings.fetch") fetches the models of the shown profile, a key that would go
 //! over `http://` to another machine is warned about). The window edits a
 //! [`SettingsEdit`]; only "OK" stores keys, saves and applies
 //! ([`Ide::update_settings`], also for automation).
 
+use crate::tr;
 use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -77,9 +78,9 @@ pub struct SettingsWindow {
     project: RefCell<Option<PathBuf>>,
     /// Set while fields are filled (their signals must not edit).
     filling: Cell<bool>,
-    /// Number of the last "Abrufen" (older answers are ignored).
+    /// Number of the last &tr!("settings.fetch") (older answers are ignored).
     models_request: Cell<u64>,
-    /// Result of "Abrufen" (shown when there is no warning).
+    /// Result of &tr!("settings.fetch") (shown when there is no warning).
     models_notice: RefCell<String>,
 }
 
@@ -92,36 +93,30 @@ fn label<P: AsWidget + ?Sized>(parent: &P, text: &str) -> RnclLabel {
 
 impl SettingsWindow {
     pub fn build() -> Self {
-        let window = RnclWindow::new("Einstellungen");
+        let window = RnclWindow::new(&tr!("settings.title"));
         window.set_size(W, H);
         let tabs = RnclTabView::new(&window);
-        let general = tabs.add_tab("Allgemein");
-        let ai = tabs.add_tab("KI");
+        let general = tabs.add_tab(&tr!("settings.tab_general"));
+        let ai = tabs.add_tab(&tr!("settings.tab_ai"));
 
         // Allgemein
         let p = &general;
         let general_labels = vec![
-            label(p, "Arbeitsverzeichnis"),
-            label(p, "Sprache"),
-            label(p, "Darstellung"),
-            label(p, "Neue Methoden"),
+            label(p, &tr!("settings.work_dir")),
+            label(p, &tr!("settings.language")),
+            label(p, &tr!("settings.appearance")),
+            label(p, &tr!("settings.new_methods")),
         ];
         let base_dir = RnclTextField::new(p);
-        base_dir.set_placeholder("leer = Home-Ordner, z. B. ~/DevArea/RUST");
+        base_dir.set_placeholder(&tr!("settings.work_dir_placeholder"));
         let browse = RnclButton::new(p, "…");
-        let base_hint = label(
-            p,
-            "Hier beginnen Dateidialoge und der Assistent für neue Projekte.",
-        );
+        let base_hint = label(p, &tr!("settings.work_dir_hint"));
         let language = RnclComboBox::new(p);
         language.set_items(&Language::ALL.map(Language::label));
-        let language_hint = label(
-            p,
-            "Gilt vorerst für den CT-Editor; Freya TDE selbst ist noch deutsch.",
-        );
+        let language_hint = label(p, &crate::tr!("settings.language_hint"));
         let theme = RnclComboBox::new(p);
         theme.set_items(&Theme::ALL.map(|t| match t {
-            Theme::System => "System (Standard)",
+            Theme::System => tr!("settings.theme_system"),
             other => other.label(),
         }));
 
@@ -129,41 +124,39 @@ impl SettingsWindow {
         method_order.set_items(&MethodOrder::ALL.map(MethodOrder::label));
         method_order
             .widget()
-            .set_tool_tip("Wohin „Code vervollständigen“ (Strg+Umschalt+C) neue Methoden setzt");
+            .set_tool_tip(&tr!("settings.new_methods_tip"));
 
         // KI: in einer Bildlauffläche, damit nichts aus dem Fenster läuft.
         let ai_scroll = RnclScrollView::new(&ai);
         let p = ai_scroll.content();
         let profiles = RnclListBox::new(p);
-        let add = RnclButton::new(p, "Neu");
-        let remove = RnclButton::new(p, "Entfernen");
+        let add = RnclButton::new(p, &tr!("settings.new"));
+        let remove = RnclButton::new(p, &tr!("settings.remove"));
         let ai_labels = vec![
-            label(p, "Name"),
-            label(p, "Anbieter"),
-            label(p, "Modell"),
-            label(p, "Adresse"),
-            label(p, "API-Key"),
-            label(p, "Standardprofil"),
-            label(p, "Für dieses Projekt"),
-            label(p, "Rechte der KI"),
+            label(p, &tr!("settings.name")),
+            label(p, &tr!("settings.provider")),
+            label(p, &tr!("settings.model")),
+            label(p, &tr!("settings.address")),
+            label(p, &tr!("settings.api_key")),
+            label(p, &tr!("settings.default_profile")),
+            label(p, &tr!("settings.this_project")),
+            label(p, &tr!("settings.ai_rights")),
         ];
         let name = RnclTextField::new(p);
         let provider = RnclComboBox::new(p);
         provider.set_items(&AiProvider::ALL.map(AiProvider::label));
         let model = RnclComboBox::new(p);
         model.set_editable(true);
-        model.set_placeholder("z. B. llama3.2 – oder abrufen");
-        let fetch = RnclButton::new(p, "Abrufen");
-        fetch
-            .widget()
-            .set_tool_tip("Modelle des Anbieters abrufen (mit Adresse und Key dieses Profils)");
+        model.set_placeholder(&tr!("settings.model_placeholder"));
+        let fetch = RnclButton::new(p, &tr!("settings.fetch"));
+        fetch.widget().set_tool_tip(&tr!("settings.fetch_tip"));
         let endpoint = RnclTextField::new(p);
         let key = RnclTextField::new(p);
         key.set_password_mode(true);
         let key_state = label(p, "");
         let warning = label(p, "");
         warning.set_word_wrap(true);
-        let remove_key = RnclButton::new(p, "Key entfernen");
+        let remove_key = RnclButton::new(p, &tr!("settings.remove_key"));
         let default_profile = RnclComboBox::new(p);
         let project_profile = RnclComboBox::new(p);
         let permission = RnclComboBox::new(p);
@@ -172,12 +165,12 @@ impl SettingsWindow {
             "Lesen ist immer erlaubt. „mit Vorschau“: jede Änderung erst als Vorschlag; \
              „selbstständig“: ohne Rückfrage",
         );
-        let show_on_new = RnclCheckBox::new(p, "KI-Fenster bei neuem Projekt anzeigen");
-        let show_always = RnclCheckBox::new(p, "KI-Fenster immer anzeigen");
+        let show_on_new = RnclCheckBox::new(p, &tr!("settings.show_ai_new"));
+        let show_always = RnclCheckBox::new(p, &tr!("settings.show_ai_always"));
         let ai_hint = label(p, "");
         ai_hint.set_word_wrap(true);
 
-        let cancel = RnclButton::new(&window, "Abbrechen");
+        let cancel = RnclButton::new(&window, &tr!("settings.cancel"));
         let ok = RnclButton::new(&window, "OK");
 
         let w = Self {
@@ -364,7 +357,7 @@ impl SettingsWindow {
             self.selected.set(0);
         }
         self.profiles.set_current_index(self.selected.get());
-        let mut choices = vec!["(keins)".to_owned()];
+        let mut choices = vec![tr!("settings.none")];
         choices.extend(names.iter().cloned());
         self.default_profile.set_items(&choices);
         let pos = |name: Option<&String>| {
@@ -373,7 +366,7 @@ impl SettingsWindow {
         };
         self.default_profile
             .set_current_index(pos(s.ai.default_profile.as_ref()));
-        choices[0] = "Standardprofil".to_owned();
+        choices[0] = tr!("settings.default_profile");
         self.project_profile.set_items(&choices);
         let project = self.project.borrow().clone();
         self.project_profile
@@ -443,23 +436,23 @@ impl SettingsWindow {
             .as_ref()
             .and_then(|p| p.provider.default_endpoint())
             .map_or_else(
-                || "Pflicht, z. B. http://localhost:1234/v1".to_owned(),
-                |e| format!("leer = {e}"),
+                || tr!("settings.address_required"),
+                |e| tr!("settings.address_empty", address = e),
             );
         self.endpoint.set_placeholder(&endpoint);
         let state = match &p {
             None => String::new(),
             Some(p) => match edit.keys.get(&p.name) {
                 Some(Some(k)) if !k.trim().is_empty() => {
-                    "Neuer Key – wird mit OK gespeichert.".to_owned()
+                    tr!("settings.key_new")
                 }
-                Some(_) => "Key wird bei OK entfernt.".to_owned(),
-                None if p.key_in_keyring => "Key im Schlüsselbund.".to_owned(),
+                Some(_) => tr!("settings.key_removed"),
+                None if p.key_in_keyring => tr!("settings.key_keyring"),
                 None if p.key.is_some() => {
-                    "Key in der Einstellungsdatei (kein Schlüsselbund).".to_owned()
+                    tr!("settings.key_file")
                 }
-                None if !p.provider.needs_key() => "Kein Key nötig.".to_owned(),
-                None => "Noch kein Key.".to_owned(),
+                None if !p.provider.needs_key() => tr!("settings.key_not_needed"),
+                None => tr!("settings.key_none"),
             },
         };
         self.key_state.set_text(&state);
@@ -468,15 +461,14 @@ impl SettingsWindow {
             Some(w) => format!("⚠ {}", w.detail),
             None => self.models_notice.borrow().clone(),
         });
-        self.key.set_placeholder(
-            if p.as_ref()
-                .is_some_and(|p| p.has_key() && !edit.keys.contains_key(&p.name))
-            {
-                "gespeichert – zum Ändern neuen Key eingeben"
-            } else {
-                "API-Key"
-            },
-        );
+        self.key.set_placeholder(&if p
+            .as_ref()
+            .is_some_and(|p| p.has_key() && !edit.keys.contains_key(&p.name))
+        {
+            tr!("settings.key_saved_placeholder")
+        } else {
+            tr!("settings.api_key")
+        });
         let connected = edit.settings.ai.connected();
         self.show_on_new.widget().set_enabled(connected);
         self.show_always.widget().set_enabled(connected);
@@ -487,15 +479,12 @@ impl SettingsWindow {
         self.permission
             .widget()
             .set_enabled(connected && self.project.borrow().is_some());
-        self.ai_hint.set_text(if !connected {
-            "Noch keine KI angebunden: „Neu“ legt ein Profil an (Anthropic, OpenAI, Ollama oder \
-             ein OpenAI-kompatibler Server wie LM Studio). Mehrere Profile sind möglich; \
-             je Projekt lässt sich eines wählen."
+        self.ai_hint.set_text(&if !connected {
+            tr!("settings.hint_none")
         } else if self.project.borrow().is_none() {
-            "Profil und Rechte je Projekt lassen sich wählen, sobald das Projekt gespeichert ist."
+            tr!("settings.hint_unsaved")
         } else {
-            "Ohne eigene Wahl nutzt ein Projekt das Standardprofil; die Rechte gelten nur für \
-             dieses Projekt (Lesen ist immer erlaubt)."
+            tr!("settings.hint_project")
         });
     }
 }
@@ -603,7 +592,7 @@ impl Ide {
         match self.update_settings(&edit) {
             Ok(_) => {
                 self.settings_window.window.hide();
-                self.set_status("Einstellungen gespeichert.");
+                self.set_status(&tr!("settings.saved"));
             }
             Err(errors) => {
                 let text: Vec<String> = errors
@@ -612,21 +601,21 @@ impl Ide {
                     .collect();
                 dialog::error(
                     Some(self.settings_window.window.widget()),
-                    "Einstellungen",
+                    &tr!("settings.title"),
                     &text.join("\n"),
                 );
             }
         }
     }
 
-    /// "Neu" on the AI tab: a profile with a free name.
+    /// &tr!("settings.new") on the AI tab: a profile with a free name.
     pub fn settings_add_profile(&self) {
         let w = &self.settings_window;
         {
             let mut edit = w.edit.borrow_mut();
             let profiles = &mut edit.settings.ai.profiles;
             let name = (1..)
-                .map(|n| format!("Profil {n}"))
+                .map(|n| tr!("settings.profile_n", n = n))
                 .find(|n| profiles.iter().all(|p| p.name != *n))
                 .expect("free name");
             profiles.push(AiProfile::new(&name, AiProvider::Anthropic));
@@ -638,7 +627,7 @@ impl Ide {
         w.fill();
     }
 
-    /// "Abrufen" on the AI tab: fetches the models of the shown profile as
+    /// &tr!("settings.fetch") on the AI tab: fetches the models of the shown profile as
     /// edited (address and key before "OK") in a worker thread; the answer
     /// fills the model drop-down.
     pub fn settings_fetch_models(&self) {
@@ -656,7 +645,7 @@ impl Ide {
         match client {
             Ok(client) => {
                 *w.models_notice.borrow_mut() =
-                    format!("Frage {} nach Modellen …", p.provider.label());
+                    tr!("settings.asking_models", provider = p.provider.label());
                 w.fetch.widget().set_enabled(false);
                 std::thread::spawn(move || {
                     sender.send(super::ai_window::AiDone::Models(request, client.models()));
@@ -667,7 +656,7 @@ impl Ide {
         w.update_state();
     }
 
-    /// The answer to "Abrufen".
+    /// The answer to &tr!("settings.fetch").
     pub(super) fn settings_models_done(
         &self,
         request: u64,
@@ -679,7 +668,7 @@ impl Ide {
         }
         w.fetch.widget().set_enabled(w.profile().is_some());
         let notice = match result {
-            Ok(models) if models.is_empty() => "Der Server nennt keine Modelle.".to_owned(),
+            Ok(models) if models.is_empty() => tr!("settings.no_models"),
             Ok(models) => {
                 let current = w.model.current_text();
                 let ids: Vec<&str> = models.iter().map(|m| m.id.as_str()).collect();
@@ -694,30 +683,30 @@ impl Ide {
                 w.filling.set(false);
                 let n = models.len();
                 let found = if n == 1 {
-                    "1 Modell gefunden".to_owned()
+                    tr!("settings.one_model")
                 } else {
-                    format!("{n} Modelle gefunden")
+                    tr!("settings.models_found", count = n)
                 };
                 if current.is_empty() {
-                    format!("{found} – bitte eines wählen.")
+                    tr!("settings.models_choose", found = found)
                 } else {
                     format!("{found}.")
                 }
             }
-            Err(e) => format!("Modelle abrufen: {} ({})", e.detail, e.code),
+            Err(e) => tr!("settings.models_error", detail = e.detail, code = e.code),
         };
         *w.models_notice.borrow_mut() = notice;
         w.update_state();
     }
 
     /// The models offered in the drop-down of the settings window (after
-    /// "Abrufen") and the status line under the key (tests).
+    /// &tr!("settings.fetch")) and the status line under the key (tests).
     pub fn settings_models(&self) -> (Vec<String>, String) {
         let w = &self.settings_window;
         (w.model.items(), w.warning.text())
     }
 
-    /// "Entfernen" on the AI tab.
+    /// &tr!("settings.remove") on the AI tab.
     fn settings_remove_profile(&self) {
         let w = &self.settings_window;
         if let Some(p) = w.profile() {
@@ -743,7 +732,7 @@ pub fn connect(ide: &Rc<Ide>) {
     w.browse.on_clicked(with0(ide, |ide| {
         let w = &ide.settings_window;
         if let Some(dir) =
-            dialog::choose_folder(Some(w.window.widget()), "Arbeitsverzeichnis wählen")
+            dialog::choose_folder(Some(w.window.widget()), &tr!("settings.choose_work_dir"))
         {
             w.base_dir.set_text(&dir.to_string_lossy());
         }
@@ -822,11 +811,11 @@ pub fn connect(ide: &Rc<Ide>) {
                     .map(|p| p.name.clone())
                     .collect();
                 for (combo, first) in [
-                    (&w.default_profile, "(keins)"),
-                    (&w.project_profile, "Standardprofil"),
+                    (&w.default_profile, tr!("settings.none")),
+                    (&w.project_profile, tr!("settings.default_profile")),
                 ] {
                     let current = combo.current_index();
-                    let items: Vec<&str> = std::iter::once(first)
+                    let items: Vec<&str> = std::iter::once(first.as_str())
                         .chain(names.iter().map(String::as_str))
                         .collect();
                     combo.set_items(&items);
@@ -837,7 +826,7 @@ pub fn connect(ide: &Rc<Ide>) {
             }
             Err(e) if text.trim() != p.name => w
                 .key_state
-                .set_text(&format!("Name nicht übernommen: {}", e.detail)),
+                .set_text(&tr!("settings.name_rejected", detail = e.detail)),
             Err(_) => {}
         }
     }));

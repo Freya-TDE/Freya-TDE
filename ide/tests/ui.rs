@@ -89,6 +89,8 @@ fn main() {
     unsafe {
         std::env::set_var("HOME", &home);
         std::env::set_var("XDG_CONFIG_HOME", home.join("config"));
+        // Die Prüfungen erwarten die deutschen Texte.
+        std::env::set_var("FREYA_TDE_LANG", "de");
         // Git ohne die Konfiguration des Nutzers.
         std::env::set_var("GIT_CONFIG_NOSYSTEM", "1");
         std::env::set_var("GIT_CONFIG_GLOBAL", home.join("gitconfig"));

@@ -1,6 +1,7 @@
 //! Window "Snippet": name, short description, `use` line and code of a new
 //! or existing snippet (see [`crate::snippets`]).
 
+use crate::tr;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -34,17 +35,17 @@ impl SnippetWindow {
     pub fn build() -> Self {
         let window = RnclWindow::new("Snippet");
         window.set_size(W, H);
-        let labels = ["Name", "Kurzbeschreibung", "use-Zeile", "Code"]
-            .map(|t| RnclLabel::new(&window, t))
+        let labels = ["name", "description", "use_line", "code"]
+            .map(|key| RnclLabel::new(&window, &tr!(&format!("snippet.{key}"))))
             .to_vec();
         let name = RnclTextField::new(&window);
         let description = RnclTextField::new(&window);
-        description.set_placeholder("erscheint beim Darüberfahren in der Liste");
+        description.set_placeholder(&tr!("snippet.description_placeholder"));
         let use_line = RnclTextField::new(&window);
-        use_line.set_placeholder("z. B. use std::fs;  (leer = keine)");
+        use_line.set_placeholder(&tr!("snippet.use_placeholder"));
         let code = RnclTextArea::new(&window);
         code.set_monospace(true);
-        let cancel = RnclButton::new(&window, "Abbrechen");
+        let cancel = RnclButton::new(&window, &tr!("settings.cancel"));
         let ok = RnclButton::new(&window, "OK");
         let w = Self {
             window,
@@ -136,7 +137,7 @@ impl Ide {
             }
             None => self
                 .main
-                .set_status("Als Snippet speichern: erst Code markieren."),
+                .set_status(&tr!("snippet.select_first")),
         }
     }
 
@@ -144,10 +145,10 @@ impl Ide {
         let w = &self.snippet_window;
         *w.editing.borrow_mut() = name.map(str::to_owned);
         w.fill(snippet);
-        w.window.set_title(if name.is_some() {
-            "Snippet bearbeiten"
+        w.window.set_title(&if name.is_some() {
+            tr!("snippet.edit_title")
         } else {
-            "Neues Snippet"
+            tr!("snippet.new_title")
         });
         w.window.show();
     }

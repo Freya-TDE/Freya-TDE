@@ -1,6 +1,7 @@
 //! Structure window: forms and their elements as a tree (like Delphi's
 //! object tree view). Selecting a node selects the element.
 
+use crate::tr;
 use std::rc::Rc;
 
 use rncl::prelude::*;
@@ -26,7 +27,7 @@ fn tree(forms: &[Form]) -> Vec<TreeItem> {
         .iter()
         .map(|form| {
             let label = if form.is_data_module() {
-                format!("{} (Datenmodul)", form.name)
+                tr!("structure.data_module", name = form.name)
             } else {
                 form.name.to_string()
             };
@@ -68,9 +69,12 @@ pub struct StructureWindow {
 
 impl StructureWindow {
     pub fn build() -> Self {
-        let window = RnclWindow::new("Struktur");
-        let pane =
-            super::dock::DockPane::new(&window, crate::desktop::window::STRUCTURE, "Struktur");
+        let window = RnclWindow::new(&tr!("window.structure"));
+        let pane = super::dock::DockPane::new(
+            &window,
+            crate::desktop::window::STRUCTURE,
+            &tr!("window.structure"),
+        );
         let tree = RnclTreeView::new(&pane.root);
         Self { window, pane, tree }
     }

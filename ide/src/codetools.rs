@@ -51,12 +51,12 @@ impl MethodOrder {
         MethodOrder::End,
     ];
 
-    pub fn label(self) -> &'static str {
-        match self {
-            MethodOrder::AfterCaller => "hinter der aufrufenden Methode",
-            MethodOrder::Alphabetical => "alphabetisch",
-            MethodOrder::End => "am Ende des impl-Blocks",
-        }
+    pub fn label(self) -> String {
+        crate::tr!(match self {
+            MethodOrder::AfterCaller => "label.order_after_caller",
+            MethodOrder::Alphabetical => "label.order_alphabetical",
+            MethodOrder::End => "label.order_end",
+        })
     }
 }
 

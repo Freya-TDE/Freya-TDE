@@ -1,8 +1,9 @@
-//! Window "Neues Projekt": the wizard in pages (kind → name and folder →
+//! Window &tr!("wizard.title"): the wizard in pages (kind → name and folder →
 //! target systems → UI → components → Git and summary). The pages only
 //! fill a [`NewProject`]; checks, preview and creating are in
 //! [`crate::wizard`].
 
+use crate::tr;
 use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -43,15 +44,15 @@ const PAGES: [Page; 6] = [
 ];
 
 impl Page {
-    fn title(self) -> &'static str {
-        match self {
-            Page::Kind => "Was soll entstehen?",
-            Page::Place => "Name und Ort",
-            Page::Platforms => "Zielsysteme",
-            Page::Ui => "Oberfläche",
-            Page::Components => "Komponenten",
-            Page::Summary => "Git und Zusammenfassung",
-        }
+    fn title(self) -> String {
+        tr!(match self {
+            Page::Kind => "wizard.page_kind",
+            Page::Place => "wizard.page_place",
+            Page::Platforms => "wizard.page_platforms",
+            Page::Ui => "wizard.page_ui",
+            Page::Components => "wizard.page_components",
+            Page::Summary => "wizard.page_summary",
+        })
     }
 }
 
@@ -148,7 +149,7 @@ fn label<P: AsWidget + ?Sized>(parent: &P, text: &str, x: i32, y: i32, w: i32) -
 
 impl WizardWindow {
     pub fn build() -> Self {
-        let window = RnclWindow::new("Neues Projekt");
+        let window = RnclWindow::new(&tr!("wizard.title"));
         window.set_size(W, H);
         let title = RnclLabel::new(&window, "");
         let pages: Vec<RnclPanel> = PAGES.iter().map(|_| RnclPanel::new(&window)).collect();
@@ -156,33 +157,27 @@ impl WizardWindow {
 
         // Art
         let p = &pages[0];
-        label(p, "Art", 0, 0, lw);
+        label(p, &tr!("wizard.kind"), 0, 0, lw);
         let kind = RnclComboBox::new(p);
-        kind.set_items(&[
-            "Programm (mit Oberfläche)",
-            "Bibliothek (Datenmodule, ohne Oberfläche)",
-        ]);
+        kind.set_items(&[tr!("wizard.kind_binary"), tr!("wizard.kind_library")]);
         kind.set_current_index(0);
         let kind_hint = RnclLabel::new(p, "");
 
         // Name und Ort
         let p = &pages[1];
-        label(p, "Name", 0, 0, lw);
+        label(p, &tr!("wizard.name"), 0, 0, lw);
         let name = RnclTextField::new(p);
-        name.set_placeholder("z. B. laden (Cargo-Paketname)");
-        label(p, "Übergeordneter Ordner", 0, ROW + 8, lw);
+        name.set_placeholder(&tr!("wizard.name_placeholder"));
+        label(p, &tr!("wizard.parent"), 0, ROW + 8, lw);
         let parent = RnclTextField::new(p);
         let browse = RnclButton::new(p, "…");
-        label(p, "Rust-Version", 0, 2 * (ROW + 8), lw);
+        label(p, &tr!("wizard.rust_version"), 0, 2 * (ROW + 8), lw);
         let rust = RnclTextField::new(p);
         let place_hint = RnclLabel::new(p, "");
 
         // Zielsysteme
         let p = &pages[2];
-        let platforms_label = RnclLabel::new(
-            p,
-            "Für welche Systeme? Der Designer zeigt das erste; Unterschiede werden zu cfg-Zweigen.",
-        );
+        let platforms_label = RnclLabel::new(p, &tr!("wizard.platforms_hint"));
         let platforms = PLATFORMS
             .iter()
             .map(|(platform, text)| {
@@ -194,20 +189,17 @@ impl WizardWindow {
 
         // Oberfläche
         let p = &pages[3];
-        label(p, "UI-Toolkit", 0, 0, lw);
+        label(p, &tr!("wizard.toolkit"), 0, 0, lw);
         let backend = RnclComboBox::new(p);
         let notice = RnclTextArea::new(p);
         notice.set_read_only(true);
         notice.set_word_wrap(true);
-        let accept = RnclCheckBox::new(p, "Lizenzhinweis gelesen, Projekt trotzdem anlegen");
+        let accept = RnclCheckBox::new(p, &tr!("wizard.accept"));
 
         // Komponenten
         let p = &pages[4];
-        let components_label = RnclLabel::new(
-            p,
-            "Im Datenmodul „services“ anlegen (Tokio kommt bei Bedarf dazu):",
-        );
-        let database = RnclCheckBox::new(p, "Datenbank (SQLx)");
+        let components_label = RnclLabel::new(p, &tr!("wizard.components_hint"));
+        let database = RnclCheckBox::new(p, &tr!("wizard.database"));
         let driver = RnclComboBox::new(p);
         driver.set_items(&DRIVERS.map(|d| d.1));
         driver.set_current_index(0);
@@ -216,32 +208,32 @@ impl WizardWindow {
         let redis = RnclCheckBox::new(p, "Redis / Valkey");
         let redis_url = RnclTextField::new(p);
         redis_url.set_text("redis://127.0.0.1/");
-        let web = RnclCheckBox::new(p, "Webserver (Axum)");
-        let ws_endpoint = RnclCheckBox::new(p, "… mit WebSocket-Endpunkt");
+        let web = RnclCheckBox::new(p, &tr!("wizard.web"));
+        let ws_endpoint = RnclCheckBox::new(p, &tr!("wizard.ws_endpoint"));
         let ws_path = RnclTextField::new(p);
         ws_path.set_text("/ws");
         let socket = RnclCheckBox::new(p, "WebSocket-Client");
         let socket_url = RnclTextField::new(p);
         socket_url.set_text("ws://127.0.0.1:3000/ws");
-        let http = RnclCheckBox::new(p, "HTTP-Client (reqwest)");
+        let http = RnclCheckBox::new(p, &tr!("wizard.http"));
         let http_url = RnclTextField::new(p);
-        http_url.set_placeholder("Basis-URL, z. B. https://api.example.com (optional)");
-        let runtime = RnclCheckBox::new(p, "Tokio-Laufzeit für eigenen async-Code");
+        http_url.set_placeholder(&tr!("wizard.http_placeholder"));
+        let runtime = RnclCheckBox::new(p, &tr!("wizard.runtime"));
 
         // Git und Zusammenfassung
         let p = &pages[5];
-        let git = RnclCheckBox::new(p, "Git-Repository anlegen (.gitignore mit /target)");
+        let git = RnclCheckBox::new(p, &tr!("wizard.git"));
         git.set_checked(true);
-        let commit = RnclCheckBox::new(p, "… und das neue Projekt committen");
+        let commit = RnclCheckBox::new(p, &tr!("wizard.commit"));
         let summary = RnclTextArea::new(p);
         summary.set_read_only(true);
         summary.set_monospace(true);
 
         // Leiste
-        let cancel = RnclButton::new(&window, "Abbrechen");
-        let back = RnclButton::new(&window, "< Zurück");
-        let next = RnclButton::new(&window, "Weiter >");
-        let finish = RnclButton::new(&window, "Anlegen");
+        let cancel = RnclButton::new(&window, &tr!("wizard.cancel"));
+        let back = RnclButton::new(&window, &tr!("wizard.back"));
+        let next = RnclButton::new(&window, &tr!("wizard.next"));
+        let finish = RnclButton::new(&window, &tr!("wizard.finish"));
 
         let wizard = Self {
             window,
@@ -561,13 +553,11 @@ impl WizardWindow {
             .iter()
             .map(
                 |n| match registry.backend(n).and_then(|b| b.license_notice.as_ref()) {
-                    Some(_) => format!("{n} (Lizenzhinweis)"),
+                    Some(_) => tr!("wizard.license_notice", name = n),
                     None => n.clone(),
                 },
             )
-            .chain(std::iter::once(
-                "Ohne Oberfläche (nur Komponenten)".to_owned(),
-            ))
+            .chain(std::iter::once(tr!("wizard.no_ui")))
             .collect();
         names.push(NO_BACKEND.to_owned());
         self.backend.set_items(&labels);
@@ -608,27 +598,24 @@ impl WizardWindow {
         for (i, panel) in self.pages.iter().enumerate() {
             panel.widget().set_visible(i == page);
         }
-        self.title.set_text(&format!(
-            "<b>Schritt {} von {}: {}</b>",
-            position + 1,
-            visible.len(),
-            PAGES[page].title()
+        self.title.set_text(&tr!(
+            "wizard.step",
+            step = position + 1,
+            count = visible.len(),
+            title = PAGES[page].title()
         ));
         self.back.widget().set_enabled(position > 0);
         self.next.widget().set_enabled(position + 1 < visible.len());
 
         let request = self.request();
         let plan = wizard::plan(&request, &self.registry.borrow());
-        self.kind_hint.set_text(if self.library() {
-            "Eine Bibliothek (lib.rs) mit Datenmodulen: Komponenten wie Datenbank, Redis oder\n\
-             Webserver als öffentlicher Service-Container App, den andere Crates nutzen.\n\
-             Keine Oberfläche; async-Komponenten laufen auf der Tokio-Laufzeit des Aufrufers."
+        self.kind_hint.set_text(&if self.library() {
+            tr!("wizard.kind_library_hint")
         } else {
-            "Ein Programm (main.rs) mit Formularen für ein UI-Toolkit und optional\n\
-             Datenmodulen für Datenbank, Redis, Webserver …"
+            tr!("wizard.kind_binary_hint")
         });
         self.place_hint
-            .set_text(&format!("Projektordner: {}", plan.dir.display()));
+            .set_text(&tr!("wizard.project_dir", path = plan.dir.display()));
         match &plan.license_notice {
             Some(text) => {
                 self.notice.set_text(text);
@@ -636,9 +623,7 @@ impl WizardWindow {
                 self.accept.widget().set_visible(true);
             }
             None => {
-                self.notice.set_text(
-                    "Weitere Toolkits (z. B. WebView) kommen als eigene Backend-Packs dazu.",
-                );
+                self.notice.set_text(&tr!("wizard.more_toolkits"));
                 self.accept.widget().set_visible(false);
             }
         }
@@ -663,15 +648,15 @@ impl WizardWindow {
 fn summary(request: &NewProject, plan: &wizard::Plan) -> String {
     let mut text = String::new();
     if !plan.errors.is_empty() {
-        text.push_str("Noch zu klären:\n");
+        text.push_str(&tr!("wizard.open_points"));
         for e in &plan.errors {
             text.push_str(&format!("  ✗ {} ({})\n", e.detail, e.code));
         }
         text.push('\n');
     }
     let kind = match request.kind {
-        ProjectKind::Binary => format!("Programm, Oberfläche {}", request.backend),
-        ProjectKind::Library => "Bibliothek".to_owned(),
+        ProjectKind::Binary => tr!("wizard.kind_binary_summary", backend = request.backend),
+        ProjectKind::Library => tr!("wizard.library"),
     };
     text.push_str(&format!(
         "{} ({kind}, Rust {})\n{}\n\n",
@@ -680,13 +665,13 @@ fn summary(request: &NewProject, plan: &wizard::Plan) -> String {
         plan.dir.display()
     ));
     if !plan.components.is_empty() {
-        text.push_str("Komponenten in services:\n");
+        text.push_str(&tr!("wizard.components_in"));
         for c in &plan.components {
             text.push_str(&format!("  {c}\n"));
         }
         text.push('\n');
     }
-    text.push_str("Dateien:\n");
+    text.push_str(&tr!("wizard.files"));
     for f in &plan.files {
         text.push_str(&format!("  {f}\n"));
     }
@@ -748,7 +733,7 @@ impl Ide {
         if !self.confirm_discard() {
             return Err(vec![wizard::WizardIssue {
                 code: "cancelled".to_owned(),
-                detail: "Ungespeicherte Änderungen behalten".to_owned(),
+                detail: tr!("wizard.keep_changes"),
             }]);
         }
         let registry = super::full_registry(&self.pack_dirs).0;
@@ -758,7 +743,7 @@ impl Ide {
             self.save_projects();
         }
         self.open_path(&created.ptdr);
-        let mut status = format!("Projekt {} angelegt.", request.name);
+        let mut status = tr!("wizard.created", name = request.name);
         for w in &created.warnings {
             status.push_str(&format!(" {} ({})", w.detail, w.code));
         }
@@ -773,7 +758,7 @@ impl Ide {
         Ok(created)
     }
 
-    /// "Anlegen" in the wizard.
+    /// &tr!("wizard.finish") in the wizard.
     fn wizard_finish(&self) {
         let request = self.wizard.request();
         match self.create_project(&request) {
@@ -790,7 +775,7 @@ impl Ide {
                     .collect();
                 dialog::error(
                     Some(self.wizard.window.widget()),
-                    "Neues Projekt",
+                    &tr!("wizard.title"),
                     &text.join("\n"),
                 );
             }
@@ -808,7 +793,7 @@ pub fn connect(ide: &Rc<Ide>) {
     w.browse.on_clicked(with0(ide, |ide| {
         if let Some(dir) = dialog::choose_folder(
             Some(ide.wizard.window.widget()),
-            "Übergeordneten Ordner wählen",
+            &tr!("wizard.choose_parent"),
         ) {
             ide.wizard.parent.set_text(&dir.to_string_lossy());
             ide.wizard.refresh(ide);

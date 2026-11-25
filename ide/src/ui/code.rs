@@ -15,6 +15,7 @@
 //! bar becomes a window of its own (to look something up without switching
 //! tabs); dragging that window's grip onto the tab bar puts it back.
 
+use crate::tr;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -145,30 +146,28 @@ pub struct CodeWindow {
 pub(super) fn menu_bar() -> MenuBar {
     vec![
         (
-            "Datei".into(),
+            tr!("menu.title.file"),
             Menu::new()
-                .item("code.save", "Speichern", Some("Ctrl+S"))
-                .item("code.save_all", "Alle speichern", Some("Ctrl+Shift+S"))
+                .item("code.save", &tr!("menu.code.save"), Some("Ctrl+S"))
+                .item("code.save_all", &tr!("menu.code.save_all"), Some("Ctrl+Shift+S"))
                 .separator()
-                .item("code.close", "Schließen", Some("Ctrl+W")),
+                .item("code.close", &tr!("menu.code.close"), Some("Ctrl+W")),
         ),
         (
-            "Code".into(),
+            tr!("menu.title.code"),
             Menu::new()
-                .item("code.complete", "Vervollständigen", Some("Ctrl+Space"))
-                .item("code.definition", "Gehe zu Definition", Some("Ctrl+F12"))
-                .item(
-                    "code.codetools",
-                    "Code vervollständigen (Methode, Feld, Trait)",
+                .item("code.complete", &tr!("menu.code.complete"), Some("Ctrl+Space"))
+                .item("code.definition", &tr!("menu.code.definition"), Some("Ctrl+F12"))
+                .item("code.codetools", &tr!("menu.code.codetools"),
                     Some("Ctrl+Shift+C"),
                 )
                 .separator()
-                .item("code.fold_all", "Alles falten", None)
-                .item("code.unfold_all", "Alles aufklappen", None),
+                .item("code.fold_all", &tr!("menu.code.fold_all"), None)
+                .item("code.unfold_all", &tr!("menu.code.unfold_all"), None),
         ),
         (
-            "Ansicht".into(),
-            Menu::new().item("code.designer", "Designer", Some("F12")),
+            tr!("menu.title.view"),
+            Menu::new().item("code.designer", &tr!("menu.code.designer"), Some("F12")),
         ),
     ]
 }
@@ -342,7 +341,7 @@ impl CodeWindow {
                 // Kontextmenü des Editors: markierten Code als Snippet speichern.
                 editor.set_extra_menu(&Menu::new().item(
                     "code.save_snippet",
-                    "Als Snippet speichern …",
+                    &tr!("code.save_snippet"),
                     None,
                 ));
                 let p = path.to_path_buf();
@@ -709,7 +708,7 @@ impl CodeWindow {
         window.inherit_menu_shortcuts(&ide.main.window);
         let grip = RnclLabel::new(&window, &format!("⠿ {}", file.title()));
         grip.widget().set_tool_tip(
-            "Auf die Reiterleiste des Code-Fensters ziehen: wieder als Reiter zeigen",
+            &tr!("code.grip_tip"),
         );
         grip.widget().set_mouse_cursor("grab");
         grip.widget()
@@ -822,11 +821,8 @@ impl CodeWindow {
         if file.is_dirty()
             && !ruf::dialog::confirm(
                 Some(&parent),
-                "Ungespeicherte Änderungen",
-                &format!(
-                    "{} schließen und Änderungen verwerfen?",
-                    file.path.display()
-                ),
+                &tr!("code.unsaved_title"),
+                &tr!("code.unsaved_close", path = file.path.display()),
             )
         {
             return None;
