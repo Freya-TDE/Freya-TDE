@@ -170,7 +170,8 @@ impl Conversation {
         if !skills.skills().is_empty() {
             specs.push(ToolSpec {
                 name: LOAD_SKILL.into(),
-                description: "Lädt die Anleitung eines Skills (Liste im Systemprompt). / Loads a skill's instructions.".into(),
+                description: "Loads the instructions of a skill (list in the system prompt)."
+                    .into(),
                 input_schema: json!({ "type": "object", "required": ["name"], "properties": {
                     "name": { "type": "string" }
                 }}),
@@ -238,7 +239,7 @@ impl Conversation {
             let result = skills
                 .get(wanted)
                 .map(|s| s.body.clone())
-                .ok_or_else(|| format!("Skill „{wanted}“ gibt es nicht"));
+                .ok_or_else(|| format!("skill `{wanted}` does not exist"));
             self.events.push(Event::Read {
                 tool: name.clone(),
                 input,
@@ -248,7 +249,7 @@ impl Conversation {
             return;
         }
         let Some(access) = tools::access(&name) else {
-            self.refuse(id, name.clone(), format!("unbekanntes Werkzeug „{name}“"));
+            self.refuse(id, name.clone(), format!("unknown tool `{name}`"));
             return;
         };
         if access == Access::Read {
@@ -265,7 +266,7 @@ impl Conversation {
             self.refuse(
                 id,
                 name,
-                "In diesem Projekt darf die KI nur lesen; Änderungen als Text vorschlagen.".into(),
+                "In this project the AI may only read; propose changes as text.".into(),
             );
             return;
         }
@@ -663,7 +664,7 @@ mod tests {
         assert_eq!(ids, ["r1", "w1", "w2", "s1"], "Reihenfolge wie die Aufrufe");
         assert!(r[0].1.contains("\"name\": \"demo\"") && !r[0].2);
         assert!(r[2].2 && r[2].1.contains("bitte nicht"));
-        assert!(r[3].1.contains("Designer-Befehlen"));
+        assert!(r[3].1.contains("designer commands"));
         let done = c
             .receive(
                 ChatResponse {
@@ -737,8 +738,8 @@ mod tests {
         let r = results(&c);
         assert!(!r[0].2 && !r[1].2, "{r:?}");
         assert!(r[2].2 && r[2].1.contains("innerhalb"));
-        assert!(r[3].2 && r[3].1.contains("schreibgeschützt"));
-        assert!(r[4].2 && r[4].1.contains("unbekannt"));
+        assert!(r[3].2 && r[3].1.contains("read-only"));
+        assert!(r[4].2 && r[4].1.contains("unknown"));
         assert_eq!(
             std::fs::read_to_string(dir.join("src/neu.txt")).unwrap(),
             "hallo"
@@ -765,7 +766,7 @@ mod tests {
         .unwrap();
         std::fs::write(dir.join("src/notes.txt"), "von Hand geändert").unwrap();
         c.decide_all(true, &mut ws);
-        assert!(results(&c)[0].1.contains("seit der Vorschau"));
+        assert!(results(&c)[0].1.contains("since the preview"));
         assert_eq!(
             std::fs::read_to_string(dir.join("src/notes.txt")).unwrap(),
             "von Hand geändert"
@@ -874,7 +875,7 @@ mod tests {
         let mut asked = 0;
         let text = run(&client, &mut c, &mut ws, &skills, "Lies und schreib", |p| {
             asked += 1;
-            assert_eq!(p[0].summary, "src/out.txt anlegen");
+            assert!(p[0].summary.contains("src/out.txt"), "{}", p[0].summary);
             vec![Decision {
                 call_id: p[0].call_id.clone(),
                 approve: true,

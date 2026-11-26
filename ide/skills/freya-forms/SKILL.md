@@ -1,24 +1,24 @@
 ---
 name: freya-forms
-description: Formulare in Freya TDE über Designer-Befehle anlegen und ändern (Widgets, nicht-visuelle Komponenten, Eigenschaften, Ereignisse, Layout, Platzierung). Verwenden, wenn eine Oberfläche entworfen, ein Widget hinzugefügt, eine Eigenschaft gesetzt oder ein Ereignis verbunden werden soll.
+description: Create and change forms in Freya TDE with designer commands (widgets, non-visual components, properties, events, layout, placement). Use when a user interface is to be designed, a widget added, a property set or an event connected.
 ---
 
-# Formulare mit Designer-Befehlen
+# Forms with designer commands
 
-Formulare (`src/<form>.ftdr`) werden **nie als Datei** geschrieben, sondern über das Werkzeug
-`designer` mit einer Liste von Befehlen. Mehrere Befehle in einem Aufruf sind ein
-Rückgängig-Schritt; schlägt einer fehl, passiert nichts.
+Forms (`src/<form>.ftdr`) are **never written as files**, but changed with the tool `designer`
+and a list of commands. Several commands in one call are one undo step; if one fails, nothing
+happens.
 
-## Vorgehen
+## Steps
 
-1. `project_info` zeigt Formulare und Elemente, `read_form` den Baum eines Formulars.
-2. `component_types` (mit `filter`) zeigt Typen, Eigenschaften (`name`, `type`) und Ereignisse.
-   Nur Typen verwenden, die dort stehen; Eigenschaften nur mit passendem Werttyp.
-3. Befehle mit `designer` senden.
-4. Danach `generate_code`, dann Handler in `src/<form>.rs` mit `edit_file` füllen.
-5. `cargo` mit `check` prüft das Ergebnis.
+1. `project_info` shows forms and elements, `read_form` the tree of one form.
+2. `component_types` (with `filter`) shows types, properties (`name`, `type`) and events.
+   Use only types listed there, and properties only with a matching value type.
+3. Send the commands with `designer`.
+4. Then `generate_code`, then fill the handlers in `src/<form>.rs` with `edit_file`.
+5. `cargo` with `check` verifies the result.
 
-## Befehle
+## Commands
 
 ```json
 {"command":"add_form","name":"settings_form"}
@@ -35,33 +35,33 @@ Rückgängig-Schritt; schlägt einer fehl, passiert nichts.
 {"command":"remove_form","form":"options_form"}
 ```
 
-- Ohne `name` wählt der Designer einen freien Namen (`button1`); Pack-Typen tragen den Pack
-  (`sqlx_pool1`). Namen: `snake_case`, eindeutig im Formular. `main` und `app` sind reserviert.
-- Die Wurzel eines Formulars heißt `window` (Typ `core/Form`). Ein Datenmodul hat keine Widgets,
-  nur nicht-visuelle Komponenten (Service-Container).
-- `value: null` setzt eine Eigenschaft auf den Standard zurück, `handler: null` trennt ein Ereignis.
+- Without `name` the designer picks a free name (`button1`); pack types carry the pack
+  (`sqlx_pool1`). Names: `snake_case`, unique in the form. `main` and `app` are reserved.
+- The root of a form is called `window` (type `core/Form`). A data module has no widgets, only
+  non-visual components (service container).
+- `value: null` resets a property to its default, `handler: null` disconnects an event.
 
-## Werte
+## Values
 
-`{"Bool":true}`, `{"Int":5}`, `{"Float":1.5}`, `{"Text":"Hallo"}`, `{"Enum":"Postgres"}`,
+`{"Bool":true}`, `{"Int":5}`, `{"Float":1.5}`, `{"Text":"Hello"}`, `{"Enum":"Postgres"}`,
 `{"Color":{"r":255,"g":0,"b":0,"a":255}}`, `{"Point":{"x":10,"y":20}}`,
 `{"Size":{"width":200,"height":30}}`, `{"List":[{"Text":"a"},{"Text":"b"}]}`,
-`{"Reference":"db_pool"}` (gleiches Formular) bzw. `{"Reference":"services::db_pool"}`
-(anderes Formular), `{"Code":"Duration::from_secs(5)"}`.
-Pro Plattform: `{"value":{"Text":"OK"},"platforms":{"MacOs":{"Text":"Okay"}}}`.
+`{"Reference":"db_pool"}` (same form) or `{"Reference":"services::db_pool"}`
+(other form), `{"Code":"Duration::from_secs(5)"}`.
+Per platform: `{"value":{"Text":"OK"},"platforms":{"MacOs":{"Text":"Okay"}}}`.
 
-Farbe mit `a: 0` = Standard des Backends.
+A color with `a: 0` = default of the backend.
 
-## Kern-Widgets
+## Core widgets
 
 `core/Label` (`text`), `core/Button` (`caption`, `on_click`), `core/Edit` (`text`, `placeholder`,
 `read_only`, `password`, `on_change(text)`, `on_submit`), `core/CheckBox` (`caption`, `checked`,
-`on_toggle(checked)`), `core/Container` (Kinder, Layout). Alle Widgets: `enabled`, `visible`,
-`tooltip`, `background`, `foreground`, `font_size`, `bold`, `italic`. Das Formular: `title`,
-`size`, `resizable`, `on_create`, `on_close` u. a. Weitere Widgets bringt das UI-Backend
-(`component_types`).
+`on_toggle(checked)`), `core/Container` (children, layout), `core/ImageBox`, `core/ImageScrollBox`.
+All widgets: `enabled`, `visible`, `tooltip`, `background`, `foreground`, `font_size`, `bold`,
+`italic`. The form: `title`, `size`, `resizable`, `on_create`, `on_close` and more. The UI backend
+brings further widgets (`component_types`).
 
-## Layout und Platzierung
+## Layout and placement
 
 ```json
 {"command":"set_layout","form":"main_form","element":"window",
@@ -76,14 +76,14 @@ Farbe mit `a: 0` = Standard des Backends.
   "anchors":{"left":true,"top":true,"right":false,"bottom":false}}}}
 ```
 
-- Layout-Arten: `Vertical` (Standard), `Horizontal`, `{"Grid":{"columns":n}}`, `Stack`, `Absolute`
-  (nur wenn das Backend absolute Positionen erlaubt). Ohne eigenes Layout gilt senkrecht,
-  Abstand 8, Rand 12.
-- `size` je Achse 0 = natürliche Größe; `percent` (1–100) geht `size` vor.
-- `align`: `Fill`, `Start`, `Center`, `End`. `stretch` verteilt freien Platz.
+- Layout kinds: `Vertical` (default), `Horizontal`, `{"Grid":{"columns":n}}`, `Stack`, `Absolute`
+  (only if the backend allows absolute positions). Without an own layout: vertical, spacing 8,
+  padding 12.
+- `size` per axis 0 = natural size; `percent` (1–100) takes precedence over `size`.
+- `align`: `Fill`, `Start`, `Center`, `End`. `stretch` distributes free space.
 
-## Verdrahtung (Provides/Requires)
+## Wiring (provides/requires)
 
-Nicht-visuelle Komponenten verweisen über Referenz-Eigenschaften aufeinander, z. B. eine
-SQLx-`Query` auf ihren `Pool`, ein Listen-Widget über `data_source` auf eine Datenquelle. Nach dem
-Verdrahten zeigt `problems` fehlende Anforderungen und Zyklen mit Codes.
+Non-visual components refer to each other through reference properties, e.g. an SQLx `Query` to
+its `Pool`, a list widget via `data_source` to a data source. After wiring, `problems` shows
+missing requirements and cycles with codes.

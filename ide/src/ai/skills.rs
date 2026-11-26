@@ -550,7 +550,7 @@ impl SkillTable {
                 let mark = if s.trusted() {
                     ""
                 } else {
-                    " [eigener Skill des Projekts, nicht geprüft]"
+                    " [project's own skill, not verified]"
                 };
                 format!("- {}: {}{mark}\n", s.name, s.description)
             })
@@ -605,7 +605,7 @@ mod tests {
         let s = t.get("own-style").unwrap();
         assert!(!s.trusted());
         assert_eq!(s.description, "Unser Stil");
-        assert!(t.catalog().contains("nicht geprüft"));
+        assert!(t.catalog().contains("not verified"));
 
         // Geändert: wieder ausstehend.
         skill("own-style", "Anders");

@@ -1,63 +1,63 @@
 ---
 name: freya-project
-description: Aufbau eines Freya-TDE-Projekts und wo welcher Code hingehört (Nutzercode, generierter Code, Handler-Stubs, Cargo.toml, Packs, Datenbindung). Verwenden, bevor Code in einem Freya-Projekt geschrieben, ein Ereignis-Handler gefüllt, eine Abhängigkeit ergänzt oder ein Build-Fehler behoben wird.
+description: Structure of a Freya TDE project and where which code belongs (user code, generated code, handler stubs, Cargo.toml, packs, data binding). Use before writing code in a Freya project, filling an event handler, adding a dependency or fixing a build error.
 ---
 
-# Ein Freya-TDE-Projekt
+# A Freya TDE project
 
-## Dateien
+## Files
 
-| Datei | Gehört | Darf die KI |
+| File | Owner | What the AI may do |
 |---|---|---|
-| `<name>.ptdr` | Projekt (Backend, Packs, Formulare, Zielsysteme) | nur über `designer`/Werkzeuge |
-| `src/<form>.ftdr` | Formular | nur über `designer` |
-| `src/<form>.gen.rs`, `src/app.gen.rs` | Generator, bei jedem Lauf neu, schreibgeschützt | **nie** ändern; Formular ändern und `generate_code` |
-| `src/<form>.rs` | Nutzer: Handler und eigene Logik | `edit_file`/`write_file` |
-| `src/main.rs` bzw. `src/lib.rs` | Nutzer, einmal angelegt | `edit_file` |
-| `Cargo.toml` | Nutzer; der Generator ergänzt nur | `edit_file` (nichts entfernen, was Packs brauchen) |
+| `<name>.ptdr` | project (backend, packs, forms, target platforms) | only via `designer`/tools |
+| `src/<form>.ftdr` | form | only via `designer` |
+| `src/<form>.gen.rs`, `src/app.gen.rs` | generator, rewritten on every run, read-only | **never** change; change the form and run `generate_code` |
+| `src/<form>.rs` | user: handlers and own logic | `edit_file`/`write_file` |
+| `src/main.rs` or `src/lib.rs` | user, created once | `edit_file` |
+| `Cargo.toml` | user; the generator only adds | `edit_file` (do not remove what packs need) |
 
-`.gen.rs` tragen eine Prüfsumme; fremde Änderungen werden gemeldet und überschrieben.
+`.gen.rs` files carry a checksum; foreign changes are reported and overwritten.
 
-## Handler
+## Handlers
 
-Ein Ereignis wird im Designer mit einem Handler verbunden (`set_event`). `generate_code` hängt für
-fehlende Handler einen leeren Stub als neuen `impl`-Block an `src/<form>.rs` an; vorhandener Code
-bleibt. Dann den Rumpf mit `edit_file` füllen. Die Signatur nicht ändern: sie kommt aus dem Typ
-(`component_types` zeigt die Parameter, z. B. `on_change(text: &str)`).
+An event is connected to a handler in the designer (`set_event`). For missing handlers,
+`generate_code` appends an empty stub as a new `impl` block to `src/<form>.rs`; existing code
+stays. Then fill the body with `edit_file`. Do not change the signature: it comes from the type
+(`component_types` shows the parameters, e.g. `on_change(text: &str)`).
 
-Im Handler ist `self` das Formular: jedes Widget ist ein Feld mit seinem Namen. Wie man es
-anspricht, hängt vom UI-Backend ab (`project_info` → `backend`):
+In a handler, `self` is the form: every widget is a field with its name. How to address it
+depends on the UI backend (`project_info` → `backend`):
 
-- `gtk4`: echte gtk4-rs-Typen, z. B. `self.name_edit.text()`, `self.ok_button.set_sensitive(false)`.
-- `egui`, `iced`, `flutter`, `webview`: `Control<T>` mit `value`, `caption`, `items`, `enabled`,
-  `visible`, `tooltip`, z. B. `self.name_edit.value = "x".into()`, `self.ok_button.enabled = false`.
-- `slint`: Properties `self.window.set_<widget>_<eigenschaft>(…)` / `get_…()`.
+- `gtk4`: real gtk4-rs types, e.g. `self.name_edit.text()`, `self.ok_button.set_sensitive(false)`.
+- `egui`, `iced`, `flutter`, `webview`: `Control<T>` with `value`, `caption`, `items`, `enabled`,
+  `visible`, `tooltip`, e.g. `self.name_edit.value = "x".into()`, `self.ok_button.enabled = false`.
+- `slint`: properties `self.window.set_<widget>_<property>(…)` / `get_…()`.
 
-Der generierte Code (`generated_code` mit `path`) zeigt die genauen Typen.
+The generated code (`generated_code` with `path`) shows the exact types.
 
-Eigene Felder des Formulars nicht ins generierte Struct schreiben, sondern in die
-Formular-Eigenschaft `state` (`name: Typ` oder `name: Typ = Startwert`, eine Zeile je Feld), per
-`designer` `set_property` auf `window`.
+Do not put own fields of the form into the generated struct; put them into the form property
+`state` (`name: Type` or `name: Type = initial value`, one line per field), via `designer`
+`set_property` on `window`.
 
-## Nicht-visuelle Komponenten und Packs
+## Non-visual components and packs
 
-Packs (z. B. `sqlx`, `redis`, `axum`, `ws`, `http`, `tokio`) liefern Komponenten für Datenmodule.
-Der Generator baut den Service-Container, bestimmt die Initialisierungsreihenfolge aus den
-Verweisen und trägt die Cargo-Abhängigkeiten samt Features ein. Komponenten mit `async` brauchen
-eine Runtime (`tokio/Runtime`) im Projekt; `problems` meldet sonst den Code dafür.
+Packs (e.g. `sqlx`, `redis`, `axum`, `ws`, `http`, `tokio`) provide components for data modules.
+The generator builds the service container, derives the initialisation order from the
+references and adds the Cargo dependencies with their features. Components with `async` need a
+runtime (`tokio/Runtime`) in the project; otherwise `problems` reports the code for it.
 
-## Datenbindung
+## Data binding
 
-Eine Datenquelle (z. B. `sqlx/Query` mit `columns` als `name: Typ`) füllt Listen und DataGrids über
-`data_source`, `display_field`, `value_field`, `load`. Der Generator erzeugt `<liste>_reload()`,
-`<liste>_selected_value()`, bei Tabellen `<grid>_selected_row()` und beim Bearbeiten
+A data source (e.g. `sqlx/Query` with `columns` as `name: Type`) fills lists and DataGrids via
+`data_source`, `display_field`, `value_field`, `load`. The generator creates `<list>_reload()`,
+`<list>_selected_value()`, for tables `<grid>_selected_row()`, and for editing
 `on_post`/`on_delete`/`on_post_error`.
 
-## Arbeitsweise
+## Way of working
 
-1. Erst lesen: `project_info`, `read_form`, `read_file`, `problems`.
-2. Formular ändern (`designer`), `generate_code`, Handler füllen (`edit_file`).
-3. `cargo` `check` (oder `clippy`), Meldungen beheben. Meldungen in `.gen.rs` gehören zu einem
-   Element des Formulars: dort die Ursache suchen, nicht im generierten Code.
-4. Kleine, nachvollziehbare Schritte; jede Änderung erscheint dem Entwickler vorher als Vorschau,
-   sofern das Projekt nicht auf „selbstständig“ steht.
+1. Read first: `project_info`, `read_form`, `read_file`, `problems`.
+2. Change the form (`designer`), `generate_code`, fill the handlers (`edit_file`).
+3. `cargo` `check` (or `clippy`), fix the messages. Messages in `.gen.rs` belong to an element of
+   the form: look for the cause there, not in the generated code.
+4. Small, traceable steps; every change is shown to the developer as a preview first, unless the
+   project is set to “autonomous”.

@@ -84,7 +84,7 @@ fn push_message(out: &mut Vec<Value>, m: &Message) {
                 } = p
                 {
                     let content = if *is_error {
-                        format!("Fehler: {content}")
+                        format!("Error: {content}")
                     } else {
                         content.clone()
                     };

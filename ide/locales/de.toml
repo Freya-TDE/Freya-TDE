@@ -986,3 +986,13 @@ error = "Fehler"
 warning = "Warnung"
 info = "Hinweis"
 model = "Modell"
+
+[ai.proposal]
+change = "{path} ändern"
+create = "{path} anlegen"
+no_changes = "keine Änderungen am Code"
+generate = "Projekt speichern und Code erzeugen"
+run = "{command} ausführen"
+in_project = "{command} im Projektordner"
+commands = "Designer: {count} Befehle"
+created = "\nneu: {names}"

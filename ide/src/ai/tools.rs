@@ -10,6 +10,7 @@
 //! *Die Werkzeuge der KI: Lesen immer, Schreiben und Ausführen nach den
 //! Rechten des Projekts, mit Vorschau als [`Proposal`].*
 
+use crate::tr;
 use std::path::{Component, Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -76,9 +77,7 @@ pub trait Workspace {
 
     /// Runs a cargo tool in the project folder (blocking).
     fn run_cargo(&mut self, tool: crate::tools::Tool) -> Result<String, String> {
-        let root = self
-            .root()
-            .ok_or("Das Projekt ist noch nicht gespeichert.")?;
+        let root = self.root().ok_or("The project is not saved yet.")?;
         let generation = tdr_core::codegen::generate(
             self.document().project(),
             self.document().forms(),
@@ -92,7 +91,7 @@ pub trait Workspace {
 }
 
 fn no_project() -> std::io::Error {
-    std::io::Error::other("Das Projekt ist noch nicht gespeichert.")
+    std::io::Error::other("The project is not saved yet.")
 }
 
 impl Workspace for Session {
@@ -103,8 +102,8 @@ impl Workspace for Session {
     fn apply_command(&mut self, command: Command) -> Result<String, String> {
         self.apply(command).map_err(|e| e.to_string())?;
         Ok(match self.selection().first() {
-            Some(name) => format!("ausgeführt; gewählt: {name}"),
-            None => "ausgeführt".to_owned(),
+            Some(name) => format!("done; selected: {name}"),
+            None => "done".to_owned(),
         })
     }
 
@@ -161,82 +160,82 @@ const DEFS: &[Def] = &[
     Def {
         name: "project_info",
         access: Access::Read,
-        description: "Projekt-Übersicht: Name, Art, UI-Backend, Packs, Zielsysteme, Rust-Version, Formulare mit Elementen. / Project overview.",
+        description: "Project overview: name, kind, UI backend, packs, target platforms, Rust version, forms with their elements.",
         schema: no_input,
     },
     Def {
         name: "list_files",
         access: Access::Read,
-        description: "Dateien und Ordner des Projekts (ohne target/, .git/; generierte *.gen.rs mit Kennzeichen). / Project files.",
+        description: "Files and folders of the project (without target/, .git/; generated *.gen.rs marked).",
         schema: || {
             json!({ "type": "object", "properties": {
-                "path": { "type": "string", "description": "Unterordner, relativ zum Projekt (leer = alles)" }
+                "path": { "type": "string", "description": "subfolder, relative to the project (empty = everything)" }
             }})
         },
     },
     Def {
         name: "read_file",
         access: Access::Read,
-        description: "Liest eine Textdatei des Projekts mit Zeilennummern. / Reads a project file with line numbers.",
+        description: "Reads a text file of the project with line numbers.",
         schema: || {
             json!({ "type": "object", "required": ["path"], "properties": {
-                "path": { "type": "string", "description": "relativ zum Projekt, z. B. src/main_form.rs" },
-                "offset": { "type": "integer", "description": "erste Zeile (ab 1)" },
-                "limit": { "type": "integer", "description": "Anzahl Zeilen (Standard 2000)" }
+                "path": { "type": "string", "description": "relative to the project, e.g. src/main_form.rs" },
+                "offset": { "type": "integer", "description": "first line (from 1)" },
+                "limit": { "type": "integer", "description": "number of lines (default 2000)" }
             }})
         },
     },
     Def {
         name: "search_files",
         access: Access::Read,
-        description: "Sucht Text (ohne Groß-/Kleinschreibung) in den Dateien des Projekts; liefert Datei:Zeile: Text. / Searches project files.",
+        description: "Searches text (case-insensitive) in the project files; returns file:line: text.",
         schema: || {
             json!({ "type": "object", "required": ["query"], "properties": {
                 "query": { "type": "string" },
-                "path": { "type": "string", "description": "nur in diesem Unterordner" }
+                "path": { "type": "string", "description": "only in this subfolder" }
             }})
         },
     },
     Def {
         name: "read_form",
         access: Access::Read,
-        description: "Ein Formular (Designer) als RON: Komponentenbaum mit Eigenschaften, Ereignissen, Platzierung. / A form as RON.",
+        description: "A form (designer) as RON: component tree with properties, events, placement.",
         schema: || {
             json!({ "type": "object", "required": ["form"], "properties": {
-                "form": { "type": "string", "description": "Name des Formulars, z. B. main_form" }
+                "form": { "type": "string", "description": "name of the form, e.g. main_form" }
             }})
         },
     },
     Def {
         name: "component_types",
         access: Access::Read,
-        description: "Verfügbare Komponenten- und Widget-Typen des Projekts (Kern, Backend, Packs) mit Eigenschaften und Ereignissen. / Available types.",
+        description: "Component and widget types available in the project (core, backend, packs) with properties and events.",
         schema: || {
             json!({ "type": "object", "properties": {
-                "filter": { "type": "string", "description": "nur Typen, deren Name dies enthält" }
+                "filter": { "type": "string", "description": "only types whose name contains this" }
             }})
         },
     },
     Def {
         name: "problems",
         access: Access::Read,
-        description: "Probleme des Projekts: Formularprüfung, Abhängigkeitsgraph und Codegen-Diagnosen mit Codes. / Project problems.",
+        description: "Problems of the project: form validation, dependency graph and code generation diagnostics with codes.",
         schema: no_input,
     },
     Def {
         name: "generated_code",
         access: Access::Read,
-        description: "Probelauf der Codeerzeugung: ohne path die Liste der Dateien (create/update/unchanged), mit path den Inhalt. / Code generation dry run.",
+        description: "Dry run of the code generation: without path the list of files (create/update/unchanged), with path the content.",
         schema: || {
             json!({ "type": "object", "properties": {
-                "path": { "type": "string", "description": "z. B. src/main_form.gen.rs" }
+                "path": { "type": "string", "description": "e.g. src/main_form.gen.rs" }
             }})
         },
     },
     Def {
         name: "write_file",
         access: Access::Write,
-        description: "Schreibt eine Datei des Projekts (neu oder ganz ersetzt). Nicht für *.gen.rs (generate_code), .ftdr/.ptdr (designer). / Writes a file.",
+        description: "Writes a file of the project (new or fully replaced). Not for *.gen.rs (generate_code) or .ftdr/.ptdr (designer).",
         schema: || {
             json!({ "type": "object", "required": ["path", "content"], "properties": {
                 "path": { "type": "string" },
@@ -247,7 +246,7 @@ const DEFS: &[Def] = &[
     Def {
         name: "edit_file",
         access: Access::Write,
-        description: "Ersetzt in einer Datei genau eine Stelle old_text durch new_text (old_text muss genau einmal vorkommen). / Replaces one exact text.",
+        description: "Replaces exactly one occurrence of old_text with new_text in a file (old_text must occur exactly once).",
         schema: || {
             json!({ "type": "object", "required": ["path", "old_text", "new_text"], "properties": {
                 "path": { "type": "string" },
@@ -259,12 +258,12 @@ const DEFS: &[Def] = &[
     Def {
         name: "designer",
         access: Access::Write,
-        description: "Ändert Formulare über Designer-Befehle (JSON, mehrere = ein Rückgängig-Schritt). Beispiele: \
+        description: "Changes forms through designer commands (JSON; several = one undo step). Examples: \
 {\"command\":\"add_widget\",\"form\":\"main_form\",\"parent\":\"window\",\"type\":\"core/Button\",\"name\":\"ok_button\"}, \
 {\"command\":\"set_property\",\"form\":\"main_form\",\"element\":\"ok_button\",\"property\":\"caption\",\"value\":{\"Text\":\"OK\"}}, \
 {\"command\":\"set_event\",\"form\":\"main_form\",\"element\":\"ok_button\",\"event\":\"on_click\",\"handler\":\"ok_button_click\"}, \
-{\"command\":\"add_component\",\"form\":\"services\",\"type\":\"sqlx/Pool\"}. Weitere: add_form, remove_form, rename_form, remove, rename, move, set_placement, set_layout. \
-Werte: {\"Bool\":true}, {\"Int\":5}, {\"Float\":1.5}, {\"Text\":\"…\"}, {\"Enum\":\"…\"}, {\"Reference\":\"services::db_pool\"}. / Designer commands.",
+{\"command\":\"add_component\",\"form\":\"services\",\"type\":\"sqlx/Pool\"}. More: add_form, remove_form, rename_form, remove, rename, move, set_placement, set_layout. \
+Values: {\"Bool\":true}, {\"Int\":5}, {\"Float\":1.5}, {\"Text\":\"…\"}, {\"Enum\":\"…\"}, {\"Reference\":\"services::db_pool\"}.",
         schema: || {
             json!({ "type": "object", "required": ["commands"], "properties": {
                 "commands": { "type": "array", "items": { "type": "object" } }
@@ -274,13 +273,13 @@ Werte: {\"Bool\":true}, {\"Int\":5}, {\"Float\":1.5}, {\"Text\":\"…\"}, {\"Enu
     Def {
         name: "generate_code",
         access: Access::Write,
-        description: "Speichert das Projekt und erzeugt den Code (*.gen.rs, fehlende Handler-Stubs, Cargo.toml). / Saves and generates code.",
+        description: "Saves the project and generates the code (*.gen.rs, missing handler stubs, Cargo.toml).",
         schema: no_input,
     },
     Def {
         name: "cargo",
         access: Access::Run,
-        description: "Führt cargo check, clippy oder test im Projekt aus und liefert die Meldungen. / Runs cargo.",
+        description: "Runs cargo check, clippy or test in the project and returns the messages.",
         schema: || {
             json!({ "type": "object", "required": ["tool"], "properties": {
                 "tool": { "type": "string", "enum": ["check", "clippy", "test"] }
@@ -309,7 +308,7 @@ pub fn access(name: &str) -> Option<Access> {
 fn text<'a>(input: &'a Value, key: &str) -> Result<&'a str, String> {
     input[key]
         .as_str()
-        .ok_or_else(|| format!("Parameter „{key}“ fehlt"))
+        .ok_or_else(|| format!("parameter `{key}` is missing"))
 }
 
 /// Checks a path given by the AI: relative, inside the project, not into
@@ -332,21 +331,21 @@ pub fn project_path(root: &Path, rel: &str) -> Result<String, String> {
         .first()
         .is_some_and(|p| crate::files::SKIPPED.contains(&p.as_str()))
     {
-        return Err(format!("{rel}: target/ und .git/ sind gesperrt"));
+        return Err(format!("{rel}: target/ and .git/ are off limits"));
     }
     let joined = parts.join("/");
     // Symbolische Verknüpfungen dürfen nicht aus dem Projekt führen.
     if let (Ok(full), Ok(base)) = (root.join(&joined).canonicalize(), root.canonicalize())
         && !full.starts_with(&base)
     {
-        return Err(format!("{rel}: führt aus dem Projekt"));
+        return Err(format!("{rel}: leads out of the project"));
     }
     Ok(joined)
 }
 
 fn root_of(ws: &dyn Workspace) -> Result<PathBuf, String> {
     ws.root()
-        .ok_or_else(|| "Das Projekt ist noch nicht gespeichert.".to_owned())
+        .ok_or_else(|| "The project is not saved yet.".to_owned())
 }
 
 /// Runs a reading tool.
@@ -398,7 +397,7 @@ pub fn read(ws: &dyn Workspace, name: &str, input: &Value) -> Result<String, Str
             let mut lines = Vec::new();
             list(&entries, prefix.as_deref(), &mut lines);
             Ok(if lines.is_empty() {
-                "(keine Dateien)".into()
+                "(no files)".into()
             } else {
                 lines.join("\n")
             })
@@ -426,7 +425,7 @@ pub fn read(ws: &dyn Workspace, name: &str, input: &Value) -> Result<String, Str
             let root = root_of(ws)?;
             let query = text(input, "query")?.to_lowercase();
             if query.is_empty() {
-                return Err("leere Suche".into());
+                return Err("empty search".into());
             }
             let prefix = match input["path"].as_str().filter(|p| !p.trim().is_empty()) {
                 Some(p) => Some(project_path(&root, p)?),
@@ -457,7 +456,7 @@ pub fn read(ws: &dyn Workspace, name: &str, input: &Value) -> Result<String, Str
                 }
             }
             Ok(if hits.is_empty() {
-                "keine Treffer".into()
+                "no matches".into()
             } else {
                 hits.join("\n")
             })
@@ -468,7 +467,7 @@ pub fn read(ws: &dyn Workspace, name: &str, input: &Value) -> Result<String, Str
                 .forms()
                 .iter()
                 .find(|f| f.name.as_str() == name)
-                .ok_or_else(|| format!("Formular „{name}“ gibt es nicht"))?;
+                .ok_or_else(|| format!("form `{name}` does not exist"))?;
             form.to_ron().map_err(|e| e.to_string())
         }
         "component_types" => {
@@ -516,7 +515,7 @@ pub fn read(ws: &dyn Workspace, name: &str, input: &Value) -> Result<String, Str
                 Some(path) => generation
                     .file(path)
                     .map(|f| f.content.clone())
-                    .ok_or_else(|| format!("{path} wird nicht erzeugt")),
+                    .ok_or_else(|| format!("{path} is not generated")),
                 None => pretty(&json!(
                     generation
                         .files
@@ -527,9 +526,9 @@ pub fn read(ws: &dyn Workspace, name: &str, input: &Value) -> Result<String, Str
             }
         }
         "cargo" | "write_file" | "edit_file" | "designer" | "generate_code" => {
-            Err(format!("{name} ist kein Lese-Werkzeug"))
+            Err(format!("{name} is not a read tool"))
         }
-        _ => Err(format!("unbekanntes Werkzeug „{name}“")),
+        _ => Err(format!("unknown tool `{name}`")),
     }
 }
 
@@ -568,7 +567,7 @@ pub fn plan(
     name: &str,
     input: &Value,
 ) -> Result<Proposal, String> {
-    let access = access(name).ok_or_else(|| format!("unbekanntes Werkzeug „{name}“"))?;
+    let access = access(name).ok_or_else(|| format!("unknown tool `{name}`"))?;
     let proposal = |summary: String, preview: String, action: Action| Proposal {
         call_id: call_id.to_owned(),
         tool: name.to_owned(),
@@ -583,12 +582,12 @@ pub fn plan(
             let path = project_path(&root, text(input, "path")?)?;
             if crate::files::is_generated(&path) {
                 return Err(format!(
-                    "{path} wird erzeugt und ist schreibgeschützt; Formular ändern (designer) und generate_code nutzen"
+                    "{path} is generated and read-only; change the form (designer) and use generate_code"
                 ));
             }
             if path.ends_with(".ftdr") || path.ends_with(".ptdr") {
                 return Err(format!(
-                    "{path}: Formulare und Projektdatei nur über das Werkzeug designer ändern"
+                    "{path}: change forms and the project file only through the tool designer"
                 ));
             }
             let before = ws.read_text(&path).ok();
@@ -599,10 +598,10 @@ pub fn plan(
                 let new = text(input, "new_text")?;
                 let current = before
                     .as_deref()
-                    .ok_or_else(|| format!("{path} gibt es nicht"))?;
+                    .ok_or_else(|| format!("{path} does not exist"))?;
                 match current.matches(old).count() {
                     1 => current.replacen(old, new, 1),
-                    0 => return Err(format!("old_text kommt in {path} nicht vor")),
+                    0 => return Err(format!("old_text does not occur in {path}")),
                     n => {
                         return Err(format!(
                             "old_text kommt in {path} {n}-mal vor; mehr Zusammenhang angeben"
@@ -611,11 +610,11 @@ pub fn plan(
                 }
             };
             if before.as_deref() == Some(content.as_str()) {
-                return Err(format!("{path} bliebe unverändert"));
+                return Err(format!("{path} would stay unchanged"));
             }
             let summary = match &before {
-                Some(_) => format!("{path} ändern"),
-                None => format!("{path} anlegen"),
+                Some(_) => tr!("ai.proposal.change", path = path),
+                None => tr!("ai.proposal.create", path = path),
             };
             let preview = line_diff(&path, before.as_deref().unwrap_or_default(), &content);
             Ok(proposal(
@@ -632,12 +631,12 @@ pub fn plan(
             let commands = input["commands"]
                 .as_array()
                 .filter(|c| !c.is_empty())
-                .ok_or("Parameter „commands“ fehlt (Liste von Befehlen)")?;
+                .ok_or("parameter `commands` is missing (list of commands)")?;
             let mut parsed = Vec::new();
             for c in commands {
                 parsed.push(
                     serde_json::from_value::<Command>(c.clone())
-                        .map_err(|e| format!("Befehl {c}: {e}"))?,
+                        .map_err(|e| format!("command {c}: {e}"))?,
                 );
             }
             let command = if parsed.len() == 1 {
@@ -654,7 +653,7 @@ pub fn plan(
                     "Designer: {}",
                     commands[0]["command"].as_str().unwrap_or("?")
                 ),
-                n => format!("Designer: {n} Befehle"),
+                n => tr!("ai.proposal.commands", count = n),
             };
             let mut preview = commands
                 .iter()
@@ -662,7 +661,7 @@ pub fn plan(
                 .collect::<Vec<_>>()
                 .join("\n");
             if !created.is_empty() {
-                preview.push_str(&format!("\nneu: {}", created.join(", ")));
+                preview.push_str(&tr!("ai.proposal.created", names = created.join(", ")));
             }
             Ok(proposal(summary, preview, Action::Designer { command }))
         }
@@ -676,13 +675,13 @@ pub fn plan(
                 .map(|f| format!("{:?}: {}", f.change, f.path))
                 .collect();
             if preview.is_empty() {
-                preview.push("keine Änderungen am Code".into());
+                preview.push(tr!("ai.proposal.no_changes"));
             }
             for d in &generation.diagnostics {
                 preview.push(format!("{:?}: {}", d.severity, d.issue));
             }
             Ok(proposal(
-                "Projekt speichern und Code erzeugen".into(),
+                tr!("ai.proposal.generate"),
                 preview.join("\n"),
                 Action::GenerateCode,
             ))
@@ -692,15 +691,15 @@ pub fn plan(
                 "check" => crate::tools::Tool::Check,
                 "clippy" => crate::tools::Tool::Clippy,
                 "test" => crate::tools::Tool::Test,
-                other => return Err(format!("cargo {other} ist nicht erlaubt")),
+                other => return Err(format!("cargo {other} is not allowed")),
             };
             Ok(proposal(
-                format!("{} ausführen", tool.command_line()),
-                format!("{} im Projektordner", tool.command_line()),
+                tr!("ai.proposal.run", command = tool.command_line()),
+                tr!("ai.proposal.in_project", command = tool.command_line()),
                 Action::Cargo { tool },
             ))
         }
-        _ => Err(format!("{name} ist ein Lese-Werkzeug")),
+        _ => Err(format!("{name} is a read tool")),
     }
 }
 
@@ -715,20 +714,20 @@ pub fn apply(ws: &mut dyn Workspace, proposal: &Proposal) -> Result<String, Stri
             let now = ws.read_text(path).ok();
             if now != *before {
                 return Err(format!(
-                    "{path} wurde seit der Vorschau geändert; neu lesen und erneut vorschlagen"
+                    "{path} was changed since the preview; read it again and propose again"
                 ));
             }
             ws.write_text(path, content)
                 .map_err(|e| format!("{path}: {e}"))?;
-            Ok(format!("{path} geschrieben"))
+            Ok(format!("{path} written"))
         }
         Action::Designer { command } => ws.apply_command(command.clone()),
         Action::GenerateCode => {
             let written = ws.save_and_generate()?;
             Ok(if written.is_empty() {
-                "Code ist aktuell".into()
+                "code is up to date".into()
             } else {
-                format!("geschrieben: {}", written.join(", "))
+                format!("written: {}", written.join(", "))
             })
         }
         Action::Cargo { tool } => ws.run_cargo(*tool),
