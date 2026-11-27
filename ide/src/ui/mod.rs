@@ -531,9 +531,10 @@ impl Ide {
                 let place = desktop.place(name);
                 let now = window.screen_position();
                 if debug && window.widget().is_visible() {
+                    let size = window.widget().size();
                     eprintln!(
-                        "freya-tde: Fenster {name}: soll {:?},{:?}, nach dem Start {now:?}",
-                        place.x, place.y
+                        "freya-tde: Fenster {name}: soll {:?},{:?} {}x{}, nach dem Start {now:?} {}x{}",
+                        place.x, place.y, place.width, place.height, size.width, size.height
                     );
                 }
                 if let (Some(x), Some(y)) = (place.x, place.y)
@@ -549,9 +550,12 @@ impl Ide {
                     if let Some(ide) = weak.upgrade() {
                         for (name, window) in ide.windows() {
                             if window.widget().is_visible() {
+                                let size = window.widget().size();
                                 eprintln!(
-                                    "freya-tde: Fenster {name}: nach dem zweiten Setzen {:?}",
-                                    window.screen_position()
+                                    "freya-tde: Fenster {name}: nach dem zweiten Setzen {:?} {}x{}",
+                                    window.screen_position(),
+                                    size.width,
+                                    size.height
                                 );
                             }
                         }

@@ -597,6 +597,12 @@ fn main() {
     assert!(ide.code_detached().is_empty());
     assert_eq!(ide.code_tabs().last().map(String::as_str), Some("a.rs"));
     assert_eq!(ide.code_file().as_ref(), Some(&a));
+    // Sortieren: a.rs auf den ersten Reiter gezogen; Reiter und Dateiliste
+    // folgen, a.rs bleibt die aktuelle Datei.
+    let last = ide.code_tabs().len() as i32 - 1;
+    bar.simulate_tab_move(last, 0);
+    assert_eq!(ide.code_tabs().first().map(String::as_str), Some("a.rs"));
+    assert_eq!(ide.code_file().as_ref(), Some(&a));
     let before = ide.code_tabs().len();
     bar.simulate_tab_close(index(&ide.code_tabs(), "b.rs"));
     assert_eq!(ide.code_tabs().len(), before - 1);

@@ -70,6 +70,9 @@ pub struct DebuggerWindow {
     pub pane: super::dock::DockPane,
     /// Toolbar: button and debugger action.
     tools: Vec<(RnclButton, &'static str)>,
+    /// Size of a toolbar button: the toolkit's natural size, at least
+    /// `ICON` × `BAR` (on Windows the theme needs more room than on Linux).
+    tool_size: (i32, i32),
     panic: RnclCheckBox,
     status: RnclLabel,
     variables_title: RnclLabel,
@@ -115,7 +118,12 @@ impl DebuggerWindow {
         ]
         .into_iter()
         .map(|(text, tip, id)| (tool(&body, text, &tr!(&format!("debugger.tool.{tip}"))), id))
-        .collect();
+        .collect::<Vec<_>>();
+        let tool_size = tools.iter().fold((ICON, BAR), |(w, h), (button, _)| {
+            button.widget().adjust_size();
+            let size = button.widget().size();
+            (w.max(size.width), h.max(size.height))
+        });
         let panic = RnclCheckBox::new(&body, &tr!("debugger.stop_on_panic"));
         let status = RnclLabel::new(&body, "");
         let variables_title =
@@ -152,6 +160,7 @@ impl DebuggerWindow {
         Self {
             window,
             pane,
+            tool_size,
             tools,
             panic,
             status,
@@ -175,13 +184,14 @@ impl DebuggerWindow {
         let inner = width - 2 * MARGIN;
         let mut y = MARGIN;
         let mut x = MARGIN;
+        let (tool_w, bar) = self.tool_size;
         for (button, _) in &self.tools {
-            button.set_geometry(x, y, ICON, BAR);
-            x += ICON + 2;
+            button.set_geometry(x, y, tool_w, bar);
+            x += tool_w + 2;
         }
         self.panic
-            .set_geometry(x + 6, y, (width - x - 6 - MARGIN).max(0), BAR);
-        y += BAR + 4;
+            .set_geometry(x + 6, y, (width - x - 6 - MARGIN).max(0), bar);
+        y += bar + 4;
         self.status.set_geometry(MARGIN, y, inner, 22);
         y += 24;
         self.variables_title.set_geometry(MARGIN, y, inner, 20);

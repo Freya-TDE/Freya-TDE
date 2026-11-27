@@ -764,6 +764,27 @@ impl CodeWindow {
         self.update_titles();
     }
 
+    /// Follows a tab dragged onto another one (RUF has already moved the page):
+    /// the list of files keeps the tab order.
+    pub fn tab_moved(&self, from: i32, to: i32) {
+        let mut attached = self.attached();
+        let (Ok(from), Ok(to)) = (usize::try_from(from), usize::try_from(to)) else {
+            return;
+        };
+        if from >= attached.len() || to >= attached.len() {
+            return;
+        }
+        let file = attached.remove(from);
+        attached.insert(to, file);
+        let mut files = self.files.borrow_mut();
+        let detached: Vec<_> = files
+            .iter()
+            .filter(|f| f.detached.borrow().is_some())
+            .cloned()
+            .collect();
+        *files = attached.into_iter().chain(detached).collect();
+    }
+
     /// Puts a detached file back into a tab (its grip dropped on the tab bar).
     pub fn reattach(&self, path: &Path) {
         let Some(file) = self.file(path) else {
@@ -782,7 +803,10 @@ impl CodeWindow {
             .on_resized(move |w, h| e.set_geometry(0, 0, w, h));
         *file.page.borrow_mut() = page;
         detached.window.widget().set_visible(false);
-        ruf::Timer::single_shot(0, move || drop(detached));
+        // Erst freigeben, wenn das Ziehen des Griffs sicher zu Ende ist: unter
+        // Windows endet es erst nach dem Ablegen, und ein vorher zerstörter
+        // Griff ließ sein Ziehbild auf dem Bildschirm stehen.
+        ruf::Timer::single_shot(1000, move || drop(detached));
         *self.active.borrow_mut() = None;
         if let Some(tab) = self.tab_of(&file.path) {
             self.tabs.set_current_index(tab as i32);
@@ -1006,6 +1030,12 @@ pub fn connect(ide: &Rc<Ide>) {
         }));
     code.tabs
         .on_tab_detach_requested(with(ide, |ide, index: i32| ide.code.detach(ide, index)));
+    // Reiter auf einen anderen gezogen: sortieren.
+    let mut moved = with(ide, |ide, (from, to): (i32, i32)| {
+        ide.code.tab_moved(from, to);
+        ide.code.update_titles();
+    });
+    code.tabs.on_tab_moved(move |from, to| moved((from, to)));
     code.tabs
         .widget()
         .on_drop(with(ide, |ide, event: ruf::DropEvent| {
