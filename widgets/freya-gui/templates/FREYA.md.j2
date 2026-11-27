@@ -1,0 +1,33 @@
+# {{ project.name }} – freya
+
+The user interface of this project uses **freya** (https://freyaui.dev), a
+declarative Rust GUI library powered by Skia, made by Marc Espín
+(https://github.com/marc2332/freya, MIT license).
+
+**freya is an independent project. It has nothing to do with Freya TDE** –
+despite the similar name, Freya TDE is neither part of freya nor made, endorsed
+or supported by its authors. Freya TDE only supports freya as one of its UI
+backends. Questions about freya itself belong to its own project.
+
+## How Freya TDE uses freya
+
+- `src/<form>.gen.rs` (generated, read-only) holds the form state, a `Message`
+  per input and the view, built with freya's elements and components in the
+  module `freya_ui`. Every widget is a field `crate::app::Control<T>`; your
+  handlers in `src/<form>.rs` change these fields and freya renders again.
+- `src/app.gen.rs` holds the shared helpers (`Control`, `FreyaRoot`, …). The
+  `freya_…` names there belong to Freya TDE, not to freya.
+- The first form is the main window.
+
+## Run
+
+```sh
+cargo run
+```
+
+The first build downloads Skia binaries for freya (network needed once).
+
+## Learn freya
+
+- Documentation: https://docs.rs/freya and https://freyaui.dev
+- Examples: https://github.com/marc2332/freya/tree/main/examples

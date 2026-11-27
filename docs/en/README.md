@@ -19,7 +19,7 @@ two building blocks RUF and CT-Editor, and finally everything about known proble
 3. [First steps](03-first-steps.md) – from the new-project wizard to a running program
 4. [The windows](04-windows.md) – main window, designer, object inspector, code, messages …
 5. [Forms and components](05-components.md) – the model behind the designer
-6. [UI backends](06-backends.md) – GTK 4, egui, iced, Slint, Flutter, WebView
+6. [UI backends](06-backends.md) – GTK 4, egui, iced, Slint, Flutter, WebView, freya
 7. [Component packs](07-packs.md) – Tokio, SQLx, Redis, Axum, WebSocket, HTTP
 8. [Databases and data binding](08-data.md) – lists, grids, editing, schema browser
 9. [Generated and own code](09-code.md) – which file belongs to whom, code completion, snippets

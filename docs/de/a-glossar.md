@@ -4,7 +4,7 @@
 
 | Begriff | Bedeutung |
 |---|---|
-| **Backend (UI-Backend)** | Pack, das Formulare für ein UI-Toolkit übersetzt (GTK 4, egui, iced, Slint, Flutter, WebView) |
+| **Backend (UI-Backend)** | Pack, das Formulare für ein UI-Toolkit übersetzt (GTK 4, egui, iced, Slint, Flutter, WebView, freya) |
 | **Komponente** | Baustein mit Name, Typ, Eigenschaften und Ereignissen |
 | **Widget** | Komponente mit visueller Erweiterung (Platzierung, Kinder) |
 | **Formular** | ein Fenster des Zielprogramms; Datei `.ftdr` neben der `.rs` |

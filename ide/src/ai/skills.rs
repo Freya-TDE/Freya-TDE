@@ -33,7 +33,8 @@ mod builtin {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SkillOrigin {
-    /// Built into Freya TDE (`source`: Freya TDE, RUF, CT-Editor).
+    /// Built into Freya TDE (`source`: Freya TDE, RUF, CT-Editor, or a third
+    /// party such as freya, whose license lies next to the skill).
     BuiltIn { source: String },
     /// From a signed skill pack (`version` of the pack).
     Pack { version: String },

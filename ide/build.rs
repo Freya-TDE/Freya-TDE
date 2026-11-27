@@ -1,5 +1,6 @@
 //! Embeds the built-in AI skills: every `SKILL.md` below
-//! `RUF/.agents/skills`, `CT-Editor/.agents/skills` and `ide/skills`.
+//! `RUF/.agents/skills`, `CT-Editor/.agents/skills`, `ide/skills` and
+//! `ide/skills-third-party` (skills of other projects, with their license).
 //! They are part of the program and cannot be changed from outside.
 //!
 //! *Bettet die mitgelieferten Skills der KI ein (Grundausstattung).*
@@ -13,6 +14,8 @@ fn main() {
         ("Freya TDE", manifest.join("skills")),
         ("RUF", manifest.join("../RUF/.agents/skills")),
         ("CT-Editor", manifest.join("../CT-Editor/.agents/skills")),
+        // Fremde Skills mit eigener Lizenz (LICENSE.md daneben), z. B. der von freya.
+        ("freya (freyaui.dev)", manifest.join("skills-third-party")),
     ];
     let mut entries = Vec::new();
     for (origin, dir) in &sources {

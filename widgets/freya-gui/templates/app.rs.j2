@@ -1,0 +1,375 @@
+{#- freya: shared helpers of the generated code, appended to app.gen.rs.
+    freya (https://freyaui.dev) is an independent project by Marc Espín; Freya TDE
+    only supports it. The `freya_…` helpers here belong to Freya TDE. -#}
+pub use freya_gui::*;
+
+/// Helpers of the freya backend; freya's prelude stays inside this module.
+#[allow(dead_code, unused_imports)]
+mod freya_gui {
+use freya::prelude::*;
+/// The state of a widget: the view is built from these values, so a handler
+/// changes the widget by changing them (`self.ok_button.enabled = false`,
+/// `self.greeting.value = …`). `value` is reachable directly through `Deref`
+/// (`self.name_edit.trim()`).
+#[allow(dead_code)]
+#[derive(Debug)]
+pub struct Control<T> {
+    /// What the widget shows or edits (text, checked, number, selection …).
+    pub value: T,
+    /// Caption of buttons, check boxes, cards; title of the window.
+    pub caption: String,
+    /// Entries of lists and selects; titles of tabs; entries of the menu.
+    pub items: Vec<String>,
+    pub enabled: bool,
+    pub visible: bool,
+    /// Hint shown on hover (empty = none).
+    pub tooltip: String,
+}
+
+#[allow(dead_code)]
+impl<T> Control<T> {
+    pub fn new(value: T) -> Self {
+        Self {
+            value,
+            caption: String::new(),
+            items: Vec::new(),
+            enabled: true,
+            visible: true,
+            tooltip: String::new(),
+        }
+    }
+
+    pub fn with_caption(mut self, caption: impl Into<String>) -> Self {
+        self.caption = caption.into();
+        self
+    }
+
+    pub fn with_items<S: ToString>(mut self, items: Vec<S>) -> Self {
+        self.items = items.iter().map(ToString::to_string).collect();
+        self
+    }
+
+    pub fn with_state(mut self, enabled: bool, visible: bool, tooltip: &str) -> Self {
+        self.enabled = enabled;
+        self.visible = visible;
+        self.tooltip = tooltip.to_owned();
+        self
+    }
+
+    /// `element` as shown: nothing if hidden, with tooltip if one is set.
+    pub fn show(&self, element: impl freya::prelude::IntoElement) -> freya::prelude::Element {
+        if !self.visible {
+            return freya::prelude::rect().into_element();
+        }
+        if self.tooltip.is_empty() {
+            element.into_element()
+        } else {
+            freya::prelude::TooltipContainer::new(freya::prelude::Tooltip::new_text(self.tooltip.clone()))
+                .child(element)
+                .into_element()
+        }
+    }
+}
+
+impl<T> std::ops::Deref for Control<T> {
+    type Target = T;
+    fn deref(&self) -> &T {
+        &self.value
+    }
+}
+
+impl<T> std::ops::DerefMut for Control<T> {
+    fn deref_mut(&mut self) -> &mut T {
+        &mut self.value
+    }
+}
+
+/// A form that reacts to its messages (generated per form).
+pub trait FreyaUpdate: 'static {
+    type Message: 'static;
+    fn update(&mut self, message: Self::Message);
+}
+
+/// Hands messages to the form and lets freya render again.
+pub struct FreyaSender<F: FreyaUpdate> {
+    pub form: std::rc::Rc<std::cell::RefCell<F>>,
+    pub tick: freya::prelude::State<u64>,
+}
+
+impl<F: FreyaUpdate> Clone for FreyaSender<F> {
+    fn clone(&self) -> Self {
+        Self {
+            form: self.form.clone(),
+            tick: self.tick,
+        }
+    }
+}
+
+impl<F: FreyaUpdate> PartialEq for FreyaSender<F> {
+    fn eq(&self, other: &Self) -> bool {
+        std::rc::Rc::ptr_eq(&self.form, &other.form)
+    }
+}
+
+#[allow(dead_code)]
+impl<F: FreyaUpdate> FreyaSender<F> {
+    pub fn send(&self, message: F::Message) {
+        self.form.borrow_mut().update(message);
+        let mut tick = self.tick;
+        *tick.write() += 1;
+    }
+
+    /// A callback that sends `message(value)`.
+    pub fn to<T: 'static>(&self, message: impl Fn(T) -> F::Message + 'static) -> impl FnMut(T) + 'static {
+        let sender = self.clone();
+        move |value| sender.send(message(value))
+    }
+
+    /// A callback that sends `message`, ignoring the event.
+    pub fn on<E: 'static>(&self, message: F::Message) -> impl FnMut(E) + 'static
+    where
+        F::Message: Clone,
+    {
+        let sender = self.clone();
+        move |_| sender.send(message.clone())
+    }
+}
+
+/// A form shown in a freya window (generated per form).
+pub trait FreyaView: FreyaUpdate + Sized {
+    /// The window content from the state.
+    fn freya_view(&self, sender: &FreyaSender<Self>) -> Element;
+    /// The window title (caption of the form).
+    fn freya_title(&self) -> String;
+    /// `Dark`, `Light` or `System` (the form's `theme`).
+    const THEME: &'static str;
+    /// Once at the start, with the sender (data binding: wake on new rows).
+    fn freya_watch(_sender: &FreyaSender<Self>) {}
+}
+
+/// The root component of a form's window: renders the form again after
+/// every message (`tick`), keeps the title up to date.
+pub struct FreyaRoot<F>(pub std::rc::Rc<std::cell::RefCell<F>>);
+
+impl<F: FreyaView> App for FreyaRoot<F> {
+    fn render(&self) -> impl IntoElement {
+        let tick = use_state(|| 0u64);
+        let _ = *tick.read();
+        let sender = FreyaSender {
+            form: self.0.clone(),
+            tick,
+        };
+        use_init_theme(|| match F::THEME {
+            "Dark" => dark_theme(),
+            "Light" => light_theme(),
+            _ => Platform::get().current_window().preferred_theme.peek().to_theme(),
+        });
+        use_hook({
+            let sender = sender.clone();
+            move || F::freya_watch(&sender)
+        });
+        // Titel nur setzen, wenn er sich geändert hat.
+        let shown = use_hook(|| std::rc::Rc::new(std::cell::RefCell::new(String::new())));
+        let title = self.0.borrow().freya_title();
+        if *shown.borrow() != title {
+            *shown.borrow_mut() = title.clone();
+            Platform::get().with_window(Platform::window_id(), move |window| window.set_title(&title));
+        }
+        let form = self.0.borrow();
+        form.freya_view(&sender)
+    }
+}
+
+/// A colour from the designer (`a` = 255 opaque).
+#[allow(dead_code)]
+pub fn color(r: u8, g: u8, b: u8, a: u8) -> freya::prelude::Color {
+    freya::prelude::Color::from_argb(a, r, g, b)
+}
+
+/// The content of a data grid: column titles, rows of texts, the selection.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Table {
+    pub headers: Vec<String>,
+    pub rows: Vec<Vec<String>>,
+    pub selected: Option<usize>,
+    /// Editable grids: the cell being edited (row, column, text).
+    pub editing: Option<(usize, usize, String)>,
+}
+
+/// Entries of a main menu: path parts and shortcut (`File/Open | Ctrl+O`).
+#[allow(dead_code)]
+pub fn menu_entries(items: &[String]) -> Vec<(Vec<String>, String)> {
+    items
+        .iter()
+        .map(|item| {
+            let (path, keys) = item.split_once('|').unwrap_or((item.as_str(), ""));
+            let parts: Vec<String> = path.split('/').map(|p| p.trim().to_owned()).collect();
+            (parts, keys.trim().to_owned())
+        })
+        .filter(|(parts, _)| parts.len() >= 2)
+        .collect()
+}
+
+/// The top-level menus in the order of the entries.
+#[allow(dead_code)]
+pub fn menu_titles(items: &[String]) -> Vec<String> {
+    let mut titles: Vec<String> = Vec::new();
+    for (parts, _) in menu_entries(items) {
+        if !titles.contains(&parts[0]) {
+            titles.push(parts[0].clone());
+        }
+    }
+    titles
+}
+
+/// The menu entry whose shortcut (`Ctrl+O`, `Ctrl+Shift+S`, `F5`) was pressed.
+#[allow(dead_code)]
+pub fn menu_shortcut(items: &[String], event: &freya::prelude::KeyboardEventData) -> Option<String> {
+    let pressed = match &event.key {
+        Key::Character(c) => c.to_lowercase(),
+        Key::Named(named) => format!("{named:?}").to_lowercase(),
+    };
+    menu_entries(items).into_iter().find_map(|(parts, keys)| {
+        if keys.is_empty() {
+            return None;
+        }
+        let mut want = Modifiers::empty();
+        let mut key = String::new();
+        for part in keys.split('+').map(str::trim) {
+            match part.to_lowercase().as_str() {
+                "ctrl" | "control" | "cmd" => want |= if cfg!(target_os = "macos") { Modifiers::META } else { Modifiers::CONTROL },
+                "shift" => want |= Modifiers::SHIFT,
+                "alt" => want |= Modifiers::ALT,
+                other => key = other.to_owned(),
+            }
+        }
+        let mods = event.modifiers & (Modifiers::CONTROL | Modifiers::META | Modifiers::SHIFT | Modifiers::ALT);
+        (key == pressed && mods == want).then(|| parts.join("/"))
+    })
+}
+{%- if pictures %}
+
+/// A picture prepared by `freya_image` (gamma, opacity) as PNG for freya.
+fn freya_png(path: &str, gamma: f64, opacity: f64) -> Option<freya::prelude::Bytes> {
+    let picture = match super::freya_image(path, gamma, opacity) {
+        Ok(picture) => picture,
+        Err(error) => {
+            eprintln!("{error}");
+            return None;
+        }
+    };
+    let image = image::RgbaImage::from_raw(picture.width, picture.height, picture.rgba.to_vec())?;
+    let mut png = std::io::Cursor::new(Vec::new());
+    image.write_to(&mut png, image::ImageFormat::Png).ok()?;
+    Some(freya::prelude::Bytes::from(png.into_inner()))
+}
+
+/// How a picture fits its place (Cover, Stretch, Contain, Center).
+#[allow(dead_code)]
+pub fn aspect_ratio(fit: &str) -> freya::prelude::AspectRatio {
+    match fit {
+        "Cover" => freya::prelude::AspectRatio::Max,
+        "Stretch" => freya::prelude::AspectRatio::None,
+        "Center" => freya::prelude::AspectRatio::Fit,
+        _ => freya::prelude::AspectRatio::Min,
+    }
+}
+
+/// The picture as an element filling its place (empty without a picture).
+#[allow(dead_code)]
+pub fn picture_view(source: Option<&(String, freya::prelude::Bytes)>, fit: &str) -> freya::prelude::Element {
+    match source {
+        Some((key, bytes)) => freya::prelude::ImageViewer::new((key.clone(), bytes.clone()))
+            .width(freya::prelude::Size::fill())
+            .height(freya::prelude::Size::fill())
+            .aspect_ratio(aspect_ratio(fit))
+            .image_cover(if fit == "Center" { freya::prelude::ImageCover::Center } else { freya::prelude::ImageCover::Fill })
+            .into_element(),
+        None => freya::prelude::rect().into_element(),
+    }
+}
+
+/// State of an ImageBox; `set_file` loads another picture.
+#[allow(dead_code)]
+pub struct Picture {
+    pub file: String,
+    pub fit: String,
+    pub gamma: f64,
+    pub opacity: f64,
+    /// Cache key and PNG bytes of the prepared picture.
+    pub source: Option<(String, freya::prelude::Bytes)>,
+}
+
+#[allow(dead_code)]
+impl Picture {
+    pub fn new(file: &str, fit: &str, gamma: f64, opacity: f64) -> Self {
+        let mut picture = Self {
+            file: String::new(),
+            fit: fit.to_owned(),
+            gamma,
+            opacity,
+            source: None,
+        };
+        picture.set_file(file);
+        picture
+    }
+
+    pub fn set_file(&mut self, file: &str) {
+        self.file = file.to_owned();
+        self.source = (!file.is_empty())
+            .then(|| freya_png(file, self.gamma, self.opacity))
+            .flatten()
+            .map(|bytes| (format!("{file}|{}|{}", self.gamma, self.opacity), bytes));
+    }
+}
+
+/// State of an ImageScrollBox; the paths are the control's `items`,
+/// `load` prepares their pictures.
+#[allow(dead_code)]
+pub struct Gallery {
+    pub selected: Option<usize>,
+    pub orientation: String,
+    pub thumb: (f32, f32),
+    pub spacing: f32,
+    pub fit: String,
+    pub gamma: f64,
+    pub opacity: f64,
+    pub sources: Vec<Option<(String, freya::prelude::Bytes)>>,
+}
+
+#[allow(dead_code)]
+impl Gallery {
+    pub fn new(orientation: &str, thumb: (i32, i32), spacing: i64, fit: &str, gamma: f64, opacity: f64) -> Self {
+        Self {
+            selected: None,
+            orientation: orientation.to_owned(),
+            thumb: (thumb.0 as f32, thumb.1 as f32),
+            spacing: spacing as f32,
+            fit: fit.to_owned(),
+            gamma,
+            opacity,
+            sources: Vec::new(),
+        }
+    }
+
+    /// Prepares the pictures of `paths`; the selection starts over.
+    pub fn load(&mut self, paths: &[String]) {
+        self.selected = None;
+        self.sources = paths
+            .iter()
+            .map(|path| {
+                freya_png(path, self.gamma, self.opacity)
+                    .map(|bytes| (format!("{path}|{}|{}", self.gamma, self.opacity), bytes))
+            })
+            .collect();
+    }
+
+    /// Same as `load`, for the initial state.
+    pub fn loaded(mut self, paths: &[&str]) -> Self {
+        self.load(&paths.iter().map(|p| p.to_string()).collect::<Vec<_>>());
+        self
+    }
+}
+{%- endif %}
+}

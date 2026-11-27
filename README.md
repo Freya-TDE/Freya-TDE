@@ -4,11 +4,15 @@
 
 **Visuelle Entwicklungsumgebung für Rust im Stil von Delphi und Lazarus** – Formulare im Designer
 zusammenstellen, Komponenten verdrahten, die Logik in Rust schreiben und das Ergebnis für das UI-Toolkit der
-Wahl erzeugen: GTK 4, egui, iced, Slint, Flutter oder eine WebView.
+Wahl erzeugen: GTK 4, egui, iced, Slint, Flutter, eine WebView oder freya¹.
 
 **A visual development environment for Rust in the style of Delphi and Lazarus** – put forms together in the
 designer, wire up components, write the logic in Rust and generate the result for the UI toolkit of your
-choice: GTK 4, egui, iced, Slint, Flutter or a web view.
+choice: GTK 4, egui, iced, Slint, Flutter, a web view or freya¹.
+
+¹ [freya](https://freyaui.dev) (Marc Espín) ist ein eigenständiges Projekt und hat nichts mit Freya TDE zu tun;
+Freya TDE unterstützt es nur als UI-Backend. / freya is an independent project and has nothing to do with
+Freya TDE, which only supports it as a UI backend.
 
 > **Mit Claude Code gebaut / Built with Claude Code**
 >
@@ -25,7 +29,7 @@ choice: GTK 4, egui, iced, Slint, Flutter or a web view.
 | | Deutsch | English |
 |---|---|---|
 | **Freya TDE** (`ide/`, `core/`, `designer/`) | die IDE: Designer, Objektinspektor, Code-Editor mit rust-analyzer, Debugger (DAP), Git wie in VS Code, Terminal, Schema-Browser | the IDE: designer, object inspector, code editor with rust-analyzer, debugger (DAP), Git like in VS Code, terminal, schema browser |
-| **UI-Backends / UI backends** (`widgets/`) | GTK 4, egui, iced, Slint, Flutter, WebView – jedes mit eigener Palette | GTK 4, egui, iced, Slint, Flutter, WebView – each with its own palette |
+| **UI-Backends / UI backends** (`widgets/`) | GTK 4, egui, iced, Slint, Flutter, WebView, freya¹ – jedes mit eigener Palette | GTK 4, egui, iced, Slint, Flutter, WebView, freya¹ – each with its own palette |
 | **Komponenten-Packs / component packs** (`components/`) | Tokio, SQLx (PostgreSQL, MySQL, SQLite), Redis/Valkey, Axum, WebSocket, HTTP | Tokio, SQLx (PostgreSQL, MySQL, SQLite), Redis/Valkey, Axum, WebSocket, HTTP |
 | **[RUF](https://github.com/Freya-TDE/RUF)** (Submodul `RUF/`) | das UI-Framework der IDE auf GTK 4 | the IDE's UI framework on GTK 4 |
 | **[CT-Editor](https://github.com/Freya-TDE/CT-E)** (Submodul `CT-Editor/`) | visueller Editor für `Cargo.toml` | visual editor for `Cargo.toml` |

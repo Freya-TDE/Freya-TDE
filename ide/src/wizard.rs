@@ -323,7 +323,7 @@ impl NewProject {
                         if notice.is_some() && !self.license_accepted {
                             errors.push(WizardIssue::new(
                                 codes::LICENSE_NOT_ACCEPTED,
-                                tr!("wizard.msg.license", backend = self.backend),
+                                tr!("wizard.msg.license", backend = b.display_name()),
                             ));
                         }
                     }

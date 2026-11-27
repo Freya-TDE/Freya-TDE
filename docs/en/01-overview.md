@@ -11,7 +11,7 @@ find your way around.
 │  core/       component model, dependency graph, pack format, code generation (tdr-core)          │
 │  designer/   designer logic without UI (tdr-designer)                                            │
 │  components/ component packs (Tokio, SQLx, Redis, Axum, WebSocket, HTTP)                         │
-│  widgets/    UI backends for target projects (GTK 4, egui, iced, Slint, Flutter, WebView)        │
+│  widgets/    UI backends for target projects (GTK 4, egui, iced, Slint, Flutter, WebView, freya) │
 │  db/         database helper freya-tde-db (separate process)                                     │
 │                                                                                                  │
 │  RUF/  ──────► submodule: Freya-TDE/RUF   (UI framework of the IDE)                     │
@@ -30,7 +30,8 @@ The key point is the split into **two worlds**:
 
 1. **The IDE's own user interface** is built with RUF (GTK 4) – the same on Linux, Windows and macOS.
 2. **The programs you build with Freya TDE** (target projects) may use any supported UI toolkit: GTK 4, egui,
-   iced, Slint, Flutter or a web view. These toolkits are not compiled into the IDE. Only the *description*
+   iced, Slint, Flutter, a web view or freya (an independent project Freya TDE only supports, see
+   [chapter 6](06-backends.md#freya-in-particular)). These toolkits are not compiled into the IDE. Only the *description*
    of the forms is unified; per toolkit, a backend pack translates it into code.
 
 That is why the designer does not show forms "live" but draws them itself from the backend's metrics. The

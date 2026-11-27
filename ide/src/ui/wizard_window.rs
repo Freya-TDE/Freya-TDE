@@ -543,20 +543,30 @@ impl WizardWindow {
         *self.registry.borrow_mut() = registry.clone();
         let mut names: Vec<String> = registry.backends().map(|b| b.name.clone()).collect();
         names.sort_by_key(|n| {
-            // Reihenfolge wie beschlossen: GTK 4, egui, iced, Slint, Flutter, dann der Rest.
-            ["gtk4", "egui", "iced", "slint", "flutter", "webview"]
-                .iter()
-                .position(|k| k == n)
-                .unwrap_or(99)
+            // Reihenfolge wie beschlossen: GTK 4, egui, iced, Slint, Flutter, WebView, freya, dann der Rest.
+            [
+                "gtk4",
+                "egui",
+                "iced",
+                "slint",
+                "flutter",
+                "webview",
+                "freya-gui",
+            ]
+            .iter()
+            .position(|k| k == n)
+            .unwrap_or(99)
         });
         let labels: Vec<String> = names
             .iter()
-            .map(
-                |n| match registry.backend(n).and_then(|b| b.license_notice.as_ref()) {
-                    Some(_) => tr!("wizard.license_notice", name = n),
-                    None => n.clone(),
-                },
-            )
+            .map(|n| match registry.backend(n) {
+                // Angezeigt wird der Titel des Packs (`freya-gui` als „freya“).
+                Some(b) if b.license_notice.is_some() => {
+                    tr!("wizard.license_notice", name = b.display_name())
+                }
+                Some(b) => b.display_name().to_owned(),
+                None => n.clone(),
+            })
             .chain(std::iter::once(tr!("wizard.no_ui")))
             .collect();
         names.push(NO_BACKEND.to_owned());

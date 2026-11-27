@@ -596,6 +596,34 @@ license-notice = """
 }
 
 #[test]
+fn title_is_the_shown_name() {
+    let text = r#"
+[pack]
+name = "freya-gui"
+title = "freya"
+version = "0.1.0"
+kind = "backend"
+license = "MIT"
+generated-code-license = "MIT"
+
+[backend]
+"#;
+    let pack = Pack::parse(text).unwrap();
+    assert_eq!(pack.info.title, "freya");
+    let mut registry = TypeRegistry::with_builtins();
+    pack.register(&mut registry).unwrap();
+    let backend = registry.backend("freya-gui").unwrap();
+    assert_eq!(backend.display_name(), "freya");
+    // Ohne `title` gilt der Name.
+    let plain = Pack::parse(&text.replace("title = \"freya\"\n", "")).unwrap();
+    assert_eq!(plain.info.title, "freya-gui");
+    assert_eq!(
+        tdr_core::BackendDescriptor::new("egui").display_name(),
+        "egui"
+    );
+}
+
+#[test]
 fn backend_files_copy_a_folder() {
     let dir = std::env::temp_dir().join(format!("tdr-pack-dir-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);

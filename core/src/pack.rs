@@ -17,6 +17,7 @@
 //! ```toml
 //! [pack]
 //! name = "sqlx"                         # id; types become pack:sqlx/Name
+//! title = "SQLx"                        # optional: name shown to the user (default: name)
 //! version = "0.1.0"
 //! kind = "components"                   # or "backend" (palette of a UI backend)
 //! description = "…"                     # optional
@@ -219,6 +220,8 @@ struct RawBackendFile {
 #[serde(deny_unknown_fields, rename_all = "kebab-case")]
 struct RawInfo {
     name: String,
+    /// Display name (default: `name`).
+    title: Option<String>,
     version: String,
     #[serde(default)]
     kind: PackKind,
@@ -474,6 +477,10 @@ pub enum PackKind {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PackInfo {
     pub name: String,
+    /// Name shown to the user (wizard, palette); `title` in the manifest,
+    /// otherwise `name`. Lets a backend id differ from the product name
+    /// (`freya-gui` is shown as `freya`).
+    pub title: String,
     pub version: String,
     pub kind: PackKind,
     pub description: String,
@@ -1165,6 +1172,7 @@ impl Checker<'_> {
         let location = "backend";
         let mut backend = BackendDescriptor::new(info.name.clone());
         backend.license_notice = info.license_notice.clone();
+        backend.title = info.title.clone();
         backend.event_loop = raw.event_loop;
         backend.absolute_positioning = raw.absolute_positioning;
         for p in &raw.platforms {
@@ -1522,6 +1530,12 @@ impl Pack {
         };
 
         let info = PackInfo {
+            title: raw
+                .pack
+                .title
+                .map(|t| t.trim().to_owned())
+                .filter(|t| !t.is_empty())
+                .unwrap_or_else(|| raw.pack.name.clone()),
             name: raw.pack.name,
             version: raw.pack.version,
             kind: raw.pack.kind,

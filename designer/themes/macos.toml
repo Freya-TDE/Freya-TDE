@@ -451,3 +451,66 @@ header = 40
 height = 160
 min-width = 240
 padding-x = 0
+
+# --- freya (widgets/freya-gui; freyaui.dev, eigenständiges Projekt / independent project)
+[widgets."backend:freya-gui/RadioButton"]
+height = 26
+min-width = 40
+padding-x = 0
+
+[widgets."backend:freya-gui/Switch"]
+height = 26
+min-width = 48
+padding-x = 0
+
+[widgets."backend:freya-gui/Slider"]
+height = 26
+min-width = 140
+padding-x = 0
+
+[widgets."backend:freya-gui/ProgressBar"]
+height = 10
+min-width = 120
+padding-x = 0
+
+[widgets."backend:freya-gui/Select"]
+height = 34
+min-width = 120
+padding-x = 10
+
+[widgets."backend:freya-gui/ListBox"]
+height = 120
+min-width = 140
+padding-x = 8
+
+[widgets."backend:freya-gui/TextEdit"]
+height = 80
+min-width = 160
+padding-x = 8
+
+[widgets."backend:freya-gui/Separator"]
+height = 12
+min-width = 20
+padding-x = 0
+
+[widgets."backend:freya-gui/Card"]
+height = 80
+min-width = 120
+padding-x = 0
+header = 36
+
+[widgets."backend:freya-gui/Tabs"]
+height = 120
+min-width = 200
+padding-x = 0
+header = 40
+
+[widgets."backend:freya-gui/DataGrid"]
+height = 160
+min-width = 240
+padding-x = 0
+
+[widgets."backend:freya-gui/Link"]
+height = 22
+min-width = 60
+padding-x = 0

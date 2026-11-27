@@ -15,6 +15,7 @@ backend's limits is in [`widgets/README.md`](../../widgets/README.md).
 | `slint` | Slint 1.18 | GPLv3 / Royalty-free 2.0 / commercial | the form becomes a Slint component (`slint::slint!`) |
 | `flutter` | Flutter (Material 3) through flutter_rust_bridge 2.13 | BSD-3 / MIT | Rust as a library, a Flutter app in `flutter/` draws |
 | `webview` | the system web view through wry 0.57 + tao 0.37 | MIT OR Apache-2.0 | the form becomes an HTML page, the logic stays in Rust |
+| `freya-gui` (shown as "freya") | [freya](https://freyaui.dev) 0.5.4 (Skia) – an independent project, see below | MIT | reactive: state in `Rc<RefCell<…>>`, one `Message` per input, freya renders again |
 
 ## Choosing
 
@@ -23,6 +24,9 @@ The backend is chosen in the new-project wizard; switching later is not intended
 **Slint** is available under several licenses (GPLv3, Royalty-free 2.0 with attribution to Slint and not for
 embedded, or commercial). Freya TDE only passes Slint through: before creating the project, the wizard shows
 the license notice and you decide. For the Royalty-free condition the palette has `AboutSlint`.
+
+**freya** is an independent project (see below); here, too, the wizard shows a notice before creating the
+project, which you confirm.
 
 ## What all backends have in common
 
@@ -52,6 +56,20 @@ Each backend does what its toolkit can; where it cannot, it is listed in the "li
 - Form property `style`: **Native** (own CSS with system colours) or **Pico** (Pico CSS, MIT).
 - On Linux the program sets `WEBKIT_DISABLE_DMABUF_RENDERER=1`, otherwise the window stays empty with some
   drivers.
+
+## freya in particular
+
+> **freya** ([freyaui.dev](https://freyaui.dev), [github.com/marc2332/freya](https://github.com/marc2332/freya))
+> is an independent open-source project by Marc Espín (MIT). **It has nothing to do with Freya TDE** – despite
+> the similar name, Freya TDE is neither part of freya nor made, endorsed or supported by its authors. Freya
+> TDE only supports freya as one of its UI backends. Questions about freya itself belong to its own project.
+
+- Internally the backend is called `freya-gui` (folder `widgets/freya-gui`, backend id in the `.ptdr`); it is
+  shown as "freya", and so is its palette.
+- The generated project gets a `FREYA.md` with this notice and a short explanation of the code.
+- The AI knows freya through freya's own skill (MIT, embedded with its origin; shown in the AI window with the
+  origin "freya (freyaui.dev)").
+- The first build downloads freya's Skia binaries (network needed once).
 
 ## Backends of your own
 

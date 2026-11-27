@@ -11,6 +11,7 @@ Visuelle Widgets und Backend-Paletten, aufbauend auf `tdr-core` (der gemeinsame 
 | `slint` | fertig / done | Slint 1.18 (deklarativ, mit Lizenzhinweis); Kern-Widgets plus Palette „Slint“: RadioButton, Switch, SpinBox, Slider, ProgressIndicator, ComboBox, ListView, TextEdit, Separator, Image, AboutSlint, GroupBox, TabWidget, MainMenu |
 | `flutter` | fertig / done | Flutter (Material 3) mit flutter_rust_bridge 2.13, Logik in Rust; Kern-Widgets plus Palette „Flutter“: RadioButton, Switch, Slider, ProgressBar, ComboBox, ListBox, TextEdit, Separator, Card, Tabs, MainMenu, DataGrid |
 | `webview` | fertig / done | Natives Fenster mit System-WebView (wry 0.57 + tao 0.37), Formular als HTML/CSS, Logik in Rust; Stil Native oder Pico; Kern-Widgets plus Palette „WebView“: RadioButton, Switch, Slider, ProgressBar, ComboBox, ListBox, TextEdit, Separator, Frame, Tabs, MainMenu, DataGrid |
+| `freya-gui` | fertig / done | **freya** ([freyaui.dev](https://freyaui.dev), Marc Espín, MIT; eigenständiges Projekt, von Freya TDE nur unterstützt) 0.5.4, reaktiv, Skia; angezeigt als „freya“; Kern-Widgets plus Palette „freya“: RadioButton, Switch, Slider, ProgressBar, Select, ListBox, TextEdit, Separator, Card, Tabs, Link, MainMenu, DataGrid |
 
 Der Neu-Assistent (Datei → Neues Projekt …) bietet alle installierten Backends an, `gtk4` vorgewählt.
 *The new-project wizard offers all installed backends, `gtk4` preselected.*
@@ -231,6 +232,44 @@ Systemfarben, folgt Hell/Dunkel) oder *Pico* ([Pico CSS](https://picocss.com) 2.
 *Limits: first form only, menu shortcuts not bound, no background pictures or image widget, `Center`
 position not applied; tested on Linux.*
 
+## freya
+
+> **freya** ([freyaui.dev](https://freyaui.dev), [github.com/marc2332/freya](https://github.com/marc2332/freya),
+> Marc Espín, MIT) ist ein **eigenständiges Projekt und hat nichts mit Freya TDE zu tun** – trotz des ähnlichen
+> Namens. Freya TDE unterstützt freya nur als UI-Backend; der Neu-Assistent zeigt diesen Hinweis vor dem
+> Anlegen, das erzeugte Projekt bekommt ihn als `FREYA.md`.
+> *freya is an independent project and has nothing to do with Freya TDE, which only supports it.*
+
+Intern heißt das Backend `freya-gui` (Ordner, Backend-ID in der `.ptdr`, `TypeRef::backend("freya-gui", …)`),
+angezeigt wird es als „freya“ (`[pack] title`). Reaktiv wie React: der Zustand des Formulars liegt in
+`Rc<RefCell<…>>`, Widgets sind wie bei egui und iced Felder `crate::app::Control<T>`. Jede Eingabe wird eine
+Nachricht (`main_form::Message`), `update` (`crate::app::FreyaUpdate`) übernimmt sie und ruft den Handler, danach
+zeichnet die Wurzel-Komponente `crate::app::FreyaRoot` neu (Zähler in `use_state`). Die Oberfläche baut das
+Modul `freya_ui` je Formular mit freyas Elementen (`rect`, `label`) und Komponenten (`Button`, `Input`, `Switch`,
+`Slider`, `Select`, `Table`, `ScrollView`, `Menu` …). freyas Prelude bleibt in diesem Modul – im Modul des Nutzers
+gäbe es sonst Namenskonflikte (freyas `Table`).
+*Reactive: state in `Rc<RefCell<…>>`, `Control<T>` fields, one `Message` per input; the view lives in the
+module `freya_ui` with freya's elements and components.*
+
+- Layouts: senkrecht/waagerecht als `rect` mit `Content::flex()` (Dehnen = `Size::flex`), Raster als Zeilen aus
+  je `columns` gleich breiten Zellen, Stapel (erstes Kind), absolut mit `Position::new_absolute()`.
+- `MainMenu`: Menüleiste aus Knöpfen, darunter freyas `Menu` (Pfade, `-`, tiefere Ebenen als „Export › PDF“);
+  Kürzel wie `Ctrl+O` sind gebunden (unter macOS die Befehlstaste).
+- `TextEdit` ist freyas `Input` mit `multiline`; `Link` öffnet die Adresse mit `Platform::open_url`.
+- Daten aus dem Hintergrund (Datenbindung, WebSocket, HTTP) wecken das Fenster über `futures-channel` und
+  freyas `spawn`.
+- Gezeigt wird das erste Formular; `on_close` entscheidet über das Schließen (`CloseDecision`).
+- Der erste Build lädt die Skia-Binärdateien von freya herunter (einmal Netz nötig). Unter Linux braucht es
+  keine weiteren Systempakete.
+- Nicht unterstützt: Hintergrundbilder von Containern (nur das Formular), `position = Center` (das System
+  platziert), Mitte als Anker (ohne Anker links/rechts bleibt das Widget an seiner linken Kante).
+- Getestet unter Linux; Windows und macOS sind vorgesehen, aber ungetestet.
+- Test: `xvfb-run -a cargo test -p tdr-core --test backend_freya_gui` (braucht `xdotool`) erzeugt ein Projekt
+  mit allen Widgets, baut, startet, klickt OK, drückt Strg+O (Menü) und prüft Datenbindung, DataGrid und Bilder.
+
+*Limits: first form only, no container background pictures, `Center` position not applied, no centred
+anchors; tested on Linux.*
+
 ## Aussehen und Fenster / appearance and window
 
 Jedes Widget hat `background`, `foreground` (Farbe; Alpha 0 = Standard des Backends), `font_size`
@@ -242,15 +281,15 @@ Vordergrund des Formulars erben die Widgets, im Designer wie im erzeugten Progra
 *Every widget has colours and font settings; the form adds font family, background picture and window
 settings. Alpha 0 means "backend default".*
 
-| | GTK 4 | egui | iced | Slint | Flutter | WebView |
-|---|---|---|---|---|---|---|
-| Farben, Schriftgröße | CSS je Widget | ja | ja | Text: ja; Standard-Widgets nur Hintergrundfläche | ja (Knöpfe über `ButtonStyle`, sonst Text und Hintergrund) | ja (CSS je Element) |
-| fett / kursiv | ja | nur kursiv | ja | ja (Text, Fenster-Standard) | ja (Texte) | ja |
-| Schriftfamilie | ja | nein | ja | ja | ja | ja |
-| Hintergrundbild | ja (CSS) | ja | ja | ja (Formular) | nur Formular | nein |
-| Position, Höchstgröße | nein (GTK 4 kann es nicht) | ja | ja | ja | nein (nativer Runner) | ja (`Manual`; `Center` nicht) |
-| Mindestgröße, Zustand | ja | ja | ja | ja | nein (nativer Runner) | ja |
-| Hell/Dunkel | ja | ja | ja | ja | ja | ja |
+| | GTK 4 | egui | iced | Slint | Flutter | WebView | freya |
+|---|---|---|---|---|---|---|---|
+| Farben, Schriftgröße | CSS je Widget | ja | ja | Text: ja; Standard-Widgets nur Hintergrundfläche | ja (Knöpfe über `ButtonStyle`, sonst Text und Hintergrund) | ja (CSS je Element) | ja (Knöpfe über das Button-Theme, sonst Hülle mit Hintergrund und Textfarbe) |
+| fett / kursiv | ja | nur kursiv | ja | ja (Text, Fenster-Standard) | ja (Texte) | ja | ja (Texte) |
+| Schriftfamilie | ja | nein | ja | ja | ja | ja | ja |
+| Hintergrundbild | ja (CSS) | ja | ja | ja (Formular) | nur Formular | nein | nur Formular |
+| Position, Höchstgröße | nein (GTK 4 kann es nicht) | ja | ja | ja | nein (nativer Runner) | ja (`Manual`; `Center` nicht) | ja (`Manual`; `Center` nicht) |
+| Mindestgröße, Zustand | ja | ja | ja | ja | nein (nativer Runner) | ja | ja |
+| Hell/Dunkel | ja | ja | ja | ja | ja | ja | ja (freyas Themen; System = Vorgabe beim Start) |
 
 Grenzen: iced wendet `enabled` nicht auf Container an; Slints Standard-Widgets haben keine Farb-Properties;
 bei Flutter bestimmt der native Runner das Fenster.
@@ -264,9 +303,9 @@ bei Delphi): `Placement::Layout::size`, je Achse, 0 = natürliche Größe; im Te
 `placement.height`. Fill und Dehnen können das Widget weiter vergrößern.
 *Resizing a widget in a layout sets a requested size per axis (0 = natural); fill and stretch may still enlarge it.*
 
-| GTK 4 | egui | iced | Slint | Flutter | WebView |
-|---|---|---|---|---|---|
-| `set_size_request` (Mindestgröße: kleiner als das Minimum des Widgets geht nicht) | `add_sized` (fehlende Achse: Breite verfügbar, Höhe Standard) | fester `container` (fehlende Achse: natürlich) | `width`/`height` | `SizedBox` (im Raster linksbündig) | CSS `width`/`height` (auf einer Fill-Achse `min-width`/`min-height`) |
+| GTK 4 | egui | iced | Slint | Flutter | WebView | freya |
+|---|---|---|---|---|---|---|
+| `set_size_request` (Mindestgröße: kleiner als das Minimum des Widgets geht nicht) | `add_sized` (fehlende Achse: Breite verfügbar, Höhe Standard) | fester `container` (fehlende Achse: natürlich) | `width`/`height` | `SizedBox` (im Raster linksbündig) | CSS `width`/`height` (auf einer Fill-Achse `min-width`/`min-height`) | `rect` mit `width`/`height` in Pixeln |
 
 ## Größe in Prozent / size in percent
 
@@ -278,11 +317,11 @@ Anfasser, bleibt eine Achse in Prozent in Prozent. Im Template `placement.width_
 *Per axis a share of the parent's content area instead of pixels; it goes before the requested size, fill acts
 like start and stretch does not apply on that axis.*
 
-| | GTK 4 | egui | iced | Slint | Flutter | WebView |
-|---|---|---|---|---|---|---|
-| quer zum Layout (Breite in senkrechten, Höhe in waagerechten Layouts) | Hülle `freya_percent::Percent` (natürliche Größe = Anteil am Elternelement, Minimum des Widgets bleibt) | `add_sized` mit Anteil an der verfügbaren Fläche zu Beginn des Containers | `FillPortion` neben einem Leerraum | Dehnung neben einem Leerraum (bevorzugte und Mindestgröße 0; eine feste Breite gäbe eine Bindungsschleife) | `FractionallySizedBox` | CSS `%` |
-| in Layout-Richtung | wie quer | wie quer | Anteil am **freien** Platz (`FillPortion`, Rest als Leerraum) | Anteil am **freien** Platz (Dehnung, Rest als Leerraum) | Höhe: nicht (die Spalte scrollt, ihre Höhe ist unbegrenzt); Breite in Zeilen: Anteil am freien Platz (`Expanded`) | CSS `%` (Höhe, solange die des Elternelements feststeht – das Formular füllt das Fenster) |
-| im Raster | wie quer | wie quer | nicht (Pixel bzw. natürlich) | nicht | nicht | CSS `%` |
+| | GTK 4 | egui | iced | Slint | Flutter | WebView | freya |
+|---|---|---|---|---|---|---|---|
+| quer zum Layout (Breite in senkrechten, Höhe in waagerechten Layouts) | Hülle `freya_percent::Percent` (natürliche Größe = Anteil am Elternelement, Minimum des Widgets bleibt) | `add_sized` mit Anteil an der verfügbaren Fläche zu Beginn des Containers | `FillPortion` neben einem Leerraum | Dehnung neben einem Leerraum (bevorzugte und Mindestgröße 0; eine feste Breite gäbe eine Bindungsschleife) | `FractionallySizedBox` | CSS `%` | `Size::percent` |
+| in Layout-Richtung | wie quer | wie quer | Anteil am **freien** Platz (`FillPortion`, Rest als Leerraum) | Anteil am **freien** Platz (Dehnung, Rest als Leerraum) | Höhe: nicht (die Spalte scrollt, ihre Höhe ist unbegrenzt); Breite in Zeilen: Anteil am freien Platz (`Expanded`) | CSS `%` (Höhe, solange die des Elternelements feststeht – das Formular füllt das Fenster) | `Size::percent` (Anteil am Elternelement, nicht am freien Platz) |
+| im Raster | wie quer | wie quer | nicht (Pixel bzw. natürlich) | nicht | nicht | CSS `%` | nicht |
 
 GTK passt die Größe einen Durchlauf nach einer Größenänderung des Elternelements an (gemessen wird mit
 dessen letzter Größe).
@@ -302,9 +341,9 @@ behalten seine Kinder ihre Lage; zurück in ein anderes Layout kommen sie wieder
 *Absolutely placed widgets keep their distance to the anchored edges of their container (like Delphi's
 `Anchors`); resizing the form or container in the designer moves anchored children with it.*
 
-| GTK 4 | egui | iced | Slint | Flutter | WebView |
-|---|---|---|---|---|---|
-| `Overlay` mit `get-child-position` | `crate::app::anchored` und `ui.put` | Stapel aus Ebenen mit Ausrichtung und Innenabstand | Bindungen an `parent.width`/`parent.height` | `LayoutBuilder` und `Positioned` (unten nur bei begrenzter Höhe; im scrollenden Formular nicht) | CSS `position: absolute` mit `left`/`right`/`top`/`bottom` (mittig über `calc(50% …)`) |
+| GTK 4 | egui | iced | Slint | Flutter | WebView | freya |
+|---|---|---|---|---|---|---|
+| `Overlay` mit `get-child-position` | `crate::app::anchored` und `ui.put` | Stapel aus Ebenen mit Ausrichtung und Innenabstand | Bindungen an `parent.width`/`parent.height` | `LayoutBuilder` und `Positioned` (unten nur bei begrenzter Höhe; im scrollenden Formular nicht) | CSS `position: absolute` mit `left`/`right`/`top`/`bottom` (mittig über `calc(50% …)`) | `Position::new_absolute()` mit `left`/`right`/`top`/`bottom`; links und rechts: Breite per `Size::func_data`; mittig nicht (bleibt links) |
 
 Die Editor-Oberfläche selbst (RUF/RNCL) hat Anker ebenfalls: `Component::set_anchors` (siehe RUF-Doku).
 *The editor UI (RUF/RNCL) has anchors as well.*
@@ -313,7 +352,7 @@ Die Editor-Oberfläche selbst (RUF/RNCL) hat Anker ebenfalls: `Component::set_an
 
 Die Kern-Widgets `ImageBox` (ein Bild, `file`, `on_click`) und `ImageScrollBox` (Bilderliste `images` oder
 Datenquelle mit dem Pfad in `display_field`, `orientation` Horizontal/Vertical/Grid, `thumb_size`, `spacing`,
-`on_select(index, path)`) gibt es in allen sechs Backends. Beide haben `fit` (Contain, Cover, Stretch, Center),
+`on_select(index, path)`) gibt es in allen sieben Backends. Beide haben `fit` (Contain, Cover, Stretch, Center),
 `opacity` (0–1) und `gamma` (0,1–5; > 1 hellt auf). Gamma und Transparenz rechnet der Kern einmal in
 `app.gen.rs` ein (`freya_image`, Crate `image`), deshalb sehen sie überall gleich aus. Formate: PNG, JPEG,
 GIF (erstes Bild), WebP, BMP – **kein SVG** (dafür das Backend-Widget `Image` von GTK 4 oder Slint). Pfade
@@ -322,12 +361,12 @@ gemeldet. Ohne Wunschgröße ist die ImageBox 96 px hoch, die ImageScrollBox 240
 Ein anderes Bild zur Laufzeit: `self.<name>.value.set_file(…)` (egui, iced, Flutter, WebView), bei GTK 4
 `self.<name>.set_filename(…)` (ohne Gamma/Transparenz), bei Slint `set_<name>_source(…)`; die Galerie füllt
 die Datenbindung neu (`<name>_reload()`).
-*Core widgets in all six backends; gamma and opacity are applied once by the core (`freya_image`), no SVG;
+*Core widgets in all seven backends; gamma and opacity are applied once by the core (`freya_image`), no SVG;
 paths are relative to the working directory.*
 
-| GTK 4 | egui | iced | Slint | Flutter | WebView |
-|---|---|---|---|---|---|
-| `Picture` mit `MemoryTexture` (`ContentFit`, braucht GTK ≥ 4.12); Galerie `FlowBox` in `ScrolledWindow`, Auswahl über `child-activated` | Textur im Zustand (`crate::app::Picture`/`Gallery`), Galerie in einer `ScrollArea` | `image::Handle::from_rgba`, Galerie `scrollable` mit `row`/`column`/`row().wrap()` | `slint::Image::from_rgba8`, Galerie `ScrollView` mit `for`-Wiederholung | Rust legt ein aufbereitetes PNG im Temp-Ordner ab (`freya-pictures`), Dart zeigt es mit `Image.file`; Pfade relativ zum Projekt (das Programm läuft in `flutter/`) | eigenes Schema `freya://` (Windows: `http://freya.localhost/`), CSS `object-fit`; Galerie per Flexbox |
+| GTK 4 | egui | iced | Slint | Flutter | WebView | freya |
+|---|---|---|---|---|---|---|
+| `Picture` mit `MemoryTexture` (`ContentFit`, braucht GTK ≥ 4.12); Galerie `FlowBox` in `ScrolledWindow`, Auswahl über `child-activated` | Textur im Zustand (`crate::app::Picture`/`Gallery`), Galerie in einer `ScrollArea` | `image::Handle::from_rgba`, Galerie `scrollable` mit `row`/`column`/`row().wrap()` | `slint::Image::from_rgba8`, Galerie `ScrollView` mit `for`-Wiederholung | Rust legt ein aufbereitetes PNG im Temp-Ordner ab (`freya-pictures`), Dart zeigt es mit `Image.file`; Pfade relativ zum Projekt (das Programm läuft in `flutter/`) | eigenes Schema `freya://` (Windows: `http://freya.localhost/`), CSS `object-fit`; Galerie per Flexbox | freya lädt ein aufbereitetes PNG aus dem Speicher (`ImageViewer`, `AspectRatio`); Galerie `ScrollView`, Raster mit `Content::wrap()` |
 
 Grenzen: `Center` zeigt das Bild in Originalgröße und schneidet ab (GTK: `ScaleDown`, verkleinert also große
 Bilder). WebView behält aufbereitete Bilder bis zum Programmende im Speicher, Flutter im Temp-Ordner.
@@ -378,6 +417,11 @@ der das erzeugte Projekt abhängt). Die IDE zeigt ihn vor dem Anlegen eines Proj
 den Entwickler entscheiden; per API: `Ide::backend_notice`, `BackendDescriptor::license_notice`.
 *`license-notice` is shown before a project uses the backend; the developer decides.*
 
+Anzeigename: `title = "…"` im Abschnitt `[pack]`, wenn der Name für den Entwickler anders lauten soll als die ID
+(`freya-gui` erscheint als „freya“); ohne `title` gilt `name`. Per API: `PackInfo::title`,
+`BackendDescriptor::display_name`.
+*`title` is the name shown to the user (wizard); default: `name`.*
+
 In Templates schreibt der Filter `rust_str` einen Text als Rust-Stringliteral (`{{ item | rust_str }}`),
 `dart_str` als Dart-Stringliteral (`'…'`, `$` maskiert).
 
@@ -414,9 +458,9 @@ zeichnen, beim Ende einer Zellbearbeitung `<name>_edit_cell`, bei Enter `<name>_
 Zeilenwechsel `<name>_row_changed`; `[component.table] select` (Anweisungen mit `index: Option<usize>`) hält die
 Auswahl, wenn die Zeilen neu gezeigt werden. Die Templates sehen die Eigenschaften des Widgets als `props`.
 
-| GTK 4 | egui | iced | Slint | Flutter | WebView |
-|---|---|---|---|---|---|
-| `EditableLabel` je Zelle (Doppelklick/Enter bearbeitet), Aktionen `freya.edit`/`freya.cancel` am Grid | Doppelklick: Textfeld in der Zelle | Klick auf eine Zelle der gewählten Zeile: `text_input`; **Esc nicht gebunden** (`<name>_cancel()` per Knopf) | `StandardTableView` kann nicht bearbeiten: darunter ein Feld je Spalte für die gewählte Zeile (Esc über `FocusScope`) | gewählte Zeile als `TextField`s in der `DataTable` | Doppelklick: `<input>` in der Zelle |
+| GTK 4 | egui | iced | Slint | Flutter | WebView | freya |
+|---|---|---|---|---|---|---|
+| `EditableLabel` je Zelle (Doppelklick/Enter bearbeitet), Aktionen `freya.edit`/`freya.cancel` am Grid | Doppelklick: Textfeld in der Zelle | Klick auf eine Zelle der gewählten Zeile: `text_input`; **Esc nicht gebunden** (`<name>_cancel()` per Knopf) | `StandardTableView` kann nicht bearbeiten: darunter ein Feld je Spalte für die gewählte Zeile (Esc über `FocusScope`) | gewählte Zeile als `TextField`s in der `DataTable` | Doppelklick: `<input>` in der Zelle | Klick auf eine Zelle der gewählten Zeile: `Input`; **Esc nicht gebunden** (`<name>_cancel()` per Knopf) |
 
 Test gegen echte Datenbanken: `cargo test -p tdr-core --test write_back` (egui-Projekt ohne Fenster: ändern, neu,
 löschen, dann die Tabelle lesen); SQLite immer, PostgreSQL/MySQL mit `FREYA_TDE_TEST_POSTGRES`/`FREYA_TDE_TEST_MYSQL`.

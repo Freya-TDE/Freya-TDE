@@ -1,0 +1,12 @@
+{#- freya event loop: the first form (the main form) is shown in a window;
+    its state lives in `Rc<RefCell<…>>`, shared with the window. -#}
+{%- set ui = forms | rejectattr("data_module") | list %}
+{%- if ui %}
+{%- set main = ui[0] %}
+let form = std::rc::Rc::new(std::cell::RefCell::new({{ app }}.{{ main.name }}));
+form.borrow_mut().freya_created();
+freya::prelude::launch(
+    freya::prelude::LaunchConfig::new().with_window({{ main.name }}::{{ main.struct }}::freya_window(form)),
+);
+{%- endif %}
+Ok(())

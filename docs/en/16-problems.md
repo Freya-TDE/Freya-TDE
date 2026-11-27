@@ -53,6 +53,7 @@ Each backend does what its toolkit can. The most important limits (complete in
 | Slint | standard widgets without colour properties; the table (`StandardTableView`) cannot edit – an edit row with one field per column appears below it |
 | Flutter | no debugger; the window first appears at the runner's size before `window_manager` changes it; the first `flutter build` compiles the Rust library a second time (cargokit); `window_manager` 0.6/0.7 need Flutter ≥ 3.47/3.50 and a new API, hence 0.5 |
 | WebView | the first form is shown; no background pictures; menu shortcuts are not bound |
+| freya | the first form is shown; background pictures only on the form; `position = Center` has no effect; no "centred" anchor; **Esc** is not bound in the data grid; the first build downloads Skia |
 
 ## Shipping
 

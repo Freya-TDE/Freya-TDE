@@ -53,6 +53,7 @@ Jedes Backend setzt um, was sein Toolkit kann. Die wichtigsten Grenzen (vollstä
 | Slint | Standard-Widgets ohne Farbeigenschaften; die Tabelle (`StandardTableView`) kann nicht bearbeiten – darunter erscheint eine Bearbeitungszeile mit einem Feld je Spalte |
 | Flutter | kein Debugger; das Fenster erscheint kurz in der Größe des Runners, bevor `window_manager` umstellt; der erste `flutter build` baut die Rust-Bibliothek ein zweites Mal (cargokit); `window_manager` 0.6/0.7 brauchen Flutter ≥ 3.47/3.50 und eine neue API, deshalb 0.5 |
 | WebView | gezeigt wird das erste Formular; keine Hintergrundbilder; Menükürzel werden nicht gebunden |
+| freya | gezeigt wird das erste Formular; Hintergrundbilder nur am Formular; `position = Center` wirkt nicht; kein Anker „mittig“; im DataGrid ist **Esc** nicht gebunden; der erste Build lädt Skia herunter |
 
 ## Ausliefern
 

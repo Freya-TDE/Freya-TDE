@@ -82,6 +82,9 @@ pub struct BackendFile {
 pub struct BackendDescriptor {
     /// Backend id, the pack name (e.g. `"egui"`).
     pub name: String,
+    /// Name shown to the user (the pack's `title`, default: `name`).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub title: String,
     #[serde(default)]
     pub event_loop: EventLoop,
     /// May widgets be placed at absolute positions?
@@ -127,9 +130,20 @@ pub struct BackendDescriptor {
 }
 
 impl BackendDescriptor {
+    /// The name to show: `title`, else `name`.
+    pub fn display_name(&self) -> &str {
+        if self.title.is_empty() {
+            &self.name
+        } else {
+            &self.title
+        }
+    }
+
     pub fn new(name: impl Into<String>) -> Self {
+        let name = name.into();
         Self {
-            name: name.into(),
+            title: name.clone(),
+            name,
             event_loop: EventLoop::default(),
             absolute_positioning: false,
             platforms: BTreeSet::new(),

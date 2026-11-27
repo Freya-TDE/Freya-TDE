@@ -11,7 +11,7 @@ findet sich schneller zurecht.
 │  core/       Komponentenmodell, Abhängigkeitsgraph, Pack-Format, Codegen (tdr-core)              │
 │  designer/   Designer-Logik ohne Oberfläche (tdr-designer)                                       │
 │  components/ Komponenten-Packs (Tokio, SQLx, Redis, Axum, WebSocket, HTTP)                       │
-│  widgets/    UI-Backends für Zielprojekte (GTK 4, egui, iced, Slint, Flutter, WebView)           │
+│  widgets/    UI-Backends für Zielprojekte (GTK 4, egui, iced, Slint, Flutter, WebView, freya)    │
 │  db/         Datenbank-Helfer freya-tde-db (eigener Prozess)                                     │
 │                                                                                                  │
 │  RUF/  ──────► Submodul: Freya-TDE/RUF   (UI-Framework der IDE)                         │
@@ -30,7 +30,8 @@ Wichtig ist die Trennung in **zwei Welten**:
 
 1. **Die Oberfläche der IDE** selbst ist mit RUF (GTK 4) gebaut – auf Linux, Windows und macOS gleich.
 2. **Die Programme, die man mit Freya TDE baut** (Zielprojekte), dürfen jedes unterstützte UI-Toolkit nutzen:
-   GTK 4, egui, iced, Slint, Flutter oder eine WebView. Diese Toolkits werden nicht in die IDE einkompiliert.
+   GTK 4, egui, iced, Slint, Flutter, eine WebView oder freya (ein eigenständiges Projekt, das Freya TDE nur
+   unterstützt, siehe [Kapitel 6](06-backends.md#freya-im-besonderen)). Diese Toolkits werden nicht in die IDE einkompiliert.
    Vereinheitlicht ist nur die *Beschreibung* der Formulare; je Toolkit übersetzt ein Backend-Pack sie in Code.
 
 Der Designer zeigt die Formulare deshalb nicht „live“, sondern zeichnet sie selbst nach den Maßen des

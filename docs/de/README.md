@@ -20,7 +20,7 @@ bekannte Probleme und Grenzen.
 3. [Erste Schritte](03-erste-schritte.md) – vom Neu-Assistenten zum laufenden Programm
 4. [Die Fenster](04-fenster.md) – Hauptfenster, Designer, Objektinspektor, Code, Meldungen …
 5. [Formulare und Komponenten](05-komponenten.md) – das Modell hinter dem Designer
-6. [UI-Backends](06-backends.md) – GTK 4, egui, iced, Slint, Flutter, WebView
+6. [UI-Backends](06-backends.md) – GTK 4, egui, iced, Slint, Flutter, WebView, freya
 7. [Komponenten-Packs](07-packs.md) – Tokio, SQLx, Redis, Axum, WebSocket, HTTP
 8. [Datenbanken und Datenbindung](08-daten.md) – Listen, Tabellen, Bearbeiten, Schema-Browser
 9. [Erzeugter und eigener Code](09-code.md) – welche Datei wem gehört, Code-Vervollständigung, Snippets

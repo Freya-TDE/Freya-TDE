@@ -4,7 +4,7 @@
 
 | Term | Meaning |
 |---|---|
-| **Backend (UI backend)** | pack that translates forms for a UI toolkit (GTK 4, egui, iced, Slint, Flutter, WebView) |
+| **Backend (UI backend)** | pack that translates forms for a UI toolkit (GTK 4, egui, iced, Slint, Flutter, WebView, freya) |
 | **Component** | building block with name, type, properties and events |
 | **Widget** | component with a visual extension (placement, children) |
 | **Form** | a window of the target program; file `.ftdr` next to the `.rs` |

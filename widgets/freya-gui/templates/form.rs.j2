@@ -1,0 +1,920 @@
+{#- freya: the form as a reactive freya window (appended to <form>.gen.rs).
+    freya (https://freyaui.dev) is an independent project by Marc Espín; Freya TDE
+    only supports it.
+    Every input is a `Message`; `update` changes the state and calls the
+    handlers in <form>.rs; the view is built in the module `freya_ui` (freya's
+    prelude stays there), one method `freya_view_<name>` per container. -#}
+{%- set p_ = "backend:freya-gui/" %}
+{%- set containers = ["core/Form", "core/Container", p_ ~ "Card", p_ ~ "Tabs"] %}
+{#- Widgets that keep their natural width even with align Fill. -#}
+{%- set natural = ["core/Label", "core/CheckBox", p_ ~ "RadioButton", p_ ~ "Switch", p_ ~ "Link"] %}
+{#- Wie die Theme-Tabelle des Designers (designer/themes/linux.toml): Rand 12, Abstand 8. -#}
+{%- set default_layout = {"kind": "vertical", "spacing": 8, "padding": {"left": 12, "top": 12, "right": 12, "bottom": 12}} %}
+{%- set menus = components | selectattr("type", "eq", p_ ~ "MainMenu") | selectattr("field") | list %}
+
+{#- A colour property as freya `Color`. -#}
+{%- macro color(v) -%}
+crate::app::color({{ v.r }}, {{ v.g }}, {{ v.b }}, {{ v.a }})
+{%- endmacro %}
+
+{#- Size and font of a text: own setting, else the form's (inherited). -#}
+{%- macro text_style(c) -%}
+{%- if c.props.font_size > 0 %}.font_size({{ c.props.font_size }} as f32){% endif -%}
+{%- if c.props.bold %}.font_weight(FontWeight::BOLD){% endif -%}
+{%- if c.props.italic %}.font_slant(FontSlant::Italic){% endif -%}
+{%- endmacro %}
+
+{%- macro padding(p) -%}
+Gaps::new({{ p.top }} as f32, {{ p.right }} as f32, {{ p.bottom }} as f32, {{ p.left }} as f32)
+{%- endmacro %}
+
+{#- A clickable row with a box (check box, radio button) and its caption. -#}
+{%- macro boxed(c, inner, message) -%}
+rect()
+    .horizontal()
+    .spacing(6.0)
+    .cross_align(Alignment::Center)
+    .maybe(self.{{ c.name }}.enabled, |el| el.on_press(s.on::<Event<PressEventData>>({{ message }})))
+    .maybe(!self.{{ c.name }}.enabled, |el| el.opacity(0.5))
+    .child({{ inner }})
+    .child(label().text(self.{{ c.name }}.caption.clone()){{ text_style(c) }})
+{%- endmacro %}
+
+{#- The widget `c` as an expression that converts into an Element. -#}
+{%- macro widget(c, fill) -%}
+{%- set t = c.type -%}
+{%- if t == "core/Label" -%}
+label().text(self.{{ c.name }}.value.clone()){{ text_style(c) }}{% if fill %}.width(Size::fill()){% endif %}
+{%- elif t == "core/Button" -%}
+Button::new()
+    .enabled(self.{{ c.name }}.enabled)
+    {%- if fill %}
+    .width(Size::fill())
+    {%- endif %}
+    {%- if c.props.background.a > 0 %}
+    .background({{ color(c.props.background) }})
+    .hover_background({{ color(c.props.background) }})
+    {%- endif %}
+    {%- if c.props.foreground.a > 0 %}
+    .color({{ color(c.props.foreground) }})
+    {%- endif %}
+    .on_press(s.on::<Event<PressEventData>>(Message::{{ c.name }}_click))
+    .child(label().text(self.{{ c.name }}.caption.clone()){{ text_style(c) }})
+{%- elif t == "core/Edit" -%}
+Input::new(WritableSetter::new(self.{{ c.name }}.value.clone(), s.to(Message::{{ c.name }}_input)))
+    .placeholder({{ c.rust.placeholder }})
+    .enabled(self.{{ c.name }}.enabled{% if c.props.read_only %} && false{% endif %})
+    {%- if c.props.password %}
+    .mode(InputMode::new_password())
+    {%- endif %}
+    .on_submit(s.on::<String>(Message::{{ c.name }}_submit))
+    {%- if fill %}
+    .width(Size::fill())
+    {%- endif %}
+{%- elif t == "core/CheckBox" -%}
+{{ boxed(c, "Checkbox::new().selected(self." ~ c.name ~ ".value)", "Message::" ~ c.name ~ "_toggle(!self." ~ c.name ~ ".value)") }}
+{%- elif t == p_ ~ "RadioButton" -%}
+{{ boxed(c, "RadioItem::new().selected(self." ~ c.name ~ ".value)", "Message::" ~ c.name ~ "_select") }}
+{%- elif t == p_ ~ "Switch" -%}
+rect()
+    .horizontal()
+    .spacing(6.0)
+    .cross_align(Alignment::Center)
+    .child(Switch::new(WritableSetter::new(self.{{ c.name }}.value, s.to(Message::{{ c.name }}_toggle))).enabled(self.{{ c.name }}.enabled))
+    .maybe(!self.{{ c.name }}.caption.is_empty(), |el| el.child(label().text(self.{{ c.name }}.caption.clone()){{ text_style(c) }}))
+{%- elif t == p_ ~ "Slider" -%}
+{%- set span = "(" ~ c.rust.maximum ~ " - " ~ c.rust.minimum ~ ")" %}
+rect()
+    .horizontal()
+    .spacing(8.0)
+    .cross_align(Alignment::Center)
+    .width(Size::fill())
+    .content(Content::flex())
+    .child(
+        Slider::new(s.to(|percent: f64| Message::{{ c.name }}_change({{ c.rust.minimum }} + percent / 100.0 * {{ span }})))
+            .value(if {{ span }} > 0.0 { (self.{{ c.name }}.value - {{ c.rust.minimum }}) / {{ span }} * 100.0 } else { 0.0 })
+            .size(Size::flex(1.0))
+            .enabled(self.{{ c.name }}.enabled),
+    )
+    {%- if c.props.show_value %}
+    .child(label().text(format!("{}", self.{{ c.name }}.value)))
+    {%- endif %}
+{%- elif t == p_ ~ "ProgressBar" -%}
+rect()
+    .width(Size::fill())
+    .spacing(2.0)
+    .maybe(!self.{{ c.name }}.caption.is_empty(), |el| el.child(label().text(self.{{ c.name }}.caption.clone()).font_size(12.0)))
+    .child(ProgressBar::new(self.{{ c.name }}.value * 100.0).width(Size::fill()).show_progress(false))
+{%- elif t == p_ ~ "Select" -%}
+Select::new()
+    .selected_item(self.{{ c.name }}.items.get(self.{{ c.name }}.value).cloned().unwrap_or_default())
+    .children(
+        self.{{ c.name }}
+            .items
+            .iter()
+            .enumerate()
+            .filter(|_| self.{{ c.name }}.enabled)
+            .map(|(index, item)| {
+                MenuItem::new()
+                    .selected(self.{{ c.name }}.value == index)
+                    .on_press(s.on::<Event<PressEventData>>(Message::{{ c.name }}_select(index)))
+                    .child(item.clone())
+                    .into_element()
+            }),
+    )
+{%- elif t == p_ ~ "ListBox" -%}
+rect()
+    .width(Size::fill())
+    .height(Size::px(120.0))
+    .padding(Gaps::new_all(2.0))
+    .corner_radius(6.0)
+    .border(Border::new().fill(crate::app::color(0x80, 0x80, 0x80, 110)).width(1.0))
+    .child(ScrollView::new().width(Size::fill()).height(Size::fill()).children(self.{{ c.name }}.items.iter().enumerate().map(|(index, item)| {
+        rect()
+            .width(Size::fill())
+            .padding(Gaps::new(4.0, 6.0, 4.0, 6.0))
+            .maybe(self.{{ c.name }}.value == index as i32, |el| el.background(crate::app::color(0x3b, 0x82, 0xf6, 90)))
+            .maybe(self.{{ c.name }}.enabled, |el| el.on_press(s.on::<Event<PressEventData>>(Message::{{ c.name }}_select(index))))
+            .child(item.clone())
+            .into_element()
+    })))
+{%- elif t == p_ ~ "TextEdit" -%}
+Input::new(WritableSetter::new(self.{{ c.name }}.value.clone(), s.to(Message::{{ c.name }}_input)))
+    .multiline(true)
+    .enabled(self.{{ c.name }}.enabled{% if c.props.read_only %} && false{% endif %})
+    .width(Size::fill())
+    .height(Size::px({{ c.props.rows * 22 + 12 }} as f32))
+{%- elif t == p_ ~ "Separator" -%}
+{%- if c.props.vertical -%}
+rect().width(Size::px(1.0)).height(Size::fill()).background(crate::app::color(0x80, 0x80, 0x80, 110))
+{%- else -%}
+rect().height(Size::px(1.0)).width(Size::fill()).background(crate::app::color(0x80, 0x80, 0x80, 110))
+{%- endif -%}
+{%- elif t == p_ ~ "Link" -%}
+label()
+    .text(if self.{{ c.name }}.caption.is_empty() { self.{{ c.name }}.value.clone() } else { self.{{ c.name }}.caption.clone() })
+    .color(crate::app::color(0x3b, 0x82, 0xf6, 255)){{ text_style(c) }}
+    .maybe(self.{{ c.name }}.enabled, |el| {
+        let url = self.{{ c.name }}.value.clone();
+        el.on_press(move |_| Platform::get().open_url(url.clone()))
+    })
+{%- elif t == "core/ImageBox" -%}
+{%- set p = c.placement if c.placement and c.placement.kind == "layout" else none %}
+rect()
+    .width({% if fill or (p and (p.width > 0 or p.width_percent > 0)) %}Size::fill(){% else %}Size::px(96.0){% endif %})
+    .height({% if p and (p.height > 0 or p.height_percent > 0) %}Size::fill(){% else %}Size::px(96.0){% endif %})
+    .maybe(self.{{ c.name }}.enabled, |el| el.on_press(s.on::<Event<PressEventData>>(Message::{{ c.name }}_click)))
+    .child(crate::app::picture_view(self.{{ c.name }}.value.source.as_ref(), &self.{{ c.name }}.value.fit))
+{%- elif t == "core/ImageScrollBox" -%}
+{%- set p = c.placement if c.placement and c.placement.kind == "layout" else none %}
+{
+    let gallery = &self.{{ c.name }}.value;
+    let (w, h) = gallery.thumb;
+    let thumbs = gallery.sources.iter().enumerate().map(|(index, source)| {
+        rect()
+            .width(Size::px(w))
+            .height(Size::px(h))
+            .padding(Gaps::new_all(2.0))
+            .maybe(gallery.selected == Some(index), |el| el.border(Border::new().fill(crate::app::color(0x3b, 0x82, 0xf6, 255)).width(2.0)))
+            .maybe(self.{{ c.name }}.enabled, |el| el.on_press(s.on::<Event<PressEventData>>(Message::{{ c.name }}_pick(index))))
+            .child(crate::app::picture_view(source.as_ref(), &gallery.fit))
+            .into_element()
+    });
+    let content: Element = match gallery.orientation.as_str() {
+        "Horizontal" => ScrollView::new()
+            .direction(Direction::Horizontal)
+            .spacing(gallery.spacing)
+            .width(Size::fill())
+            .height(Size::fill())
+            .children(thumbs)
+            .into_element(),
+        "Vertical" => ScrollView::new()
+            .spacing(gallery.spacing)
+            .width(Size::fill())
+            .height(Size::fill())
+            .children(thumbs)
+            .into_element(),
+        _ => ScrollView::new()
+            .width(Size::fill())
+            .height(Size::fill())
+            .child(
+                rect()
+                    .width(Size::fill())
+                    .horizontal()
+                    .content(Content::wrap())
+                    .spacing(gallery.spacing)
+                    .children(thumbs),
+            )
+            .into_element(),
+    };
+    rect()
+        .width({% if fill or (p and (p.width > 0 or p.width_percent > 0)) %}Size::fill(){% else %}Size::px(240.0){% endif %})
+        .height({% if p and (p.height > 0 or p.height_percent > 0) %}Size::fill(){% else %}Size::px(128.0){% endif %})
+        .child(content)
+}
+{%- elif t == p_ ~ "DataGrid" -%}
+{%- set editable = c.props.editable and c.props.data_source %}
+{
+    let table = &self.{{ c.name }}.value;
+    let enabled = self.{{ c.name }}.enabled;
+    let header = TableRow::new().children(
+        table.headers.iter().map(|title| rect().width(Size::fill()).child(label().text(title.clone()).font_weight(FontWeight::BOLD)).into_element()),
+    );
+    let rows = table.rows.iter().enumerate().map(|(index, row)| {
+        let selected = table.selected == Some(index);
+        TableRow::new()
+            .children((0..table.headers.len()).map(|column| {
+                let text = row.get(column).cloned().unwrap_or_default();
+                {%- if editable %}
+                // Bearbeitbar: ein Klick auf eine Zelle der gewählten Zeile bearbeitet sie,
+                // Enter speichert die Zeile.
+                if let Some((r, k, value)) = &table.editing
+                    && *r == index
+                    && *k == column
+                {
+                    return Input::new(WritableSetter::new(value.clone(), s.to(Message::{{ c.name }}_edit_input)))
+                        .auto_focus(true)
+                        .on_submit(s.on::<String>(Message::{{ c.name }}_edit_submit))
+                        .width(Size::fill())
+                        .into_element();
+                }
+                let press = if selected {
+                    Message::{{ c.name }}_edit_start(index, column)
+                } else {
+                    Message::{{ c.name }}_select(index)
+                };
+                {%- else %}
+                let press = Message::{{ c.name }}_select(index);
+                {%- endif %}
+                rect()
+                    .width(Size::fill())
+                    .maybe(selected, |el| el.background(crate::app::color(0x3b, 0x82, 0xf6, 90)))
+                    .maybe(enabled, |el| el.on_press(s.on::<Event<PressEventData>>(press)))
+                    .child(text)
+                    .into_element()
+            }))
+            .into_element()
+    });
+    ScrollView::new()
+        .width(Size::fill())
+        .height(Size::px(160.0))
+        .child(Table::new().width(Size::fill()).child(header).children(rows))
+}
+{%- else -%}
+label().text("{{ c.type_name }}")
+{%- endif -%}
+{%- endmacro %}
+
+{#- The child `c` as an Element (container: its own view method). -#}
+{%- macro child(c, fill) -%}
+{%- set coloured = c.type != "core/Button" and (c.props.background.a > 0 or c.props.foreground.a > 0) -%}
+{%- if c.type in containers -%}
+self.{{ c.name }}.show(self.freya_view_{{ c.name }}(s))
+{%- elif coloured -%}
+self.{{ c.name }}.show(
+    rect()
+        {%- if fill %}
+        .width(Size::fill())
+        {%- endif %}
+        {%- if c.props.background.a > 0 %}
+        .background({{ color(c.props.background) }})
+        {%- endif %}
+        {%- if c.props.foreground.a > 0 %}
+        .color({{ color(c.props.foreground) }})
+        {%- endif %}
+        .child({{ widget(c, fill) }}),
+)
+{%- else -%}
+self.{{ c.name }}.show({{ widget(c, fill) }})
+{%- endif -%}
+{%- endmacro %}
+
+{%- if root %}
+
+/// Everything the user can do in form `{{ form.name }}`.
+#[allow(non_camel_case_types, dead_code)]
+#[derive(Debug, Clone)]
+pub enum Message {
+{%- for c in widgets if c.field %}
+{%- set t = c.type %}
+{%- if t in ["core/Button", "core/ImageBox"] %}
+    {{ c.name }}_click,
+{%- elif t == "core/ImageScrollBox" %}
+    {{ c.name }}_pick(usize),
+{%- elif t == "core/Edit" %}
+    {{ c.name }}_input(String),
+    {{ c.name }}_submit,
+{%- elif t in ["core/CheckBox", p_ ~ "Switch"] %}
+    {{ c.name }}_toggle(bool),
+{%- elif t == p_ ~ "RadioButton" %}
+    {{ c.name }}_select,
+{%- elif t == p_ ~ "Slider" %}
+    {{ c.name }}_change(f64),
+{%- elif t in [p_ ~ "Select", p_ ~ "ListBox", p_ ~ "DataGrid"] %}
+    {{ c.name }}_select(usize),
+{%- if t == p_ ~ "DataGrid" and c.props.editable and c.props.data_source %}
+    {{ c.name }}_edit_start(usize, usize),
+    {{ c.name }}_edit_input(String),
+    {{ c.name }}_edit_submit,
+{%- endif %}
+{%- elif t == p_ ~ "TextEdit" %}
+    {{ c.name }}_input(String),
+{%- elif t == p_ ~ "Tabs" %}
+    {{ c.name }}_page(usize),
+{%- endif %}
+{%- endfor %}
+{%- for m in menus %}
+    /// The open menu of `{{ m.name }}` (index of the title, `None` = closed).
+    {{ m.name }}_open(Option<usize>),
+    /// An entry of `{{ m.name }}` was chosen (its path).
+    {{ m.name }}_choose(String),
+{%- endfor %}
+{%- if data_bound %}
+    /// Rows of a list arrived (data binding).
+    freya_data,
+{%- endif %}
+}
+
+impl crate::app::FreyaUpdate for {{ form.struct }} {
+    type Message = Message;
+
+    /// Applies `message` to the state and calls the handler.
+    #[allow(unused_variables)]
+    fn update(&mut self, message: Message) {
+        match message {
+        {%- if data_bound %}
+            Message::freya_data => {
+                self.freya_take_data();
+            }
+        {%- endif %}
+        {%- for m in menus %}
+            Message::{{ m.name }}_open(index) => {
+                self.{{ m.name }}.value = index;
+            }
+            Message::{{ m.name }}_choose(item) => {
+                self.{{ m.name }}.value = None;
+            {%- if m.events.on_select %}
+                self.{{ m.events.on_select }}(&item);
+            {%- endif %}
+            }
+        {%- endfor %}
+        {%- for c in widgets if c.field %}
+        {%- set t = c.type %}
+        {%- set e = c.events %}
+        {%- if t == "core/ImageBox" %}
+            Message::{{ c.name }}_click => {
+            {%- if e.on_click %}
+                self.{{ e.on_click }}();
+            {%- endif %}
+            }
+        {%- elif t == "core/ImageScrollBox" %}
+            Message::{{ c.name }}_pick(index) => {
+                self.{{ c.name }}.value.selected = Some(index);
+            {%- if e.on_select %}
+                let path = self.{{ c.name }}.items.get(index).cloned().unwrap_or_default();
+                self.{{ e.on_select }}(index, &path);
+            {%- endif %}
+            }
+        {%- elif t == "core/Button" %}
+            Message::{{ c.name }}_click => {
+            {%- if e.on_click %}
+                if self.{{ c.name }}.enabled {
+                    self.{{ e.on_click }}();
+                }
+            {%- endif %}
+            }
+        {%- elif t == "core/Edit" %}
+            Message::{{ c.name }}_input(text) => {
+            {%- if c.props.max_length > 0 %}
+                self.{{ c.name }}.value = text.chars().take({{ c.props.max_length }}).collect();
+            {%- else %}
+                self.{{ c.name }}.value = text;
+            {%- endif %}
+            {%- if e.on_change %}
+                let text = self.{{ c.name }}.value.clone();
+                self.{{ e.on_change }}(&text);
+            {%- endif %}
+            }
+            Message::{{ c.name }}_submit => {
+            {%- if e.on_submit %}
+                self.{{ e.on_submit }}();
+            {%- endif %}
+            }
+        {%- elif t in ["core/CheckBox", p_ ~ "Switch"] %}
+            Message::{{ c.name }}_toggle(checked) => {
+                if self.{{ c.name }}.enabled {
+                    self.{{ c.name }}.value = checked;
+                {%- if e.on_toggle %}
+                    self.{{ e.on_toggle }}(checked);
+                {%- endif %}
+                }
+            }
+        {%- elif t == p_ ~ "Slider" %}
+            Message::{{ c.name }}_change(value) => {
+                if self.{{ c.name }}.enabled {
+                    let step: f64 = {{ c.rust.step }};
+                    let value = if step > 0.0 { ((value - {{ c.rust.minimum }}) / step).round() * step + {{ c.rust.minimum }} } else { value };
+                    let value = value.clamp({{ c.rust.minimum }}, {{ c.rust.maximum }});
+                    if value != self.{{ c.name }}.value {
+                        self.{{ c.name }}.value = value;
+                    {%- if e.on_change %}
+                        self.{{ e.on_change }}(value);
+                    {%- endif %}
+                    }
+                }
+            }
+        {%- elif t == p_ ~ "Select" %}
+            Message::{{ c.name }}_select(index) => {
+                if self.{{ c.name }}.enabled {
+                    self.{{ c.name }}.value = index;
+                {%- if e.on_select %}
+                    self.{{ e.on_select }}(index as u32);
+                {%- endif %}
+                }
+            }
+        {%- elif t == p_ ~ "ListBox" %}
+            Message::{{ c.name }}_select(index) => {
+                self.{{ c.name }}.value = index as i32;
+            {%- if e.on_select %}
+                self.{{ e.on_select }}(index as i32);
+            {%- endif %}
+            }
+        {%- elif t == p_ ~ "DataGrid" %}
+        {%- set editable = c.props.editable and c.props.data_source %}
+            Message::{{ c.name }}_select(index) => {
+            {%- if editable %}
+                // Eine bearbeitete Zelle übernehmen, dann speichert der Zeilenwechsel.
+                if let Some((row, column, text)) = self.{{ c.name }}.value.editing.take() {
+                    let _ = self.{{ c.name }}_edit_cell(row, column, &text);
+                }
+            {%- endif %}
+                self.{{ c.name }}.value.selected = Some(index);
+            {%- if editable %}
+                self.{{ c.name }}_row_changed(Some(index));
+            {%- endif %}
+            {%- if e.on_select %}
+                self.{{ e.on_select }}(index as i32);
+            {%- endif %}
+            }
+        {%- if editable %}
+            Message::{{ c.name }}_edit_start(index, column) => {
+                if let Some((row, column, text)) = self.{{ c.name }}.value.editing.take() {
+                    let _ = self.{{ c.name }}_edit_cell(row, column, &text);
+                }
+                let text = self
+                    .{{ c.name }}
+                    .value
+                    .rows
+                    .get(index)
+                    .and_then(|r| r.get(column))
+                    .cloned()
+                    .unwrap_or_default();
+                self.{{ c.name }}.value.editing = Some((index, column, text));
+            }
+            Message::{{ c.name }}_edit_input(text) => {
+                if let Some(cell) = self.{{ c.name }}.value.editing.as_mut() {
+                    cell.2 = text;
+                }
+            }
+            Message::{{ c.name }}_edit_submit => {
+                if let Some((row, column, text)) = self.{{ c.name }}.value.editing.take() {
+                    if let Some(cell) = self.{{ c.name }}.value.rows.get_mut(row).and_then(|r| r.get_mut(column)) {
+                        *cell = text.clone();
+                    }
+                    let _ = self.{{ c.name }}_edit_cell(row, column, &text);
+                }
+                self.{{ c.name }}_post();
+            }
+        {%- endif %}
+        {%- elif t == p_ ~ "TextEdit" %}
+            Message::{{ c.name }}_input(text) => {
+                if self.{{ c.name }}.enabled {
+                    self.{{ c.name }}.value = text;
+                {%- if e.on_change %}
+                    let text = self.{{ c.name }}.value.clone();
+                    self.{{ e.on_change }}(&text);
+                {%- endif %}
+                }
+            }
+        {%- elif t == p_ ~ "Tabs" %}
+            Message::{{ c.name }}_page(page) => {
+                self.{{ c.name }}.value = page;
+            {%- if e.on_page %}
+                self.{{ e.on_page }}(page as u32);
+            {%- endif %}
+            }
+        {%- endif %}
+        {%- endfor %}
+        {#- Optionsfelder: das gewählte an, die übrigen im selben Container aus. #}
+        {%- for w in widgets if w.field and w.type in containers %}
+        {%- set radios = w.children | selectattr("type", "eq", p_ ~ "RadioButton") | selectattr("field") | list %}
+        {%- for c in radios %}
+            Message::{{ c.name }}_select => {
+                if self.{{ c.name }}.enabled {
+                    self.{{ c.name }}.value = true;
+                {%- for o in radios if o.name != c.name %}
+                    self.{{ o.name }}.value = false;
+                {%- endfor %}
+                {%- if c.events.on_toggle %}
+                    self.{{ c.events.on_toggle }}(true);
+                {%- endif %}
+                }
+            }
+        {%- endfor %}
+        {%- endfor %}
+        }
+    }
+}
+
+impl {{ form.struct }} {
+    /// Called once before the window opens.
+    pub fn freya_created(&mut self) {
+        // Daten der Listen laden (im Hintergrund).
+        self.freya_start_data();
+    {%- if root.events.on_create %}
+        self.{{ root.events.on_create }}();
+    {%- endif %}
+    }
+
+    /// The window of the form with the settings from the designer.
+    pub fn freya_window(form: std::rc::Rc<std::cell::RefCell<Self>>) -> freya::prelude::WindowConfig {
+        {%- set rp = root.props %}
+        {%- if root.events.on_close %}
+        let closing = form.clone();
+        {%- endif %}
+        let title = form.borrow().{{ root.name }}.caption.clone();
+        freya::prelude::WindowConfig::new_app(crate::app::FreyaRoot(form))
+            .with_size({{ rp.size.width }} as f64, {{ rp.size.height }} as f64)
+            .with_resizable({{ root.rust.resizable }})
+        {%- if rp.min_size.width > 0 or rp.min_size.height > 0 %}
+            .with_min_size({{ rp.min_size.width }} as f64, {{ rp.min_size.height }} as f64)
+        {%- endif %}
+        {%- if rp.max_size.width > 0 or rp.max_size.height > 0 %}
+            .with_max_size({{ rp.max_size.width if rp.max_size.width > 0 else 100000 }} as f64, {{ rp.max_size.height if rp.max_size.height > 0 else 100000 }} as f64)
+        {%- endif %}
+            .with_window_attributes(move |attributes, _| {
+                let attributes = attributes.with_title(title);
+            {%- if rp.position == "Manual" %}
+                let attributes = attributes.with_position(freya::winit::dpi::LogicalPosition::new({{ rp.location.x }} as f64, {{ rp.location.y }} as f64));
+            {%- endif %}
+            {%- if rp.start_state == "Maximized" %}
+                let attributes = attributes.with_maximized(true);
+            {%- elif rp.start_state == "Fullscreen" %}
+                let attributes = attributes.with_fullscreen(Some(freya::winit::window::Fullscreen::Borderless(None)));
+            {%- endif %}
+                attributes
+            })
+        {%- if root.events.on_close %}
+            .with_on_close(move |_, _| {
+                if closing.borrow_mut().{{ root.events.on_close }}() {
+                    freya::prelude::CloseDecision::Close
+                } else {
+                    freya::prelude::CloseDecision::KeepOpen
+                }
+            })
+        {%- endif %}
+    }
+}
+
+/// The view of form `{{ form.name }}` with freya's elements.
+#[allow(unused_imports, clippy::all)]
+mod freya_ui {
+    use freya::prelude::*;
+    use super::{{ "{" }}{{ form.struct }}, Message{{ "}" }};
+
+    type Sender = crate::app::FreyaSender<{{ form.struct }}>;
+
+    impl crate::app::FreyaView for {{ form.struct }} {
+        const THEME: &'static str = "{{ root.props.theme }}";
+
+        fn freya_title(&self) -> String {
+            self.{{ root.name }}.caption.clone()
+        }
+        {%- if data_bound %}
+
+        /// Wakes the window when rows of a list arrived (data binding).
+        fn freya_watch(sender: &Sender) {
+            use futures_util::StreamExt as _;
+            let (wake, mut woken) = futures_channel::mpsc::unbounded::<()>();
+            // Einmal sofort: schon fertige Ladevorgänge übernehmen.
+            let _ = wake.unbounded_send(());
+            crate::app::freya_set_waker(move || {
+                let _ = wake.unbounded_send(());
+            });
+            let sender = sender.clone();
+            spawn(async move {
+                while woken.next().await.is_some() {
+                    sender.send(Message::freya_data);
+                }
+            });
+        }
+        {%- endif %}
+
+        fn freya_view(&self, s: &Sender) -> Element {
+            {%- set rp = root.props %}
+            rect()
+                .width(Size::fill())
+                .height(Size::fill())
+            {%- if rp.background.a > 0 %}
+                .background({{ color(rp.background) }})
+            {%- else %}
+                .theme_background()
+            {%- endif %}
+            {%- if rp.foreground.a > 0 %}
+                .color({{ color(rp.foreground) }})
+            {%- else %}
+                .theme_color()
+            {%- endif %}
+            {%- if rp.font_family %}
+                .font_family({{ root.rust.font_family }})
+            {%- endif %}
+            {%- if rp.font_size > 0 %}
+                .font_size({{ rp.font_size }} as f32)
+            {%- endif %}
+            {%- if rp.bold %}
+                .font_weight(FontWeight::BOLD)
+            {%- endif %}
+            {%- if rp.italic %}
+                .font_slant(FontSlant::Italic)
+            {%- endif %}
+            {%- for m in menus %}
+                .on_global_key_down({
+                    let items = self.{{ m.name }}.items.clone();
+                    let s = s.clone();
+                    move |event: Event<KeyboardEventData>| {
+                        if let Some(item) = crate::app::menu_shortcut(&items, &event) {
+                            s.send(Message::{{ m.name }}_choose(item));
+                        }
+                    }
+                })
+                .child(self.freya_menu_{{ m.name }}(s))
+            {%- endfor %}
+            {%- if rp.background_image %}
+                // Hintergrundbild hinter dem Inhalt.
+                .child(
+                    rect()
+                        .width(Size::fill())
+                        .height(Size::fill())
+                        .child(
+                            rect()
+                                .position(Position::new_absolute())
+                                .width(Size::fill())
+                                .height(Size::fill())
+                                .child(
+                                    ImageViewer::new(std::env::current_dir().unwrap_or_default().join({{ root.rust.background_image }}))
+                                        .width(Size::fill())
+                                        .height(Size::fill())
+                                        .aspect_ratio(AspectRatio::{{ {"Cover": "Max", "Stretch": "None", "Contain": "Min", "Center": "Fit"}[rp.background_fit] }}),
+                                ),
+                        )
+                        .child(self.freya_view_{{ root.name }}(s)),
+                )
+            {%- else %}
+                .child(self.freya_view_{{ root.name }}(s))
+            {%- endif %}
+                .into_element()
+        }
+    }
+
+    impl {{ form.struct }} {
+    {%- for m in menus %}
+
+        /// The menu bar `{{ m.name }}`: titles, the open menu below its title.
+        fn freya_menu_{{ m.name }}(&self, s: &Sender) -> Element {
+            let entries = crate::app::menu_entries(&self.{{ m.name }}.items);
+            let open = self.{{ m.name }}.value;
+            rect()
+                .horizontal()
+                .width(Size::fill())
+                .padding(Gaps::new(2.0, 4.0, 2.0, 4.0))
+                .spacing(2.0)
+                .theme_background()
+                .children(crate::app::menu_titles(&self.{{ m.name }}.items).into_iter().enumerate().map(|(index, title)| {
+                    let toggle = if open == Some(index) { None } else { Some(index) };
+                    rect()
+                        .child(
+                            Button::new()
+                                .flat()
+                                .compact()
+                                .on_press(s.on::<Event<PressEventData>>(Message::{{ m.name }}_open(toggle)))
+                                .child(title.clone()),
+                        )
+                        .maybe(open == Some(index), |el| {
+                            el.child(
+                                Menu::new()
+                                    .on_close(s.on::<()>(Message::{{ m.name }}_open(None)))
+                                    .children(entries.iter().filter(|(parts, _)| parts[0] == title).map(|(parts, keys)| {
+                                        let name = parts[1..].join(" › ");
+                                        if parts.last().is_some_and(|p| p == "-") {
+                                            rect().height(Size::px(1.0)).width(Size::fill()).background(crate::app::color(0x80, 0x80, 0x80, 110)).into_element()
+                                        } else {
+                                            MenuButton::new()
+                                                .on_press(s.on::<Event<PressEventData>>(Message::{{ m.name }}_choose(parts.join("/"))))
+                                                .child(
+                                                    rect()
+                                                        .horizontal()
+                                                        .spacing(24.0)
+                                                        .child(label().text(name))
+                                                        .maybe(!keys.is_empty(), |el| el.child(label().text(keys.clone()).opacity(0.6))),
+                                                )
+                                                .into_element()
+                                        }
+                                    })),
+                            )
+                        })
+                        .into_element()
+                }))
+                .into_element()
+        }
+    {%- endfor %}
+    {%- for w in widgets if w.field and w.type in containers %}
+    {%- set kids = w.children | selectattr("field") | list %}
+
+        /// The children of `{{ w.name }}`.
+        #[allow(unused_variables)]
+        fn freya_view_{{ w.name }}(&self, s: &Sender) -> Element {
+        {%- if w.type == p_ ~ "Tabs" %}
+            // Reiterleiste, darunter nur die gewählte Seite.
+            let titles = [{% for c in kids %}self.{{ w.name }}.items.get({{ loop.index0 }}).cloned().unwrap_or_else(|| "{{ c.name }}".to_owned()), {% endfor %}];
+            let page: Element = match self.{{ w.name }}.value {
+            {%- for c in kids %}
+                {{ loop.index0 }} => {{ child(c, true) }},
+            {%- endfor %}
+                _ => rect().into_element(),
+            };
+            rect()
+                .width(Size::fill())
+                .spacing(6.0)
+                .child(
+                    rect()
+                        .horizontal()
+                        .spacing(4.0)
+                        .children(titles.into_iter().enumerate().map(|(index, title)| {
+                            Button::new()
+                                .maybe(self.{{ w.name }}.value == index, |el| el.filled())
+                                .maybe(self.{{ w.name }}.value != index, |el| el.flat())
+                                .on_press(s.on::<Event<PressEventData>>(Message::{{ w.name }}_page(index)))
+                                .child(title)
+                                .into_element()
+                        })),
+                )
+                .child(rect().height(Size::px(1.0)).width(Size::fill()).background(crate::app::color(0x80, 0x80, 0x80, 110)))
+                .child(page)
+                .into_element()
+        {%- else %}
+        {%- set l = w.layout or default_layout %}
+            let mut children: Vec<Element> = Vec::new();
+        {%- if l.kind == "grid" %}
+            {%- set columns = l.columns or 1 %}
+            {%- for row in kids | batch(columns) %}
+            children.push(
+                rect()
+                    .horizontal()
+                    .width(Size::fill())
+                    .spacing({{ l.spacing }} as f32)
+                    .content(Content::flex())
+                {%- for c in row %}
+                {%- set p = c.placement %}
+                {%- if p and p.kind == "layout" and (p.width > 0 or p.height > 0) %}
+                    // Wunschgröße aus dem Designer.
+                    .child(rect().width(Size::flex(1.0)).child(rect(){% if p.width > 0 %}.width(Size::px({{ p.width }} as f32)){% endif %}{% if p.height > 0 %}.height(Size::px({{ p.height }} as f32)){% endif %}.child({{ child(c, true) }})))
+                {%- else %}
+                    .child(rect().width(Size::flex(1.0)).child({{ child(c, true) }}))
+                {%- endif %}
+                {%- endfor %}
+                {%- for _ in range(columns - (row | length)) %}
+                    .child(rect().width(Size::flex(1.0)))
+                {%- endfor %}
+                    .into_element(),
+            );
+            {%- endfor %}
+        {%- else %}
+        {%- for c in kids if l.kind != "stack" or loop.first %}
+            {%- set p = c.placement %}
+            {%- set align = p.align if p and p.kind == "layout" else "Fill" %}
+            {%- set stretch = p.stretch if p and p.kind == "layout" else 0 %}
+            {%- set fill = l.kind in ["vertical", "custom"] and align == "Fill" and c.type not in natural %}
+            {%- set sized = p and p.kind == "layout" and (p.width > 0 or p.height > 0) %}
+            {%- set wp = p.width_percent if p and p.kind == "layout" else 0 %}
+            {%- set hp = p.height_percent if p and p.kind == "layout" else 0 %}
+            {%- if l.kind == "absolute" and p and p.kind == "absolute" %}
+            {%- set a = p.anchors %}
+            {#- Anker wie Delphis Anchors: links/oben fest, rechts/unten mitwandern,
+                links und rechts (oben und unten) = wächst mit. #}
+            children.push(
+                rect()
+                    .position(
+                        Position::new_absolute()
+                            {%- if a.left or not a.right %}.left({{ p.x }} as f32){% endif %}
+                            {%- if a.right and not a.left %}.right({{ p.margin_right }} as f32){% endif %}
+                            {%- if a.top or not a.bottom %}.top({{ p.y }} as f32){% endif %}
+                            {%- if a.bottom and not a.top %}.bottom({{ p.margin_bottom }} as f32){% endif %},
+                    )
+                    .width({% if a.left and a.right %}Size::func_data(|ctx| Some(ctx.parent - {{ p.x + p.margin_right }} as f32), &{{ p.x + p.margin_right }}){% else %}Size::px({{ p.width }} as f32){% endif %})
+                    .height({% if a.top and a.bottom %}Size::func_data(|ctx| Some(ctx.parent - {{ p.y + p.margin_bottom }} as f32), &{{ p.y + p.margin_bottom }}){% else %}Size::px({{ p.height }} as f32){% endif %})
+                    .child({{ child(c, true) }})
+                    .into_element(),
+            );
+            {%- elif l.kind in ["vertical", "custom", "horizontal"] and (wp > 0 or hp > 0) %}
+            // Prozent vom Inhalt des Elternelements.
+            children.push(
+                rect()
+                    .width({% if wp > 0 %}Size::percent({{ wp }} as f32){% elif l.kind != "horizontal" %}Size::fill(){% else %}Size::auto(){% endif %})
+                    .height({% if hp > 0 %}Size::percent({{ hp }} as f32){% else %}Size::auto(){% endif %})
+                    .child({{ child(c, true) }})
+                    .into_element(),
+            );
+            {%- elif l.kind in ["vertical", "custom"] and align in ["Center", "End"] %}
+            children.push(
+                rect()
+                    .width(Size::fill())
+                    .horizontal()
+                    .main_align(Alignment::{{ "Center" if align == "Center" else "End" }})
+                    .child(rect(){% if sized and p.width > 0 %}.width(Size::px({{ p.width }} as f32)){% endif %}{% if sized and p.height > 0 %}.height(Size::px({{ p.height }} as f32)){% endif %}.child({{ child(c, sized) }}))
+                    .into_element(),
+            );
+            {%- elif stretch > 0 %}
+            // Dehnen in Layout-Richtung.
+            children.push(
+                rect()
+                {%- if l.kind == "horizontal" %}
+                    .width(Size::flex({{ stretch }} as f32))
+                    {%- if sized and p.height > 0 %}
+                    .height(Size::px({{ p.height }} as f32))
+                    {%- endif %}
+                {%- else %}
+                    .height(Size::flex({{ stretch }} as f32))
+                    .width({% if sized and p.width > 0 %}Size::px({{ p.width }} as f32){% elif fill %}Size::fill(){% else %}Size::auto(){% endif %})
+                {%- endif %}
+                    .child({{ child(c, true) }})
+                    .into_element(),
+            );
+            {%- elif sized %}
+            // Wunschgröße aus dem Designer: fester Rahmen, das Widget füllt ihn.
+            children.push(
+                rect()
+                    .width({% if p.width > 0 %}Size::px({{ p.width }} as f32){% elif fill %}Size::fill(){% else %}Size::auto(){% endif %})
+                    .height({% if p.height > 0 %}Size::px({{ p.height }} as f32){% else %}Size::auto(){% endif %})
+                    .child({{ child(c, true) }})
+                    .into_element(),
+            );
+            {%- else %}
+            children.push({{ child(c, fill) }});
+            {%- endif %}
+        {%- endfor %}
+        {%- endif %}
+        {%- if l.kind == "horizontal" %}
+            let inner = rect()
+                .horizontal()
+                .content(Content::flex())
+                .cross_align(Alignment::Center)
+                .width(Size::fill())
+                .spacing({{ l.spacing }} as f32)
+                .padding({{ padding(l.padding) }})
+                .children(children);
+        {%- elif l.kind == "absolute" %}
+            {%- set ext = namespace(w=0, h=0, grow_x=false, grow_y=false) %}
+            {%- for c in kids if c.placement and c.placement.kind == "absolute" %}
+            {%- set ext.w = [ext.w, c.placement.x + c.placement.width] | max %}
+            {%- set ext.h = [ext.h, c.placement.y + c.placement.height] | max %}
+            {%- if c.placement.anchors.right %}{% set ext.grow_x = true %}{% endif %}
+            {%- if c.placement.anchors.bottom %}{% set ext.grow_y = true %}{% endif %}
+            {%- endfor %}
+            // Die Kinder liegen frei; die Fläche ist so groß wie ihre Ausdehnung
+            // (oder füllt, wenn ein Kind rechts bzw. unten verankert ist).
+            let inner = rect()
+                .padding({{ padding(l.padding) }})
+                .width({% if ext.grow_x %}Size::fill(){% else %}Size::px({{ ext.w + l.padding.left + l.padding.right }} as f32){% endif %})
+                .height({% if ext.grow_y %}Size::fill(){% else %}Size::px({{ ext.h + l.padding.top + l.padding.bottom }} as f32){% endif %})
+                .children(children);
+        {%- else %}
+            let inner = rect()
+                .content(Content::flex())
+                .width(Size::fill())
+                {%- if w.type == "core/Form" %}
+                .height(Size::fill())
+                {%- endif %}
+                .spacing({{ l.spacing }} as f32)
+                .padding({{ padding(l.padding) }})
+                .children(children);
+        {%- endif %}
+        {%- if w.type == p_ ~ "Card" %}
+            Card::new()
+                .width(Size::fill())
+                .child(
+                    rect()
+                        .width(Size::fill())
+                        .spacing(4.0)
+                        .child(label().text(self.{{ w.name }}.caption.clone()).font_weight(FontWeight::BOLD))
+                        .child(inner),
+                )
+                .into_element()
+        {%- else %}
+            inner.into_element()
+        {%- endif %}
+        {%- endif %}
+        }
+    {%- endfor %}
+    }
+}
+{%- endif %}
