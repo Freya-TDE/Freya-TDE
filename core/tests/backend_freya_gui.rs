@@ -264,6 +264,309 @@ fn form() -> Form {
             .on("on_select", handler("menu_chosen")),
     )
     .unwrap();
+    // Etappe A: weitere Komponenten von freya.
+    let extra = |form: &mut Form, parent: &str, w: Widget| {
+        form.add_widget(&name(parent), w).unwrap();
+    };
+    extra(
+        &mut form,
+        "window",
+        Widget::from_component(widget("more", fg("Accordion")).with("title", "Mehr")),
+    );
+    extra(
+        &mut form,
+        "more",
+        Widget::from_component(widget("more_label", builtin::label()).with("text", "Inhalt")),
+    );
+    extra(
+        &mut form,
+        "window",
+        Widget::from_component(
+            widget("day", fg("Calendar"))
+                .with("date", "2026-11-27")
+                .on("on_select", handler("day_selected")),
+        ),
+    );
+    extra(
+        &mut form,
+        "window",
+        Widget::from_component(
+            widget("tag", fg("Chip"))
+                .with("caption", "Neu")
+                .on("on_toggle", handler("tag_toggled")),
+        ),
+    );
+    extra(
+        &mut form,
+        "window",
+        Widget::from_component(
+            widget("tint", fg("ColorPicker")).on("on_change", handler("tint_changed")),
+        ),
+    );
+    extra(
+        &mut form,
+        "window",
+        Widget::from_component(widget("busy", fg("Loader"))),
+    );
+    extra(
+        &mut form,
+        "window",
+        Widget::from_component(widget("placeholder", fg("Skeleton")).with("shimmer", true)),
+    );
+    extra(
+        &mut form,
+        "placeholder",
+        Widget::from_component(widget("loaded_label", builtin::label()).with("text", "geladen")),
+    );
+    extra(
+        &mut form,
+        "window",
+        Widget::from_component(
+            widget("view", fg("SegmentedButton"))
+                .with("items", texts(&["Liste", "Raster"]))
+                .on("on_select", handler("view_selected")),
+        ),
+    );
+    extra(
+        &mut form,
+        "window",
+        Widget::from_component(
+            widget("copyable", fg("SelectableText")).with("text", "markier mich"),
+        ),
+    );
+    extra(
+        &mut form,
+        "window",
+        Widget::from_component(
+            widget("story", fg("Paragraph"))
+                .with("text", "Ein längerer Text, der umbricht.")
+                .with("max_lines", 2i64),
+        ),
+    );
+    extra(
+        &mut form,
+        "window",
+        Widget::from_component(widget("ticker", fg("Marquee")).with("text", "Laufschrift")),
+    );
+    extra(
+        &mut form,
+        "window",
+        Widget::from_component(
+            widget("vector", fg("Svg"))
+                .with("file", "icon.svg")
+                .with("color", Value::Color(Color::rgb(0x3b, 0x82, 0xf6))),
+        ),
+    );
+    extra(
+        &mut form,
+        "window",
+        Widget::from_component(widget("anim", fg("Gif")).with("file", "anim.gif")),
+    );
+    extra(
+        &mut form,
+        "window",
+        Widget::from_component(
+            widget("many", fg("VirtualList"))
+                .with("items", texts(&["eins", "zwei", "drei"]))
+                .on("on_select", handler("many_selected")),
+        ),
+    );
+    extra(
+        &mut form,
+        "window",
+        Widget::from_component(
+            widget("nav", fg("SideBar"))
+                .with("items", texts(&["Start", "Einstellungen"]))
+                .on("on_select", handler("nav_selected")),
+        ),
+    );
+    extra(
+        &mut form,
+        "window",
+        Widget::from_component(
+            widget("split", fg("Splitter"))
+                .with("sizes", Value::List(vec![Value::Int(30), Value::Int(70)])),
+        ),
+    );
+    extra(
+        &mut form,
+        "split",
+        Widget::from_component(widget("left_label", builtin::label()).with("text", "links")),
+    );
+    extra(
+        &mut form,
+        "split",
+        Widget::from_component(widget("right_label", builtin::label()).with("text", "rechts")),
+    );
+    extra(
+        &mut form,
+        "window",
+        Widget::from_component(widget("board", fg("DragCanvas"))),
+    );
+    extra(
+        &mut form,
+        "board",
+        Widget::from_component(widget("card_label", builtin::label()).with("text", "zieh mich"))
+            .with_placement(Placement::absolute(20, 10, 80, 20)),
+    );
+    extra(
+        &mut form,
+        "window",
+        Widget::from_component(
+            widget("dialog", fg("Popup"))
+                .with("title", "Frage")
+                .on("on_close", handler("dialog_closing")),
+        ),
+    );
+    extra(
+        &mut form,
+        "dialog",
+        Widget::from_component(widget("dialog_label", builtin::label()).with("text", "Sicher?")),
+    );
+    extra(
+        &mut form,
+        "window",
+        Widget::from_component(widget("source", fg("DragZone")).with("data", "Apfel")),
+    );
+    extra(
+        &mut form,
+        "source",
+        Widget::from_component(widget("source_label", builtin::label()).with("text", "ziehen")),
+    );
+    extra(
+        &mut form,
+        "window",
+        Widget::from_component(widget("target", fg("DropZone")).on("on_drop", handler("dropped"))),
+    );
+    extra(
+        &mut form,
+        "target",
+        Widget::from_component(widget("target_label", builtin::label()).with("text", "hierher")),
+    );
+    extra(
+        &mut form,
+        "window",
+        Widget::from_component(widget("later", fg("Lazy"))),
+    );
+    extra(
+        &mut form,
+        "later",
+        Widget::from_component(widget("later_label", builtin::label()).with("text", "später")),
+    );
+    extra(
+        &mut form,
+        "window",
+        Widget::from_component(
+            widget("dock", fg("DockArea")).with("pages", texts(&["Dateien", "Suche"])),
+        ),
+    );
+    extra(
+        &mut form,
+        "dock",
+        Widget::from_component(widget("files_label", builtin::label()).with("text", "Dateien")),
+    );
+    extra(
+        &mut form,
+        "dock",
+        Widget::from_component(widget("search_label", builtin::label()).with("text", "Suche")),
+    );
+    // Etappe B: Feature-Widgets von freya.
+    extra(
+        &mut form,
+        "window",
+        Widget::from_component(
+            widget("readme", fg("Markdown")).with("text", "# Titel\n\n**fett** und *kursiv*"),
+        ),
+    );
+    extra(
+        &mut form,
+        "window",
+        Widget::from_component(
+            widget("source_code", fg("CodeEditor"))
+                .with("text", "fn main() {\n    println!(\"hi\");\n}\n")
+                .on("on_change", handler("code_changed")),
+        ),
+    );
+    extra(
+        &mut form,
+        "window",
+        Widget::from_component(
+            widget("json_code", fg("CodeEditor"))
+                .with("language", Value::Enum("Json".into()))
+                .with("text", "{\"a\": 1}"),
+        ),
+    );
+    extra(
+        &mut form,
+        "window",
+        Widget::from_component(
+            widget("shell", fg("Terminal"))
+                .with("command", "sh")
+                .on("on_exit", handler("shell_exited")),
+        ),
+    );
+    extra(
+        &mut form,
+        "window",
+        Widget::from_component(widget("sales", fg("Chart")).with("title", "Umsatz").with(
+            "values",
+            Value::List(vec![
+                Value::Float(1.0),
+                Value::Float(3.0),
+                Value::Float(2.0),
+            ]),
+        )),
+    );
+    extra(
+        &mut form,
+        "window",
+        Widget::from_component(
+            widget("bars", fg("Chart"))
+                .with("kind", Value::Enum("Bar".into()))
+                .with(
+                    "values",
+                    Value::List(vec![Value::Float(2.0), Value::Float(5.0)]),
+                ),
+        ),
+    );
+    extra(
+        &mut form,
+        "window",
+        Widget::from_component(widget("paint", fg("Canvas")).on("on_draw", handler("paint_drawn"))),
+    );
+    extra(
+        &mut form,
+        "window",
+        Widget::from_component(widget("webcam", fg("Camera"))),
+    );
+    extra(
+        &mut form,
+        "window",
+        Widget::from_component(
+            widget("movie", fg("Video"))
+                .with("file", "movie.mp4")
+                .with("autoplay", false),
+        ),
+    );
+    extra(
+        &mut form,
+        "window",
+        Widget::from_component(
+            widget("page", fg("HtmlView")).with("html", "<h1>Hallo</h1><p>HTML</p>"),
+        ),
+    );
+    extra(
+        &mut form,
+        "window",
+        Widget::from_component(widget("star", fg("Icon")).with("icon", "circle-check")),
+    );
+    form.add_component(
+        Component::new(name("popup_menu"), fg("ContextMenu"))
+            .with("target", "greeting")
+            .with("items", texts(&["Kopieren", "Mehr/Teilen", "-", "Löschen"]))
+            .on("on_select", handler("menu_chosen")),
+    )
+    .unwrap();
     // Aus der Datenquelle `services::fruits` gefüllt.
     form.add_widget(
         &name("window"),
@@ -333,6 +636,23 @@ impl MainForm {
     pub fn notes_changed(&mut self, _text: &str) {}
     pub fn page_changed(&mut self, _page: u32) {}
     pub fn color_selected(&mut self, _index: i32) {}
+    pub fn day_selected(&mut self, _year: i32, _month: u32, _day: u32) {}
+    pub fn tag_toggled(&mut self, _selected: bool) {}
+    pub fn tint_changed(&mut self, _color: freya::prelude::Color) {}
+    pub fn view_selected(&mut self, _index: u32) {}
+    pub fn many_selected(&mut self, _index: i32) {}
+    pub fn nav_selected(&mut self, _index: u32) {}
+    pub fn dialog_closing(&mut self) -> bool {
+        true
+    }
+    pub fn dropped(&mut self, _data: &str) {}
+    pub fn code_changed(&mut self, _text: &str) {}
+    pub fn shell_exited(&mut self) {}
+    pub fn paint_drawn(&mut self, canvas: &freya::engine::prelude::Canvas, width: f32, height: f32) {
+        let mut paint = freya::engine::prelude::Paint::default();
+        paint.set_color(freya::engine::prelude::Color::from_rgb(0x3b, 0x82, 0xf6));
+        canvas.draw_circle((width / 2.0, height / 2.0), height.min(width) / 3.0, &paint);
+    }
     pub fn menu_chosen(&mut self, item: &str) {
         say(&format!("menu={item}"));
     }
@@ -393,6 +713,17 @@ fn generated_project_builds_runs_and_reacts_to_clicks() {
     write(&dir, &generation).unwrap();
     style::picture(&dir);
     pictures::files(&dir);
+    std::fs::copy(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../ide/assets/palette/calendar.svg"),
+        dir.join("icon.svg"),
+    )
+    .or_else(|_| {
+        std::fs::copy(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../ide/assets/palette/form.svg"),
+            dir.join("icon.svg"),
+        )
+    })
+    .unwrap();
     let form_rs = FORM_RS
         .replace(
             "/*EDIT_CALLS*/",

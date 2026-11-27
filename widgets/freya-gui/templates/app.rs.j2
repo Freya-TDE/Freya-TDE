@@ -159,10 +159,23 @@ impl<F: FreyaView> App for FreyaRoot<F> {
             form: self.0.clone(),
             tick,
         };
-        use_init_theme(|| match F::THEME {
-            "Dark" => dark_theme(),
-            "Light" => light_theme(),
-            _ => Platform::get().current_window().preferred_theme.peek().to_theme(),
+        use_init_theme(|| {
+            let theme = match F::THEME {
+                "Dark" => dark_theme(),
+                "Light" => light_theme(),
+                _ => Platform::get().current_window().preferred_theme.peek().to_theme(),
+            };
+            {%- if "backend:freya-gui/CodeEditor" in types or "backend:freya-gui/Markdown" in types %}
+            // Farben des Code-Editors (auch für Codeblöcke im Markdown).
+            use freya::code_editor::CodeEditorThemeExt as _;
+            if theme.name == "dark" {
+                theme.with_dark_code_editor()
+            } else {
+                theme.with_light_code_editor()
+            }
+            {%- else %}
+            theme
+            {%- endif %}
         });
         use_hook({
             let sender = sender.clone();
@@ -200,6 +213,12 @@ pub struct Table {
 /// Entries of a main menu: path parts and shortcut (`File/Open | Ctrl+O`).
 #[allow(dead_code)]
 pub fn menu_entries(items: &[String]) -> Vec<(Vec<String>, String)> {
+    menu_entries_min(items, 2)
+}
+
+/// Menu entries with at least `min` path parts (a context menu: 1).
+#[allow(dead_code)]
+pub fn menu_entries_min(items: &[String], min: usize) -> Vec<(Vec<String>, String)> {
     items
         .iter()
         .map(|item| {
@@ -207,8 +226,64 @@ pub fn menu_entries(items: &[String]) -> Vec<(Vec<String>, String)> {
             let parts: Vec<String> = path.split('/').map(|p| p.trim().to_owned()).collect();
             (parts, keys.trim().to_owned())
         })
-        .filter(|(parts, _)| parts.len() >= 2)
+        .filter(|(parts, _)| parts.len() >= min && !parts.iter().any(String::is_empty))
         .collect()
+}
+
+/// The menu entries below `prefix`: buttons, separators (`-`) and submenus;
+/// `choose` gets the path of the chosen entry (`File/Export/PDF`).
+#[allow(dead_code)]
+pub fn menu_items(
+    entries: &[(Vec<String>, String)],
+    prefix: &[String],
+    choose: std::rc::Rc<dyn Fn(String)>,
+) -> Vec<Element> {
+    let depth = prefix.len();
+    let mut seen: Vec<String> = Vec::new();
+    let mut out = Vec::new();
+    for (parts, keys) in entries {
+        if parts.len() <= depth || !parts.starts_with(prefix) {
+            continue;
+        }
+        let name = parts[depth].clone();
+        if parts.len() == depth + 1 {
+            if name == "-" {
+                out.push(
+                    rect()
+                        .height(Size::px(1.0))
+                        .width(Size::fill())
+                        .background(color(0x80, 0x80, 0x80, 110))
+                        .into_element(),
+                );
+            } else {
+                let path = parts.join("/");
+                let choose = choose.clone();
+                out.push(
+                    MenuButton::new()
+                        .on_press(move |_| choose(path.clone()))
+                        .child(
+                            rect()
+                                .horizontal()
+                                .spacing(24.0)
+                                .child(label().text(name))
+                                .maybe(!keys.is_empty(), |el| el.child(label().text(keys.clone()).opacity(0.6))),
+                        )
+                        .into_element(),
+                );
+            }
+        } else if !seen.contains(&name) {
+            seen.push(name.clone());
+            let mut sub = prefix.to_vec();
+            sub.push(name.clone());
+            out.push(
+                SubMenu::new()
+                    .label(label().text(name))
+                    .children(menu_items(entries, &sub, choose.clone()))
+                    .into_element(),
+            );
+        }
+    }
+    out
 }
 
 /// The top-level menus in the order of the entries.
@@ -248,6 +323,609 @@ pub fn menu_shortcut(items: &[String], event: &freya::prelude::KeyboardEventData
         (key == pressed && mods == want).then(|| parts.join("/"))
     })
 }
+{%- if "backend:freya-gui/Calendar" in types %}
+
+/// State of a Calendar: the selected day and the month shown.
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq)]
+pub struct Date {
+    /// (year, month, day) of the selected day.
+    pub selected: Option<(i32, u32, u32)>,
+    /// (year, month) of the month shown.
+    pub view: (i32, u32),
+    /// Weeks start on Sunday (else Monday).
+    pub sunday: bool,
+}
+
+#[allow(dead_code)]
+impl Date {
+    /// From `YYYY-MM-DD` (empty or invalid = nothing selected, this month shown).
+    pub fn parse(text: &str, sunday: bool) -> Self {
+        let mut parts = text.trim().splitn(3, '-').map(|p| p.parse::<u32>().ok());
+        let selected = match (parts.next().flatten(), parts.next().flatten(), parts.next().flatten()) {
+            (Some(y), Some(m), Some(d)) if (1..=12).contains(&m) && (1..=31).contains(&d) => Some((y as i32, m, d)),
+            _ => None,
+        };
+        let view = selected.map(|(y, m, _)| (y, m)).unwrap_or_else(|| {
+            let today = CalendarDate::now();
+            (today.year, today.month)
+        });
+        Self { selected, view, sunday }
+    }
+
+    /// The days of the month shown, for `CalendarGrid`.
+    pub fn month(&self) -> Option<CalendarMonth> {
+        CalendarMonth::new(
+            CalendarDate::new(self.view.0, self.view.1, 1),
+            self.selected.map(|(y, m, d)| CalendarDate::new(y, m, d)),
+            if self.sunday { WeekStart::Sunday } else { WeekStart::Monday },
+        )
+    }
+
+    /// (year, month) before / after the month shown.
+    pub fn previous(&self) -> (i32, u32) {
+        if self.view.1 == 1 { (self.view.0 - 1, 12) } else { (self.view.0, self.view.1 - 1) }
+    }
+    pub fn next(&self) -> (i32, u32) {
+        if self.view.1 == 12 { (self.view.0 + 1, 1) } else { (self.view.0, self.view.1 + 1) }
+    }
+}
+{%- endif %}
+{%- if "backend:freya-gui/DockArea" in types %}
+
+/// Layout of a DockArea: panels and splits with tabs (index of the child).
+pub struct FreyaDock {
+    root: Option<DockNode<usize, u32>>,
+    last_panel: u32,
+}
+
+impl DockingModel for FreyaDock {
+    type TabId = usize;
+    type PanelId = u32;
+    type DropValue = usize;
+
+    fn root(&self) -> Option<&DockNode<usize, u32>> {
+        self.root.as_ref()
+    }
+
+    fn on_drop(&mut self, tab: usize, target: DropTarget<u32>) -> bool {
+        let Some(root) = self.root.as_mut() else {
+            return false;
+        };
+        match target {
+            DropTarget::Tab { panel_id, position } => {
+                root.remove_tab_except(&tab, Some(&panel_id));
+                if let Some(panel) = root.panel_mut(&panel_id) {
+                    panel.insert_tab(tab, position);
+                }
+            }
+            DropTarget::Center(panel_id) => {
+                root.remove_tab_except(&tab, Some(&panel_id));
+                if let Some(panel) = root.panel_mut(&panel_id) {
+                    panel.append_tab(tab);
+                }
+            }
+            DropTarget::Split { panel_id, side } => {
+                root.remove_tab_except(&tab, None);
+                self.last_panel += 1;
+                root.split_panel(&panel_id, side, &DockPanel::new(self.last_panel, vec![tab]));
+            }
+        }
+        root.close_empty_panels();
+        true
+    }
+
+    fn set_active(&mut self, panel_id: u32, tab_id: usize) -> bool {
+        match self.root.as_mut().and_then(|root| root.panel_mut(&panel_id)) {
+            Some(panel) => {
+                panel.active_tab_id = Some(tab_id);
+                true
+            }
+            None => false,
+        }
+    }
+}
+
+/// A DockArea: keeps its layout itself, shows the children as tabs.
+#[derive(PartialEq)]
+pub struct DockView {
+    pub titles: Vec<String>,
+    pub contents: Vec<Element>,
+}
+
+impl Component for DockView {
+    fn render(&self) -> impl IntoElement {
+        let count = self.titles.len();
+        let dock = use_state(move || FreyaDock {
+            root: Some(DockNode::Panel(DockPanel::new(0, (0..count).collect()))),
+            last_panel: 0,
+        });
+        let contents = self.contents.clone();
+        let tab_titles = self.titles.clone();
+        let drag_titles = self.titles.clone();
+        DockingArea::new(
+            dock,
+            move |context: ContentContext<usize, u32>| {
+                context
+                    .tab_id
+                    .and_then(|tab| contents.get(tab).cloned())
+                    .unwrap_or_else(|| rect().into_element())
+            },
+            move |context: TabContext<usize>| {
+                rect()
+                    .padding(Gaps::new(4.0, 10.0, 4.0, 10.0))
+                    .maybe(context.is_drop_target, |el| el.background(color(0x3b, 0x82, 0xf6, 90)))
+                    .child(tab_titles.get(context.tab_id).cloned().unwrap_or_default())
+                    .into_element()
+            },
+            move |tab: usize| {
+                rect()
+                    .padding(Gaps::new(4.0, 10.0, 4.0, 10.0))
+                    .background(color(0x3b, 0x82, 0xf6, 160))
+                    .child(drag_titles.get(tab).cloned().unwrap_or_default())
+                    .into_element()
+            },
+            |context: TabBarContext<u32>| {
+                rect()
+                    .horizontal()
+                    .width(Size::fill())
+                    .spacing(2.0)
+                    .children(context.tab_children)
+                    .into_element()
+            },
+        )
+    }
+}
+{%- endif %}
+{%- if "backend:freya-gui/CodeEditor" in types %}
+
+/// A CodeEditor: keeps freya's editor state itself; reports edits with
+/// `on_change` and takes over a text the form set from outside.
+pub struct CodeView {
+    pub text: String,
+    pub language: fn() -> Option<freya::code_editor::EditorLanguage>,
+    pub read_only: bool,
+    pub line_numbers: bool,
+    pub font_family: &'static str,
+    pub font_size: f32,
+    pub on_change: EventHandler<String>,
+}
+
+// Die Sprache ist je Widget fest (Funktionszeiger vergleichen sich nicht sinnvoll).
+impl PartialEq for CodeView {
+    fn eq(&self, other: &Self) -> bool {
+        self.text == other.text
+            && self.read_only == other.read_only
+            && self.line_numbers == other.line_numbers
+            && self.font_family == other.font_family
+            && self.font_size == other.font_size
+            && self.on_change == other.on_change
+    }
+}
+
+impl Component for CodeView {
+    fn render(&self) -> impl IntoElement {
+        use freya::code_editor::*;
+        let a11y_id = use_a11y();
+        let (font_family, font_size, language) = (self.font_family, self.font_size, self.language);
+        let text = self.text.clone();
+        let mut editor = use_state(move || {
+            let mut editor = CodeEditorData::new(Rope::from_str(&text), language());
+            editor.parse();
+            editor.measure(font_size, font_family);
+            editor
+        });
+        // Der zuletzt abgeglichene Text (Editor und Formular).
+        let known = use_hook({
+            let text = self.text.clone();
+            move || std::rc::Rc::new(std::cell::RefCell::new(text))
+        });
+        if *known.borrow() != self.text {
+            *known.borrow_mut() = self.text.clone();
+            if editor.peek().to_string() != self.text {
+                let mut data = editor.write();
+                data.rope = Rope::from_str(&self.text);
+                data.parse();
+                data.measure(font_size, font_family);
+            }
+        }
+        let on_change = self.on_change.clone();
+        use_side_effect({
+            let known = known.clone();
+            move || {
+                let text = editor.read().to_string();
+                if *known.borrow() != text {
+                    *known.borrow_mut() = text.clone();
+                    on_change.call(text);
+                }
+            }
+        });
+        CodeEditor::new(editor, a11y_id)
+            .read_only(self.read_only)
+            .gutter(self.line_numbers)
+            .font_family(self.font_family)
+            .font_size(self.font_size)
+    }
+}
+{%- endif %}
+{%- if "backend:freya-gui/Terminal" in types %}
+
+/// A Terminal: starts `command` (empty = the system shell) in a pseudo
+/// terminal; mouse, keys, selection and clipboard as in freya's example.
+#[derive(PartialEq)]
+pub struct TerminalView {
+    pub command: String,
+    pub font_size: f32,
+    pub font_family: &'static str,
+    pub on_exit: EventHandler<()>,
+}
+
+impl Component for TerminalView {
+    fn render(&self) -> impl IntoElement {
+        use freya::terminal::*;
+        use futures_util::FutureExt as _;
+        let command = self.command.clone();
+        let mut handle = use_state(move || {
+            let program = if command.trim().is_empty() {
+                if cfg!(windows) {
+                    std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".into())
+                } else {
+                    std::env::var("SHELL").unwrap_or_else(|_| "sh".into())
+                }
+            } else {
+                command.clone()
+            };
+            let mut parts = program.split_whitespace();
+            let mut cmd = CommandBuilder::new(parts.next().unwrap_or("sh"));
+            cmd.args(parts);
+            cmd.env("TERM", "xterm-256color");
+            cmd.env("COLORTERM", "truecolor");
+            TerminalHandle::new(TerminalId::new(), PtyBackend::new(cmd), None).ok()
+        });
+        let on_exit = self.on_exit.clone();
+        use_future(move || {
+            let on_exit = on_exit.clone();
+            async move {
+            let Some(terminal) = handle.read().clone() else {
+                return;
+            };
+            loop {
+                futures_util::select! {
+                    _ = terminal.closed().fuse() => {
+                        let _ = handle.write().take();
+                        on_exit.call(());
+                        break;
+                    }
+                    _ = terminal.clipboard_changed().fuse() => {
+                        if let Some(text) = terminal.clipboard_content() {
+                            let _ = freya::clipboard::Clipboard::set(text);
+                        }
+                    }
+                }
+            }
+            }
+        });
+        let a11y_id = use_a11y();
+        let focus = use_focus(a11y_id);
+        let mut dimensions = use_state(|| (1.0f32, 1.0f32));
+        use_side_effect(move || {
+            let focused = *Platform::get().current_window().is_app_focused.read() && focus().is_focused();
+            if let Some(handle) = handle.read().clone() {
+                handle.focus_changed(focused);
+            }
+        });
+        let cell = move |x: f64, y: f64| {
+            let (char_width, line_height) = dimensions();
+            ((y / line_height as f64) as f32, (x / char_width as f64) as f32)
+        };
+        let Some(terminal) = handle.read().clone() else {
+            return rect().padding(6.0).child("Terminal exited").into_element();
+        };
+        rect()
+            .width(Size::fill())
+            .height(Size::fill())
+            .background((10, 10, 10))
+            .padding(6.0)
+            .child(
+                Terminal::new(terminal.clone())
+                    .font_size(self.font_size)
+                    .font_family(self.font_family)
+                    .on_measured(move |size: (f32, f32)| dimensions.set(size))
+                    .on_mouse_down({
+                        let terminal = terminal.clone();
+                        move |e: Event<MouseEventData>| {
+                            a11y_id.request_focus();
+                            let (row, col) = cell(e.element_location.x, e.element_location.y);
+                            let button = match e.button {
+                                Some(MouseButton::Middle) => TerminalMouseButton::Middle,
+                                Some(MouseButton::Right) => TerminalMouseButton::Right,
+                                _ => TerminalMouseButton::Left,
+                            };
+                            let selection = match EventsCombos::<()>::pressed(e.element_location) {
+                                PressEventType::Double => SelectionType::Semantic,
+                                PressEventType::Triple => SelectionType::Lines,
+                                _ => SelectionType::Simple,
+                            };
+                            terminal.mouse_down(row, col, button, selection);
+                        }
+                    })
+                    .on_mouse_move({
+                        let terminal = terminal.clone();
+                        move |e: Event<MouseEventData>| {
+                            let (row, col) = cell(e.element_location.x, e.element_location.y);
+                            terminal.mouse_move(row, col);
+                        }
+                    })
+                    .on_mouse_up({
+                        let terminal = terminal.clone();
+                        move |e: Event<MouseEventData>| {
+                            let (row, col) = cell(e.element_location.x, e.element_location.y);
+                            let button = match e.button {
+                                Some(MouseButton::Middle) => TerminalMouseButton::Middle,
+                                Some(MouseButton::Right) => TerminalMouseButton::Right,
+                                _ => TerminalMouseButton::Left,
+                            };
+                            terminal.mouse_up(row, col, button);
+                        }
+                    })
+                    .on_global_pointer_up({
+                        let terminal = terminal.clone();
+                        move |_: Event<PointerEventData>| terminal.release()
+                    })
+                    .on_wheel({
+                        let terminal = terminal.clone();
+                        move |e: Event<WheelEventData>| {
+                            let (row, col) = cell(e.element_location.x, e.element_location.y);
+                            terminal.wheel(e.delta_y, row, col);
+                        }
+                    })
+                    .a11y_id(a11y_id)
+                    .a11y_role(AccessibilityRole::Terminal)
+                    .on_key_up({
+                        let terminal = terminal.clone();
+                        move |e: Event<KeyboardEventData>| {
+                            if e.key == Key::Named(NamedKey::Shift) {
+                                terminal.shift_pressed(false);
+                            }
+                        }
+                    })
+                    .on_key_down(move |e: Event<KeyboardEventData>| {
+                        let ctrl_shift = e.modifiers.contains(Modifiers::CONTROL | Modifiers::SHIFT);
+                        match &e.key {
+                            Key::Character(ch) if ctrl_shift && ch.eq_ignore_ascii_case("c") => {
+                                if let Some(text) = terminal.get_selected_text() {
+                                    let _ = freya::clipboard::Clipboard::set(text);
+                                }
+                            }
+                            Key::Character(ch) if ctrl_shift && ch.eq_ignore_ascii_case("v") => {
+                                if let Ok(text) = freya::clipboard::Clipboard::get() {
+                                    let _ = terminal.paste(&text);
+                                }
+                            }
+                            _ => {
+                                let _ = terminal.write_key(&e.key, e.modifiers);
+                            }
+                        }
+                    }),
+            )
+            .into_element()
+    }
+}
+{%- endif %}
+{%- if "backend:freya-gui/Chart" in types %}
+
+/// Draws a chart of `values` with plotters (Line, Bar, Points, Area).
+pub fn draw_chart(context: &mut FillRenderContext, values: &[f64], title: &str, kind: &str, rgb: (u8, u8, u8)) {
+    use freya::plot::{PlotSkiaBackend, plotters::prelude::*};
+    let size = (context.size.width as i32, context.size.height as i32);
+    let RenderTarget::Background { canvas, font_collection } = &mut context.target else {
+        return;
+    };
+    let root = PlotSkiaBackend::new(canvas, font_collection, size).into_drawing_area();
+    let count = values.len().max(1);
+    let low = values.iter().copied().fold(0.0f64, f64::min);
+    let high = values.iter().copied().fold(1.0f64, f64::max);
+    let pad = (high - low).abs().max(1.0) * 0.05;
+    let color = RGBColor(rgb.0, rgb.1, rgb.2);
+    let Ok(mut chart) = ChartBuilder::on(&root)
+        .caption(title, ("sans-serif", 14))
+        .margin(8)
+        .x_label_area_size(22)
+        .y_label_area_size(36)
+        .build_cartesian_2d(0f64..count as f64, (low - pad)..(high + pad))
+    else {
+        return;
+    };
+    let _ = chart.configure_mesh().light_line_style(TRANSPARENT).draw();
+    let points = || values.iter().enumerate().map(|(i, v)| (i as f64 + 0.5, *v));
+    let _ = match kind {
+        "Bar" => chart
+            .draw_series(values.iter().enumerate().map(|(i, v)| {
+                Rectangle::new([(i as f64 + 0.1, low.min(0.0)), (i as f64 + 0.9, *v)], color.filled())
+            }))
+            .map(|_| ()),
+        "Points" => chart
+            .draw_series(points().map(|p| Circle::new(p, 4, color.filled())))
+            .map(|_| ()),
+        "Area" => chart
+            .draw_series(AreaSeries::new(points(), low.min(0.0), color.mix(0.3)).border_style(color))
+            .map(|_| ()),
+        _ => chart.draw_series(LineSeries::new(points(), &color)).map(|_| ()),
+    };
+    let _ = root.present();
+}
+{%- endif %}
+{%- if "backend:freya-gui/Camera" in types %}
+
+/// A Camera: the live picture of device `device`.
+#[derive(PartialEq)]
+pub struct CameraView {
+    pub device: u32,
+}
+
+impl Component for CameraView {
+    fn render(&self) -> impl IntoElement {
+        use freya::camera::*;
+        let device = self.device;
+        let camera = use_camera(move || CameraConfig::new().device(CameraIndex::Index(device)));
+        CameraViewer::new(camera).width(Size::fill()).height(Size::fill())
+    }
+}
+{%- endif %}
+{%- if "backend:freya-gui/Video" in types %}
+
+/// State of a Video: the file and whether it plays.
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq)]
+pub struct Video {
+    pub file: String,
+    pub playing: bool,
+}
+
+#[allow(dead_code)]
+impl Video {
+    pub fn new(file: &str, autoplay: bool) -> Self {
+        Self {
+            file: file.to_owned(),
+            playing: autoplay,
+        }
+    }
+}
+
+/// A Video: plays `file`, follows `playing`; the controls report changes.
+#[derive(PartialEq)]
+pub struct VideoView {
+    pub file: String,
+    pub playing: bool,
+    pub controls: bool,
+    pub on_playing: EventHandler<bool>,
+}
+
+impl Component for VideoView {
+    fn render(&self) -> impl IntoElement {
+        use freya::video::*;
+        let file = self.file.clone();
+        let mut player = use_hook(move || VideoPlayer::create(VideoSource(std::path::PathBuf::from(file))));
+        let applied = use_hook(|| std::rc::Rc::new(std::cell::RefCell::new((self.file.clone(), !self.playing))));
+        if applied.borrow().0 != self.file {
+            player.set_source(VideoSource(std::path::PathBuf::from(&self.file)));
+            applied.borrow_mut().0 = self.file.clone();
+        }
+        if applied.borrow().1 != self.playing {
+            if self.playing {
+                player.play();
+            } else {
+                player.pause();
+            }
+            applied.borrow_mut().1 = self.playing;
+        }
+        let picture: Element = match (player.frame(), player.state()) {
+            (Some(frame), _) => image(frame)
+                .width(Size::fill())
+                .height(Size::fill())
+                .aspect_ratio(AspectRatio::Min)
+                .image_cover(ImageCover::Center)
+                .into_element(),
+            (_, PlaybackState::Errored) => label().text("Video failed to load").into_element(),
+            _ => CircularLoader::new().into_element(),
+        };
+        let playing = self.playing;
+        let on_playing = self.on_playing.clone();
+        rect()
+            .width(Size::fill())
+            .height(Size::fill())
+            .content(Content::flex())
+            .spacing(6.0)
+            .child(rect().width(Size::fill()).height(Size::flex(1.0)).center().child(picture))
+            .maybe(self.controls, |el| {
+                el.child(
+                    rect()
+                        .horizontal()
+                        .width(Size::fill())
+                        .content(Content::flex())
+                        .cross_align(Alignment::Center)
+                        .spacing(8.0)
+                        .child(
+                            Button::new()
+                                .flat()
+                                .compact()
+                                .on_press(move |_| on_playing.call(!playing))
+                                .child(if playing { "⏸" } else { "▶" }),
+                        )
+                        .child(
+                            Slider::new(move |percent: f64| {
+                                if let Some(duration) = player.duration() {
+                                    player.seek(
+                                        std::time::Duration::from_secs_f64(duration.as_secs_f64() * percent / 100.0),
+                                        std::time::Duration::from_millis(150),
+                                    );
+                                }
+                            })
+                            .value(player.progress())
+                            .size(Size::flex(1.0)),
+                        )
+                        .child(
+                            Slider::new(move |percent: f64| player.set_volume((percent / 100.0) as f32))
+                                .value(player.volume() as f64 * 100.0)
+                                .size(Size::px(80.0)),
+                        ),
+                )
+            })
+    }
+}
+{%- endif %}
+{%- if "backend:freya-gui/HtmlView" in types %}
+
+/// State of an HtmlView: an address or, without one, HTML text.
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq)]
+pub struct Html {
+    pub url: String,
+    pub html: String,
+}
+
+#[allow(dead_code)]
+impl Html {
+    pub fn new(url: &str, html: &str) -> Self {
+        Self {
+            url: url.to_owned(),
+            html: html.to_owned(),
+        }
+    }
+}
+
+/// An HtmlView: shows `url` (or `html`), follows changes of the form.
+#[derive(PartialEq)]
+pub struct HtmlView {
+    pub url: String,
+    pub html: String,
+}
+
+impl Component for HtmlView {
+    fn render(&self) -> impl IntoElement {
+        use freya::html::*;
+        let source = |url: &str, html: &str| {
+            if url.trim().is_empty() {
+                HtmlSource::html(html.to_owned())
+            } else {
+                HtmlSource::url(url.to_owned())
+            }
+        };
+        let first = source(&self.url, &self.html);
+        let mut handle = use_hook(move || HtmlHandle::create(first));
+        let shown = use_hook(|| std::rc::Rc::new(std::cell::RefCell::new((self.url.clone(), self.html.clone()))));
+        if *shown.borrow() != (self.url.clone(), self.html.clone()) {
+            *shown.borrow_mut() = (self.url.clone(), self.html.clone());
+            if self.url.trim().is_empty() {
+                handle.load_html(self.html.clone());
+            } else {
+                handle.navigate(self.url.clone());
+            }
+        }
+        HtmlViewer::new(handle)
+    }
+}
+{%- endif %}
 {%- if pictures %}
 
 /// A picture prepared by `freya_image` (gamma, opacity) as PNG for freya.

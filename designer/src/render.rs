@@ -573,6 +573,240 @@ impl Painter<'_> {
                     }
                 }
             }
+            // Aufklappbarer Abschnitt: Kopf mit Titel und Pfeil, darunter der Inhalt.
+            "accordion" => {
+                let header = self.theme.metrics(&widget.component.type_ref).header;
+                let title = self.props.text(widget, "title").unwrap_or_default();
+                self.out
+                    .push(rect(r, Some(c.window), Some(c.container_border), radius));
+                let head = Rect::new(r.x, r.y, r.width, header);
+                self.out.push(rect(
+                    head,
+                    Some(c.control),
+                    Some(c.container_border),
+                    radius,
+                ));
+                self.text_in(head, r.x + 10, &title, text_color, true);
+                let arrow = Rect::new(head.right() - header, head.y, header, header);
+                self.text_centered(arrow, "▾", text_color);
+            }
+            // Monatsansicht: Kopf mit Monat, darunter 6 × 7 Tage.
+            "calendar" => {
+                self.out
+                    .push(rect(r, Some(c.window), Some(c.container_border), radius));
+                let head = Rect::new(r.x, r.y + 2, r.width, font + 10);
+                self.text_centered(head, "‹    2026-11    ›", text_color);
+                let cell_w = (r.width - 8).max(7) / 7;
+                let rows_top = head.bottom() + 2;
+                let cell_h = ((r.bottom() - rows_top - 4).max(7)) / 7;
+                for (col, day) in ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"]
+                    .iter()
+                    .enumerate()
+                {
+                    let cell = Rect::new(r.x + 4 + col as i32 * cell_w, rows_top, cell_w, cell_h);
+                    self.text_centered(cell, day, c.disabled_text);
+                }
+                for i in 0..35 {
+                    let (row, col) = (i / 7 + 1, i % 7);
+                    let cell = Rect::new(
+                        r.x + 4 + col * cell_w,
+                        rows_top + row * cell_h,
+                        cell_w,
+                        cell_h,
+                    );
+                    let day = i - 5;
+                    if (1..=30).contains(&day) {
+                        if day == 27 {
+                            self.out.push(rect(cell, Some(c.accent), None, 4));
+                        }
+                        let color = if day == 27 { white } else { text_color };
+                        self.text_centered(cell, &day.to_string(), color);
+                    }
+                }
+            }
+            // Kleiner Umschaltknopf in Pillenform.
+            "chip" => {
+                let selected = self.props.bool(widget, "selected", false);
+                let pill = r.height / 2;
+                if selected {
+                    self.out.push(rect(r, Some(c.accent), None, pill));
+                    self.text_centered(r, caption, white);
+                } else {
+                    self.out
+                        .push(rect(r, Some(c.control), Some(c.control_border), pill));
+                    self.text_centered(r, caption, text_color);
+                }
+            }
+            // Farbfeld mit der gewählten Farbe.
+            "colorpicker" => {
+                let color = match self.props.value(widget, "color") {
+                    Some(Value::Color(v)) if v.a > 0 => Color::rgba(v.r, v.g, v.b, v.a),
+                    _ => c.accent,
+                };
+                let swatch = Rect::new(r.x, r.y, r.height.min(r.width), r.height);
+                self.out
+                    .push(rect(swatch, Some(color), Some(c.control_border), radius));
+            }
+            // Kreis als Ladeanzeige.
+            "loader" => {
+                let size = r.width.min(r.height);
+                let circle = Rect::new(
+                    r.x + (r.width - size) / 2,
+                    r.y + (r.height - size) / 2,
+                    size,
+                    size,
+                );
+                self.out
+                    .push(rect(circle, None, Some(c.control_border), size / 2));
+                self.out.push(Primitive::Line {
+                    from: Point::new(circle.x + size / 2, circle.y),
+                    to: Point::new(circle.right(), circle.y + size / 2),
+                    color: c.accent,
+                });
+            }
+            // Platzhalter beim Laden: graue Fläche mit hellem Streifen.
+            "skeleton" => {
+                self.out.push(rect(r, Some(c.control), None, radius));
+                let band = Rect::new(r.x + r.width / 3, r.y, r.width / 6, r.height);
+                self.out.push(rect(band, Some(c.input), None, 0));
+            }
+            // Knopfreihe, ein Teil gewählt.
+            "segmented" => {
+                let items = self.props.list_items(widget);
+                let selected = self.props.int(widget, "selected", 0).max(0) as usize;
+                let pill = r.height / 2;
+                self.out
+                    .push(rect(r, Some(c.control), Some(c.control_border), pill));
+                let count = items.len().max(1) as i32;
+                let w = r.width / count;
+                for (i, item) in items.iter().enumerate() {
+                    let part = Rect::new(r.x + i as i32 * w, r.y, w, r.height);
+                    if i == selected {
+                        self.out.push(rect(part, Some(c.accent), None, pill));
+                        self.text_centered(part, item, white);
+                    } else {
+                        self.text_centered(part, item, text_color);
+                    }
+                }
+            }
+            // Text, linksbündig (mehrzeilig).
+            "text" => {
+                let text = self.props.text(widget, "text").unwrap_or_default();
+                let row = font + 6;
+                let mut y = r.y + 2;
+                for line in text.lines() {
+                    if y + row > r.bottom() + 2 {
+                        break;
+                    }
+                    self.text_in(
+                        Rect::new(r.x, y, r.width, row),
+                        r.x,
+                        line,
+                        text_color,
+                        false,
+                    );
+                    y += row;
+                }
+            }
+            // Panels mit Griff: gestrichelter Rahmen, Griff in der Mitte.
+            "splitter" => {
+                self.out.push(Primitive::Rect {
+                    rect: r,
+                    fill: None,
+                    stroke: Some(c.container_border),
+                    radius,
+                    dashed: true,
+                });
+                if self.props.bool(widget, "vertical", false) {
+                    let y = r.y + r.height / 2;
+                    self.out.push(Primitive::Line {
+                        from: Point::new(r.x, y),
+                        to: Point::new(r.right(), y),
+                        color: c.accent,
+                    });
+                } else {
+                    let x = r.x + r.width / 2;
+                    self.out.push(Primitive::Line {
+                        from: Point::new(x, r.y),
+                        to: Point::new(x, r.bottom()),
+                        color: c.accent,
+                    });
+                }
+            }
+            // Terminal: dunkle Fläche mit Eingabeaufforderung.
+            "terminal" => {
+                let dark = Color::rgb(0x12, 0x12, 0x12);
+                self.out
+                    .push(rect(r, Some(dark), Some(c.control_border), radius));
+                let row = Rect::new(r.x + 6, r.y + 4, r.width - 12, font + 6);
+                self.text_in(row, row.x, "$ _", Color::rgb(0xe0, 0xe0, 0xe0), false);
+            }
+            // Diagramm: Achsen und eine Linie (Balken bei `kind = Bar`).
+            "chart" => {
+                self.out
+                    .push(rect(r, Some(c.window), Some(c.container_border), radius));
+                let (x0, y0) = (r.x + 24, r.bottom() - 16);
+                let (x1, y1) = (r.right() - 8, r.y + 12);
+                self.out.push(Primitive::Line {
+                    from: Point::new(x0, y1),
+                    to: Point::new(x0, y0),
+                    color: c.control_border,
+                });
+                self.out.push(Primitive::Line {
+                    from: Point::new(x0, y0),
+                    to: Point::new(x1, y0),
+                    color: c.control_border,
+                });
+                let values = match self.props.value(widget, "values") {
+                    Some(Value::List(items)) => items
+                        .iter()
+                        .filter_map(|v| match v {
+                            Value::Float(f) => Some(*f),
+                            Value::Int(i) => Some(*i as f64),
+                            _ => None,
+                        })
+                        .collect(),
+                    _ => Vec::new(),
+                };
+                let values = if values.is_empty() {
+                    vec![1.0, 3.0, 2.0, 4.0]
+                } else {
+                    values
+                };
+                let high = values.iter().copied().fold(f64::MIN, f64::max).max(1e-9);
+                let n = values.len() as i32;
+                let w = ((x1 - x0) / n.max(1)).max(1);
+                let y_of = |v: f64| y0 - (((y0 - y1) as f64) * (v / high).clamp(0.0, 1.0)) as i32;
+                let bars =
+                    matches!(self.props.value(widget, "kind"), Some(Value::Enum(k)) if k == "Bar");
+                for (i, v) in values.iter().enumerate() {
+                    let x = x0 + i as i32 * w;
+                    if bars {
+                        let top = y_of(*v);
+                        self.out.push(rect(
+                            Rect::new(x + w / 6, top, w * 2 / 3, y0 - top),
+                            Some(c.accent),
+                            None,
+                            0,
+                        ));
+                    } else if i + 1 < values.len() {
+                        self.out.push(Primitive::Line {
+                            from: Point::new(x + w / 2, y_of(*v)),
+                            to: Point::new(x + w + w / 2, y_of(values[i + 1])),
+                            color: c.accent,
+                        });
+                    }
+                }
+            }
+            // Dialog: Karte mit Titel.
+            "popup" => {
+                let header = self.theme.metrics(&widget.component.type_ref).header;
+                let title = self.props.text(widget, "title").unwrap_or_default();
+                self.out
+                    .push(rect(r, Some(c.window), Some(c.window_border), radius * 2));
+                let head = Rect::new(r.x, r.y, r.width, header);
+                self.text_in(head, r.x + 12, &title, text_color, true);
+            }
             _ => {
                 self.out
                     .push(rect(r, Some(c.control), Some(c.control_border), 0));

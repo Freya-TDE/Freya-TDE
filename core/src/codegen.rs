@@ -74,7 +74,10 @@
 //!
 //! The backend's `run` template gets `forms` (list of `{name, struct,
 //! data_module}`), `app` (the variable holding the `App`) and `runtime`
-//! (the runtime variable or none; with `host` it may be moved). It must evaluate to `Result<(), Error>`.
+//! (the runtime variable or none; with `host` it may be moved), `pictures`
+//! (the project shows pictures) and `types` (every type used in the
+//! project as text, e.g. `backend:freya-gui/Calendar`, sorted). It must
+//! evaluate to `Result<(), Error>`.
 //! The optional `setup` template gets the same context; its statements run
 //! first in `run()`, before `App::init` (e.g. `gtk4::init()?;`). The
 //! optional `app` template (same context) adds items to `app.gen.rs`, e.g.
@@ -1997,6 +2000,7 @@ fn app_file(
             app => "app",
             runtime => runtime_var,
             pictures => uses_pictures(forms),
+            types => used_types(forms),
         };
         let mut issues = Vec::new();
         let rendered = render(env, "run", template, &context, &mut issues).filter(|text| {
@@ -2046,6 +2050,8 @@ fn app_file(
                 runtime => runtime_var,
                 // Bilder im Projekt: `crate::app::freya_image` steht bereit.
                 pictures => uses_pictures(forms),
+                // Alle Typen im Projekt (`backend:egui/Slider` …): Hilfen nur bei Bedarf.
+                types => used_types(forms),
             };
             let mut issues = Vec::new();
             let rendered = render(env, "app", template, &context, &mut issues).filter(|text| {
@@ -2126,6 +2132,19 @@ fn app_file(
     }
     let content = generated_file("the project", &format_rust(APP, &code, out));
     file(APP, FileKind::Generated, content, source)
+}
+
+/// Every type used in the project (widgets and non-visual components), as
+/// text (`core/Button`, `backend:freya-gui/Calendar`), sorted – for backend
+/// templates that add helpers only when a type is used.
+fn used_types(forms: &[Form]) -> Vec<String> {
+    let mut types: Vec<String> = forms
+        .iter()
+        .flat_map(|f| f.elements().into_iter().map(|e| e.type_ref().to_string()))
+        .collect();
+    types.sort();
+    types.dedup();
+    types
 }
 
 /// Whether a form shows pictures (`core/ImageBox`, `core/ImageScrollBox`).

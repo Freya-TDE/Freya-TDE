@@ -10,10 +10,27 @@ use ruf::Image;
 
 /// The built-in icons by name.
 const BUILTIN: &[(&str, &[u8])] = &[
+    (
+        "accordion",
+        include_bytes!("../../assets/palette/accordion.png"),
+    ),
     ("button", include_bytes!("../../assets/palette/button.png")),
+    (
+        "calendar",
+        include_bytes!("../../assets/palette/calendar.png"),
+    ),
+    ("camera", include_bytes!("../../assets/palette/camera.png")),
+    ("chart", include_bytes!("../../assets/palette/chart.png")),
+    ("check", include_bytes!("../../assets/palette/check.png")),
     (
         "checkbox",
         include_bytes!("../../assets/palette/checkbox.png"),
+    ),
+    ("chip", include_bytes!("../../assets/palette/chip.png")),
+    ("clippy", include_bytes!("../../assets/palette/clippy.png")),
+    (
+        "colorpicker",
+        include_bytes!("../../assets/palette/colorpicker.png"),
     ),
     (
         "component",
@@ -28,12 +45,14 @@ const BUILTIN: &[(&str, &[u8])] = &[
         "database",
         include_bytes!("../../assets/palette/database.png"),
     ),
+    ("doc", include_bytes!("../../assets/palette/doc.png")),
     (
         "dropdown",
         include_bytes!("../../assets/palette/dropdown.png"),
     ),
     ("edit", include_bytes!("../../assets/palette/edit.png")),
     ("form", include_bytes!("../../assets/palette/form.png")),
+    ("format", include_bytes!("../../assets/palette/format.png")),
     ("frame", include_bytes!("../../assets/palette/frame.png")),
     ("globe", include_bytes!("../../assets/palette/globe.png")),
     ("image", include_bytes!("../../assets/palette/image.png")),
@@ -48,35 +67,49 @@ const BUILTIN: &[(&str, &[u8])] = &[
     ("label", include_bytes!("../../assets/palette/label.png")),
     ("link", include_bytes!("../../assets/palette/link.png")),
     ("list", include_bytes!("../../assets/palette/list.png")),
+    ("loader", include_bytes!("../../assets/palette/loader.png")),
     ("memo", include_bytes!("../../assets/palette/memo.png")),
     ("menu", include_bytes!("../../assets/palette/menu.png")),
     (
         "pointer",
         include_bytes!("../../assets/palette/pointer.png"),
     ),
+    ("popup", include_bytes!("../../assets/palette/popup.png")),
     (
         "progress",
         include_bytes!("../../assets/palette/progress.png"),
     ),
     ("radio", include_bytes!("../../assets/palette/radio.png")),
     (
+        "segmented",
+        include_bytes!("../../assets/palette/segmented.png"),
+    ),
+    (
         "separator",
         include_bytes!("../../assets/palette/separator.png"),
     ),
+    (
+        "skeleton",
+        include_bytes!("../../assets/palette/skeleton.png"),
+    ),
     ("slider", include_bytes!("../../assets/palette/slider.png")),
     ("spin", include_bytes!("../../assets/palette/spin.png")),
+    (
+        "splitter",
+        include_bytes!("../../assets/palette/splitter.png"),
+    ),
+    ("sqlx", include_bytes!("../../assets/palette/sqlx.png")),
     ("switch", include_bytes!("../../assets/palette/switch.png")),
     ("table", include_bytes!("../../assets/palette/table.png")),
     ("tabs", include_bytes!("../../assets/palette/tabs.png")),
-    ("timer", include_bytes!("../../assets/palette/timer.png")),
-    // Werkzeugleiste des Hauptfensters.
-    ("check", include_bytes!("../../assets/palette/check.png")),
-    ("clippy", include_bytes!("../../assets/palette/clippy.png")),
-    ("format", include_bytes!("../../assets/palette/format.png")),
+    (
+        "terminal",
+        include_bytes!("../../assets/palette/terminal.png"),
+    ),
     ("test", include_bytes!("../../assets/palette/test.png")),
+    ("timer", include_bytes!("../../assets/palette/timer.png")),
     ("update", include_bytes!("../../assets/palette/update.png")),
-    ("doc", include_bytes!("../../assets/palette/doc.png")),
-    ("sqlx", include_bytes!("../../assets/palette/sqlx.png")),
+    ("video", include_bytes!("../../assets/palette/video.png")),
 ];
 
 /// Icon of a type without an icon of its own.

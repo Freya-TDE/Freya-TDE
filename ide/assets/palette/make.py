@@ -86,6 +86,31 @@ ICONS = {
     "sqlx": f"<path d='M7 11v24c0 3 6 6 13 6s13-3 13-6V11' fill='{PALE}' stroke='{LINE}' stroke-width='2'/>"
             + f"<ellipse cx='20' cy='11' rx='13' ry='5.5' fill='{BODY}' stroke='{LINE}' stroke-width='2'/>"
             + f"<path d='M34 18l-7 12h6l-3 11 10-15h-6l4-8z' fill='{BLUE}' stroke='{LINE}' stroke-width='1.5' stroke-linejoin='round'/>",
+    # --- freya (widgets/freya-gui) ---------------------------------------------------
+    "accordion": rect(5, 7, 38, 11, 3, fill=SOFT) + f"<path d='M35 11l3 3 3-3' fill='none' stroke='{INK}' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/>"
+                 + line(10, 12.5, 24, 12.5) + rect(5, 21, 38, 20, 3) + line(10, 28, 34, 28) + line(10, 34, 28, 34),
+    "calendar": rect(6, 9, 36, 32, 3) + f"<path d='M7 10h34v8H7z' fill='{BLUE}'/>" + line(15, 5, 15, 12, LINE, 2.5) + line(33, 5, 33, 12, LINE, 2.5)
+                + "".join(f"<circle cx='{x}' cy='{y}' r='1.8' fill='{GREY}'/>" for y in (25, 32) for x in (13, 20, 27, 34))
+                + rect(24, 29, 7, 6, 1.5, fill=BLUE, stroke=BLUE),
+    "chip": rect(4, 15, 40, 18, 9, fill=PALE, stroke=BLUE) + text(24, 28, "tag", 10, BLUE),
+    "colorpicker": f"<circle cx='24' cy='24' r='17' fill='{BODY}' stroke='{LINE}' stroke-width='2'/>"
+                   + "".join(f"<circle cx='{x}' cy='{y}' r='4.5' fill='{c}'/>" for x, y, c in ((24, 14, '#e5484d'), (33, 21, '#f2b632'), (30, 32, '#30a46c'), (18, 32, BLUE), (15, 21, '#8e4ec6'))),
+    "loader": f"<circle cx='24' cy='24' r='15' fill='none' stroke='{SOFT}' stroke-width='5'/>"
+              + f"<path d='M24 9a15 15 0 0 1 15 15' fill='none' stroke='{BLUE}' stroke-width='5' stroke-linecap='round'/>",
+    "skeleton": rect(5, 9, 38, 30, 4, fill=SOFT) + rect(10, 15, 20, 5, 2.5, fill=PALE, stroke="none", sw=0)
+                + rect(10, 24, 28, 5, 2.5, fill=PALE, stroke="none", sw=0) + rect(10, 31, 16, 3, 1.5, fill=PALE, stroke="none", sw=0),
+    "segmented": rect(3, 15, 42, 18, 9, fill=SOFT) + rect(4, 16, 19, 16, 8, fill=BLUE, stroke="none", sw=0)
+                 + line(32, 24, 38, 24, GREY, 2.5),
+    "splitter": rect(4, 8, 40, 32, 3) + line(20, 9, 20, 39, BLUE, 3) + rect(17, 19, 6, 10, 2, fill=BODY, stroke=BLUE)
+                + line(9, 16, 15, 16) + line(25, 16, 39, 16),
+    "popup": rect(3, 5, 42, 38, 3, fill=SOFT, stroke=GREY, extra="opacity='0.6'") + rect(9, 12, 30, 24, 4)
+             + line(13, 18, 27, 18, INK, 2.5) + rect(25, 27, 10, 6, 2, fill=BLUE, stroke=BLUE),
+    "terminal": rect(4, 8, 40, 32, 4, fill="#20242a", stroke=LINE) + f"<path d='M10 18l6 5-6 5' fill='none' stroke='#9fe870' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/>"
+                + line(20, 29, 32, 29, "#e0e0e0", 3),
+    "chart": line(8, 8, 8, 40, LINE, 2.5) + line(8, 40, 42, 40, LINE, 2.5)
+             + f"<path d='M10 34l9-10 7 6 13-16' fill='none' stroke='{BLUE}' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'/>",
+    "camera": rect(4, 14, 40, 26, 5) + rect(16, 9, 14, 7, 2, fill=SOFT) + f"<circle cx='24' cy='27' r='8' fill='{PALE}' stroke='{BLUE}' stroke-width='3'/>",
+    "video": rect(4, 10, 40, 28, 4, fill=PALE) + f"<path d='M20 17v14l12-7z' fill='{BLUE}' stroke='{LINE}' stroke-width='1.5' stroke-linejoin='round'/>",
     # --- IDE ------------------------------------------------------------------------
     "pointer": f"<path d='M14 6v31l8-8 5.5 12 5-2.3-5.5-11.7H38z' fill='{BODY}' stroke='{INK}' stroke-width='2.5' stroke-linejoin='round'/>",
     # --- non-visual components -----------------------------------------------------

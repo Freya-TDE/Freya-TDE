@@ -11,7 +11,7 @@ Visuelle Widgets und Backend-Paletten, aufbauend auf `tdr-core` (der gemeinsame 
 | `slint` | fertig / done | Slint 1.18 (deklarativ, mit Lizenzhinweis); Kern-Widgets plus Palette „Slint“: RadioButton, Switch, SpinBox, Slider, ProgressIndicator, ComboBox, ListView, TextEdit, Separator, Image, AboutSlint, GroupBox, TabWidget, MainMenu |
 | `flutter` | fertig / done | Flutter (Material 3) mit flutter_rust_bridge 2.13, Logik in Rust; Kern-Widgets plus Palette „Flutter“: RadioButton, Switch, Slider, ProgressBar, ComboBox, ListBox, TextEdit, Separator, Card, Tabs, MainMenu, DataGrid |
 | `webview` | fertig / done | Natives Fenster mit System-WebView (wry 0.57 + tao 0.37), Formular als HTML/CSS, Logik in Rust; Stil Native oder Pico; Kern-Widgets plus Palette „WebView“: RadioButton, Switch, Slider, ProgressBar, ComboBox, ListBox, TextEdit, Separator, Frame, Tabs, MainMenu, DataGrid |
-| `freya-gui` | fertig / done | **freya** ([freyaui.dev](https://freyaui.dev), Marc Espín, MIT; eigenständiges Projekt, von Freya TDE nur unterstützt) 0.5.4, reaktiv, Skia; angezeigt als „freya“; Kern-Widgets plus Palette „freya“: RadioButton, Switch, Slider, ProgressBar, Select, ListBox, TextEdit, Separator, Card, Tabs, Link, MainMenu, DataGrid |
+| `freya-gui` | fertig / done | **freya** ([freyaui.dev](https://freyaui.dev), Marc Espín, MIT; eigenständiges Projekt, von Freya TDE nur unterstützt) 0.5.4, reaktiv, Skia; angezeigt als „freya“; Kern-Widgets plus Palette „freya“: RadioButton, Switch, Slider, ProgressBar, Select, ListBox, TextEdit, Separator, Card, Tabs, Link, MainMenu, DataGrid, Accordion, Calendar, Chip, ColorPicker, Loader, Skeleton, SegmentedButton, SelectableText, Paragraph, Marquee, Svg, Gif, VirtualList, SideBar, Splitter, DragCanvas, Popup, ContextMenu, DragZone, DropZone, Lazy, DockArea, Markdown, CodeEditor, Terminal, Chart, Canvas, Camera, Video, HtmlView, Icon |
 
 Der Neu-Assistent (Datei → Neues Projekt …) bietet alle installierten Backends an, `gtk4` vorgewählt.
 *The new-project wizard offers all installed backends, `gtk4` preselected.*
@@ -256,6 +256,22 @@ module `freya_ui` with freya's elements and components.*
 - `MainMenu`: Menüleiste aus Knöpfen, darunter freyas `Menu` (Pfade, `-`, tiefere Ebenen als „Export › PDF“);
   Kürzel wie `Ctrl+O` sind gebunden (unter macOS die Befehlstaste).
 - `TextEdit` ist freyas `Input` mit `multiline`; `Link` öffnet die Adresse mit `Platform::open_url`.
+- Weitere Komponenten von freya (Etappe A): Accordion, Calendar (`self.<name>.value.selected` = Jahr, Monat,
+  Tag), Chip, ColorPicker (`freya::prelude::Color`), Loader, Skeleton (Container, zeigt die Kinder, wenn
+  `value` false ist), SegmentedButton, SelectableText, Paragraph, Marquee (freyas OverflowedContent), Svg, Gif,
+  VirtualList (nur sichtbare Zeilen), SideBar, Splitter (freyas ResizableContainer, ein Panel je Kind, `sizes`
+  in Prozent), DragCanvas (Kinder per Maus verschiebbar), Popup (öffnen mit `self.<name>.value = true`,
+  `on_close` entscheidet), ContextMenu (Rechtsklick auf das Widget `target`, Einträge wie beim Hauptmenü),
+  DragZone/DropZone (`data` als Text), Lazy, DockArea (Reiter per Ziehen zu Panels aufteilen). Der Button hat
+  dazu `variant` (Normal, Filled, Outline, Flat) und `compact`, das Eingabefeld `variant`.
+- Feature-Widgets (Etappe B; jedes schaltet sein Cargo-Feature von freya ein): Markdown, CodeEditor
+  (tree-sitter: Plain, Rust, Python, JavaScript, TypeScript, JSON, TOML, HTML, CSS, Bash, C, YAML – je Sprache
+  kommt die Grammatik-Crate dazu), Terminal (Pseudo-Terminal, Programm oder Shell), Chart (plotters: Line,
+  Bar, Points, Area aus `values`), Canvas (Handler `on_draw(canvas, width, height)` malt mit Skia), Camera,
+  Video (ffmpeg; fehlt es im `PATH`, lädt das Programm es beim Start herunter; `self.<name>.value.playing`),
+  HtmlView (Blitz, ohne JavaScript; `url` oder `html`), Icon (Lucide-Symbol per Name). Camera, Video, HtmlView,
+  Terminal und CodeEditor halten ihr freya-Handle in einer kleinen Komponente in `app.gen.rs`
+  (`CameraView`, `VideoView` …), weil freya es über Hooks anlegt; die Handler steuern über den Zustand.
 - Daten aus dem Hintergrund (Datenbindung, WebSocket, HTTP) wecken das Fenster über `futures-channel` und
   freyas `spawn`.
 - Gezeigt wird das erste Formular; `on_close` entscheidet über das Schließen (`CloseDecision`).

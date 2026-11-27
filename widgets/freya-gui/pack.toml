@@ -74,12 +74,28 @@ init = "crate::app::Control::new({{ rust.text }}.to_string()).with_state({{ rust
 
 [[extend]]
 type = "core/Button"
+[extend.properties.variant]
+type = "enum"
+variants = ["Normal", "Filled", "Outline", "Flat"]
+default = "Normal"
+category = "Appearance"
+description = "freya button style"
+[extend.properties.compact]
+type = "bool"
+category = "Appearance"
+description = "Less padding"
 [extend.codegen]
 type = "crate::app::Control<()>"
 init = "crate::app::Control::new(()).with_caption({{ rust.caption }}).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
 
 [[extend]]
 type = "core/Edit"
+[extend.properties.variant]
+type = "enum"
+variants = ["Normal", "Filled", "Flat"]
+default = "Normal"
+category = "Appearance"
+description = "freya input style"
 [extend.properties.max_length]
 type = "int"
 min = 0
@@ -399,3 +415,656 @@ description = "An entry was chosen; `item` is its path, e.g. `File/Open`"
 [component.codegen]
 type = "crate::app::Control<Option<usize>>"
 init = "crate::app::Control::new(None::<usize>).with_items::<&str>({{ rust.items }})"
+
+# --- Etappe A: weitere Komponenten von freya / more freya components -------------------------
+
+[[component]]
+name = "Accordion"
+kind = "container"
+look = "accordion"
+category = "freya"
+icon = "accordion"
+description = "Section that opens and closes on click; the children are its content"
+[component.properties.title]
+type = "text"
+default = "Section"
+category = "Appearance"
+[component.codegen]
+type = "crate::app::Control<()>"
+init = "crate::app::Control::new(()).with_caption({{ rust.title }}).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+[[component]]
+name = "Calendar"
+kind = "widget"
+look = "calendar"
+category = "freya"
+icon = "calendar"
+description = "Month view to pick a date; `self.<name>.value.selected` holds (year, month, day)"
+cargo = [{ crate = "freya", version = "0.5.4", features = ["calendar"] }]
+[component.properties.date]
+type = "text"
+category = "Value"
+description = "Selected date as YYYY-MM-DD (empty = none, the month of today is shown)"
+[component.properties.week_start]
+type = "enum"
+variants = ["Monday", "Sunday"]
+default = "Monday"
+category = "Appearance"
+[component.events.on_select]
+params = [{ name = "year", type = "i32" }, { name = "month", type = "u32" }, { name = "day", type = "u32" }]
+description = "A day was chosen"
+[component.codegen]
+type = "crate::app::Control<crate::app::Date>"
+init = "crate::app::Control::new(crate::app::Date::parse({{ rust.date }}, {{ 'true' if props.week_start == 'Sunday' else 'false' }})).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+[[component]]
+name = "Chip"
+kind = "widget"
+look = "chip"
+category = "freya"
+icon = "chip"
+description = "Small toggle button, e.g. for filters or tags"
+[component.properties.caption]
+type = "text"
+default = "Chip"
+category = "Appearance"
+[component.properties.selected]
+type = "bool"
+category = "Behavior"
+[component.events.on_toggle]
+params = [{ name = "selected", type = "bool" }]
+[component.codegen]
+type = "crate::app::Control<bool>"
+init = "crate::app::Control::new({{ rust.selected }}).with_caption({{ rust.caption }}).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+[[component]]
+name = "ColorPicker"
+kind = "widget"
+look = "colorpicker"
+category = "freya"
+icon = "colorpicker"
+description = "Choose a colour; `self.<name>.value` is a `freya::prelude::Color`"
+[component.properties.color]
+type = "color"
+default = "#3b82f6"
+category = "Value"
+[component.events.on_change]
+params = [{ name = "color", type = "freya::prelude::Color" }]
+[component.codegen]
+type = "crate::app::Control<freya::prelude::Color>"
+init = "crate::app::Control::new({% if props.color.a > 0 %}crate::app::color({{ props.color.r }}, {{ props.color.g }}, {{ props.color.b }}, {{ props.color.a }}){% else %}crate::app::color(0x3b, 0x82, 0xf6, 255){% endif %}).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+[[component]]
+name = "Loader"
+kind = "widget"
+look = "loader"
+category = "freya"
+icon = "loader"
+description = "Spinning circle while something loads"
+[component.properties.size]
+type = "int"
+min = 8
+default = 32
+category = "Appearance"
+[component.codegen]
+type = "crate::app::Control<()>"
+init = "crate::app::Control::new(()).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+[[component]]
+name = "Skeleton"
+kind = "container"
+look = "skeleton"
+category = "freya"
+icon = "skeleton"
+description = "Placeholder while loading; shows its children when `value` is false"
+[component.properties.loading]
+type = "bool"
+default = true
+category = "Behavior"
+[component.properties.shimmer]
+type = "bool"
+category = "Appearance"
+description = "Shimmer instead of pulse"
+[component.codegen]
+type = "crate::app::Control<bool>"
+init = "crate::app::Control::new({{ rust.loading }}).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+[[component]]
+name = "SegmentedButton"
+kind = "widget"
+look = "segmented"
+category = "freya"
+icon = "segmented"
+description = "Row of buttons, one of them selected"
+[component.properties.items]
+type = "list"
+item = "text"
+category = "Value"
+[component.properties.selected]
+type = "int"
+min = 0
+category = "Value"
+[component.events.on_select]
+params = [{ name = "index", type = "u32" }]
+[component.list]
+set-items = """
+self.{{ name }}.items = items;
+"""
+selected = """(self.{{ name }}.value < self.{{ name }}.items.len()).then_some(self.{{ name }}.value)"""
+[component.codegen]
+type = "crate::app::Control<usize>"
+init = "crate::app::Control::new({{ props.selected }}usize).with_items::<&str>({{ rust.items }}).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+[[component]]
+name = "SelectableText"
+kind = "widget"
+look = "text"
+category = "freya"
+icon = "label"
+description = "Text the user can select and copy"
+[component.properties.text]
+type = "text"
+default = "Selectable text"
+category = "Appearance"
+[component.codegen]
+type = "crate::app::Control<String>"
+init = "crate::app::Control::new({{ rust.text }}.to_string()).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+[[component]]
+name = "Paragraph"
+kind = "widget"
+look = "text"
+category = "freya"
+icon = "memo"
+description = "Multi-line text with wrapping"
+[component.properties.text]
+type = "text"
+default = "Paragraph"
+category = "Appearance"
+[component.properties.max_lines]
+type = "int"
+min = 0
+category = "Appearance"
+description = "0 = no limit"
+[component.properties.text_align]
+type = "enum"
+variants = ["Left", "Center", "Right", "Justify"]
+default = "Left"
+category = "Appearance"
+[component.codegen]
+type = "crate::app::Control<String>"
+init = "crate::app::Control::new({{ rust.text }}.to_string()).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+[[component]]
+name = "Marquee"
+kind = "widget"
+look = "text"
+category = "freya"
+icon = "label"
+description = "Text that scrolls through when it does not fit (freya OverflowedContent)"
+[component.properties.text]
+type = "text"
+default = "News ticker"
+category = "Appearance"
+[component.properties.duration_ms]
+type = "int"
+min = 100
+default = 4000
+category = "Behavior"
+[component.properties.left_to_right]
+type = "bool"
+category = "Behavior"
+[component.codegen]
+type = "crate::app::Control<String>"
+init = "crate::app::Control::new({{ rust.text }}.to_string()).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+[[component]]
+name = "Svg"
+kind = "widget"
+look = "image"
+category = "freya"
+icon = "image"
+description = "Shows an SVG file; `color` tints it"
+[component.properties.file]
+type = "text"
+category = "Value"
+description = "Path of the SVG file (relative to the working directory)"
+[component.properties.color]
+type = "color"
+default = "#00000000"
+category = "Appearance"
+description = "Tint (alpha 0 = the file's colours)"
+[component.codegen]
+type = "crate::app::Control<String>"
+init = "crate::app::Control::new({{ rust.file }}.to_string()).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+[[component]]
+name = "Gif"
+kind = "widget"
+look = "image"
+category = "freya"
+icon = "image"
+description = "Plays an animated GIF"
+cargo = [{ crate = "freya", version = "0.5.4", features = ["gif"] }]
+[component.properties.file]
+type = "text"
+category = "Value"
+description = "Path of the GIF file (relative to the working directory)"
+[component.codegen]
+type = "crate::app::Control<String>"
+init = "crate::app::Control::new({{ rust.file }}.to_string()).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+[[component]]
+name = "VirtualList"
+kind = "widget"
+look = "list"
+category = "freya"
+icon = "list"
+description = "List for many entries: only the visible rows are built"
+[component.properties.items]
+type = "list"
+item = "text"
+category = "Value"
+[component.properties.item_height]
+type = "int"
+min = 8
+default = 28
+category = "Appearance"
+[component.properties.selected]
+type = "int"
+min = -1
+default = -1
+category = "Value"
+[component.events.on_select]
+params = [{ name = "index", type = "i32" }]
+[component.list]
+set-items = """
+self.{{ name }}.items = items;
+"""
+selected = """usize::try_from(self.{{ name }}.value).ok()"""
+[component.codegen]
+type = "crate::app::Control<i32>"
+init = "crate::app::Control::new({{ props.selected }}i32).with_items::<&str>({{ rust.items }}).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+[[component]]
+name = "SideBar"
+kind = "widget"
+look = "list"
+category = "freya"
+icon = "list"
+description = "Vertical navigation with entries, one of them active"
+[component.properties.items]
+type = "list"
+item = "text"
+category = "Value"
+[component.properties.selected]
+type = "int"
+min = 0
+category = "Value"
+[component.events.on_select]
+params = [{ name = "index", type = "u32" }]
+[component.list]
+set-items = """
+self.{{ name }}.items = items;
+"""
+selected = """(self.{{ name }}.value < self.{{ name }}.items.len()).then_some(self.{{ name }}.value)"""
+[component.codegen]
+type = "crate::app::Control<usize>"
+init = "crate::app::Control::new({{ props.selected }}usize).with_items::<&str>({{ rust.items }}).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+[[component]]
+name = "Splitter"
+kind = "container"
+look = "splitter"
+category = "freya"
+icon = "splitter"
+description = "Panels side by side (or stacked) with handles to resize them; one panel per child"
+[component.properties.vertical]
+type = "bool"
+category = "Appearance"
+description = "Panels stacked instead of side by side"
+[component.properties.sizes]
+type = "list"
+item = "int"
+category = "Appearance"
+description = "Start size of each panel in percent (missing = equal shares)"
+[component.codegen]
+type = "crate::app::Control<()>"
+init = "crate::app::Control::new(()).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+[[component]]
+name = "DragCanvas"
+kind = "container"
+look = "frame"
+category = "freya"
+icon = "container"
+description = "Area whose children the user can move with the mouse (start: their position in the designer)"
+[component.codegen]
+type = "crate::app::Control<()>"
+init = "crate::app::Control::new(()).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+[[component]]
+name = "Popup"
+kind = "container"
+look = "popup"
+category = "freya"
+icon = "popup"
+description = "Dialog over the window; open it with `self.<name>.value = true`"
+[component.properties.title]
+type = "text"
+default = "Dialog"
+category = "Appearance"
+[component.properties.open]
+type = "bool"
+category = "Behavior"
+description = "Open at the start"
+[component.events.on_close]
+returns = "bool"
+description = "The user wants to close it (Esc, click outside); true = close (without a handler it closes)"
+[component.codegen]
+type = "crate::app::Control<bool>"
+init = "crate::app::Control::new({{ rust.open }}).with_caption({{ rust.title }}).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+[[component]]
+name = "ContextMenu"
+look = "menubar"
+category = "freya"
+icon = "menu"
+description = "Menu on right-click on the widget named in `target`; entries like the main menu"
+[component.properties.target]
+type = "text"
+category = "Menu"
+description = "Name of the widget that opens the menu on right-click"
+[component.properties.items]
+type = "list"
+item = "text"
+category = "Menu"
+description = "One entry per line: path with `/` for submenus, `-` = separator"
+[component.events.on_select]
+params = [{ name = "item", type = "&str" }]
+[component.codegen]
+type = "crate::app::Control<()>"
+init = "crate::app::Control::new(()).with_items::<&str>({{ rust.items }})"
+
+[[component]]
+name = "DragZone"
+kind = "container"
+look = "frame"
+category = "freya"
+icon = "container"
+description = "Its children can be dragged onto a DropZone; `data` is what arrives there"
+[component.properties.data]
+type = "text"
+category = "Behavior"
+[component.codegen]
+type = "crate::app::Control<String>"
+init = "crate::app::Control::new({{ rust.data }}.to_string()).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+[[component]]
+name = "DropZone"
+kind = "container"
+look = "frame"
+category = "freya"
+icon = "container"
+description = "Accepts what is dragged from a DragZone"
+[component.events.on_drop]
+params = [{ name = "data", type = "&str" }]
+[component.codegen]
+type = "crate::app::Control<()>"
+init = "crate::app::Control::new(()).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+[[component]]
+name = "Lazy"
+kind = "container"
+look = "frame"
+category = "freya"
+icon = "container"
+description = "Builds its children only once they are scrolled into view"
+[component.properties.keep_rendered]
+type = "bool"
+category = "Behavior"
+description = "Keep them once built"
+[component.codegen]
+type = "crate::app::Control<()>"
+init = "crate::app::Control::new(()).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+[[component]]
+name = "DockArea"
+kind = "container"
+look = "tabs"
+category = "freya"
+icon = "tabs"
+description = "Tabs the user can drag into panels side by side or stacked (freya docking); one tab per child"
+[component.properties.pages]
+type = "list"
+item = "text"
+category = "Appearance"
+description = "Tab titles, one per child (missing ones: the child's name)"
+[component.codegen]
+type = "crate::app::Control<()>"
+init = "crate::app::Control::new(()).with_items::<&str>({{ rust.pages }}).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+# --- Etappe B: Feature-Widgets von freya / freya feature widgets ------------------------------
+
+[[component]]
+name = "Markdown"
+kind = "widget"
+look = "memo"
+category = "freya"
+icon = "memo"
+description = "Shows Markdown (headings, lists, links, code, tables, images)"
+cargo = [{ crate = "freya", version = "0.5.4", features = ["markdown"] }]
+[component.properties.text]
+type = "text"
+default = "# Title\n\nSome **Markdown** text."
+category = "Value"
+[component.codegen]
+type = "crate::app::Control<String>"
+init = "crate::app::Control::new({{ rust.text }}.to_string()).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+[[component]]
+name = "CodeEditor"
+kind = "widget"
+look = "memo"
+category = "freya"
+icon = "memo"
+description = "Code editor with syntax highlighting (tree-sitter); `self.<name>.value` is the text"
+cargo = [
+  { crate = "freya", version = "0.5.4", features = ["code-editor"] },
+  { crate = "ropey", version = "1.6" },
+  { crate = "tree-sitter-rust", version = "0.24.2", when = { language = "Rust" } },
+  { crate = "tree-sitter-python", version = "0.25.0", when = { language = "Python" } },
+  { crate = "tree-sitter-javascript", version = "0.25.0", when = { language = "JavaScript" } },
+  { crate = "tree-sitter-typescript", version = "0.23.2", when = { language = "TypeScript" } },
+  { crate = "tree-sitter-json", version = "0.24.8", when = { language = "Json" } },
+  { crate = "tree-sitter-toml-ng", version = "0.7.0", when = { language = "Toml" } },
+  { crate = "tree-sitter-html", version = "0.23.2", when = { language = "Html" } },
+  { crate = "tree-sitter-css", version = "0.25.0", when = { language = "Css" } },
+  { crate = "tree-sitter-bash", version = "0.25.1", when = { language = "Bash" } },
+  { crate = "tree-sitter-c", version = "0.24.2", when = { language = "C" } },
+  { crate = "tree-sitter-yaml", version = "0.7.2", when = { language = "Yaml" } },
+]
+[component.properties.text]
+type = "text"
+category = "Value"
+[component.properties.language]
+type = "enum"
+variants = ["Plain", "Rust", "Python", "JavaScript", "TypeScript", "Json", "Toml", "Html", "Css", "Bash", "C", "Yaml"]
+default = "Rust"
+category = "Behavior"
+description = "Syntax highlighting (each language adds its tree-sitter grammar)"
+[component.properties.read_only]
+type = "bool"
+category = "Behavior"
+[component.properties.line_numbers]
+type = "bool"
+default = true
+category = "Appearance"
+[component.properties.font_family]
+type = "text"
+default = "Jetbrains Mono"
+category = "Appearance"
+[component.events.on_change]
+params = [{ name = "text", type = "&str" }]
+[component.codegen]
+type = "crate::app::Control<String>"
+init = "crate::app::Control::new({{ rust.text }}.to_string()).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+[[component]]
+name = "Terminal"
+kind = "widget"
+look = "terminal"
+category = "freya"
+icon = "terminal"
+description = "Terminal running a shell or a command (pseudo terminal)"
+cargo = [{ crate = "freya", version = "0.5.4", features = ["terminal-pty"] }]
+[component.properties.command]
+type = "text"
+category = "Behavior"
+description = "Program to run (empty = the shell of the system)"
+[component.properties.font_size]
+type = "int"
+min = 0
+default = 14
+category = "Appearance"
+[component.properties.font_family]
+type = "text"
+default = "monospace"
+category = "Appearance"
+[component.events.on_exit]
+description = "The program in the terminal ended"
+[component.codegen]
+type = "crate::app::Control<String>"
+init = "crate::app::Control::new({{ rust.command }}.to_string()).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+[[component]]
+name = "Chart"
+kind = "widget"
+look = "chart"
+category = "freya"
+icon = "chart"
+description = "Chart from numbers (plotters); `self.<name>.value` holds the values"
+cargo = [{ crate = "freya", version = "0.5.4", features = ["plot"] }]
+[component.properties.kind]
+type = "enum"
+variants = ["Line", "Bar", "Points", "Area"]
+default = "Line"
+category = "Appearance"
+[component.properties.values]
+type = "list"
+item = "float"
+category = "Value"
+[component.properties.title]
+type = "text"
+category = "Appearance"
+[component.properties.color]
+type = "color"
+default = "#3b82f6"
+category = "Appearance"
+[component.codegen]
+type = "crate::app::Control<Vec<f64>>"
+init = "crate::app::Control::new(vec![{% for v in props['values'] %}{{ v }}f64, {% endfor %}]).with_caption({{ rust.title }}).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+[[component]]
+name = "Canvas"
+kind = "widget"
+look = "frame"
+category = "freya"
+icon = "chart"
+description = "Free drawing with Skia: the handler of `on_draw` paints on the canvas"
+cargo = [{ crate = "freya", version = "0.5.4", features = ["engine"] }]
+[component.events.on_draw]
+params = [{ name = "canvas", type = "&freya::engine::prelude::Canvas" }, { name = "width", type = "f32" }, { name = "height", type = "f32" }]
+description = "Paint; called whenever freya renders the widget"
+[component.codegen]
+type = "crate::app::Control<()>"
+init = "crate::app::Control::new(()).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+[[component]]
+name = "Camera"
+kind = "widget"
+look = "image"
+category = "freya"
+icon = "camera"
+description = "Live picture of a camera"
+cargo = [{ crate = "freya", version = "0.5.4", features = ["camera"] }]
+[component.properties.device]
+type = "int"
+min = 0
+category = "Behavior"
+description = "Number of the camera (0 = the first)"
+[component.codegen]
+type = "crate::app::Control<u32>"
+init = "crate::app::Control::new({{ props.device }}u32).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+[[component]]
+name = "Video"
+kind = "widget"
+look = "image"
+category = "freya"
+icon = "video"
+description = "Video player (ffmpeg); `self.<name>.value.playing` starts and stops it"
+cargo = [{ crate = "freya", version = "0.5.4", features = ["video"] }]
+[component.properties.file]
+type = "text"
+category = "Value"
+description = "Path of the video file (relative to the working directory)"
+[component.properties.autoplay]
+type = "bool"
+default = true
+category = "Behavior"
+[component.properties.controls]
+type = "bool"
+default = true
+category = "Appearance"
+description = "Show play/pause, position and volume"
+[component.codegen]
+type = "crate::app::Control<crate::app::Video>"
+init = "crate::app::Control::new(crate::app::Video::new({{ rust.file }}, {{ rust.autoplay }})).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+[[component]]
+name = "HtmlView"
+kind = "widget"
+look = "frame"
+category = "freya"
+icon = "globe"
+description = "Shows a web page or HTML (Blitz renderer, no JavaScript)"
+cargo = [{ crate = "freya", version = "0.5.4", features = ["html"] }]
+[component.properties.url]
+type = "text"
+category = "Value"
+description = "Address to load (empty = the HTML below)"
+[component.properties.html]
+type = "text"
+default = "<h1>Hello</h1>"
+category = "Value"
+[component.codegen]
+type = "crate::app::Control<crate::app::Html>"
+init = "crate::app::Control::new(crate::app::Html::new({{ rust.url }}, {{ rust.html }})).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+[[component]]
+name = "Icon"
+kind = "widget"
+look = "image"
+category = "freya"
+icon = "image"
+description = "Lucide icon by name (https://lucide.dev/icons), e.g. `antenna`, `circle_check`"
+cargo = [{ crate = "freya", version = "0.5.4", features = ["icons-lucide"] }]
+[component.properties.icon]
+type = "text"
+default = "star"
+category = "Value"
+description = "Name of the Lucide icon with `_` instead of `-`"
+[component.properties.size]
+type = "int"
+min = 8
+default = 24
+category = "Appearance"
+[component.properties.color]
+type = "color"
+default = "#00000000"
+category = "Appearance"
+description = "Colour (alpha 0 = text colour)"
+[component.codegen]
+type = "crate::app::Control<()>"
+init = "crate::app::Control::new(()).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"

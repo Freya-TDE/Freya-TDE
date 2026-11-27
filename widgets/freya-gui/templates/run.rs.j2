@@ -3,6 +3,18 @@
 {%- set ui = forms | rejectattr("data_module") | list %}
 {%- if ui %}
 {%- set main = ui[0] %}
+{%- if "backend:freya-gui/Camera" in types %}
+// Kamera: unter macOS fragt das System um Erlaubnis.
+if !freya::camera::init() {
+    eprintln!("camera access denied");
+}
+{%- endif %}
+{%- if "backend:freya-gui/Video" in types %}
+// Video braucht ffmpeg; fehlt es im PATH, lädt freya es herunter.
+if let Err(error) = freya::video::ensure_ffmpeg() {
+    eprintln!("ffmpeg: {error}");
+}
+{%- endif %}
 let form = std::rc::Rc::new(std::cell::RefCell::new({{ app }}.{{ main.name }}));
 form.borrow_mut().freya_created();
 freya::prelude::launch(

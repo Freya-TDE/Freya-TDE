@@ -514,3 +514,156 @@ padding-x = 0
 height = 22
 min-width = 60
 padding-x = 0
+
+[widgets."backend:freya-gui/Accordion"]
+height = 80
+min-width = 160
+padding-x = 0
+header = 34
+
+[widgets."backend:freya-gui/Calendar"]
+height = 250
+min-width = 252
+padding-x = 0
+
+[widgets."backend:freya-gui/Chip"]
+height = 30
+min-width = 56
+padding-x = 14
+
+[widgets."backend:freya-gui/ColorPicker"]
+height = 32
+min-width = 32
+padding-x = 0
+
+[widgets."backend:freya-gui/Loader"]
+height = 32
+min-width = 32
+padding-x = 0
+
+[widgets."backend:freya-gui/Skeleton"]
+height = 60
+min-width = 120
+padding-x = 0
+
+[widgets."backend:freya-gui/SegmentedButton"]
+height = 32
+min-width = 160
+padding-x = 0
+
+[widgets."backend:freya-gui/SelectableText"]
+height = 22
+min-width = 60
+padding-x = 0
+
+[widgets."backend:freya-gui/Paragraph"]
+height = 44
+min-width = 120
+padding-x = 0
+
+[widgets."backend:freya-gui/Marquee"]
+height = 22
+min-width = 120
+padding-x = 0
+
+[widgets."backend:freya-gui/Svg"]
+height = 48
+min-width = 48
+padding-x = 0
+
+[widgets."backend:freya-gui/Gif"]
+height = 48
+min-width = 48
+padding-x = 0
+
+[widgets."backend:freya-gui/VirtualList"]
+height = 160
+min-width = 140
+padding-x = 8
+
+[widgets."backend:freya-gui/SideBar"]
+height = 84
+min-width = 140
+padding-x = 8
+
+[widgets."backend:freya-gui/Splitter"]
+height = 200
+min-width = 200
+padding-x = 0
+
+[widgets."backend:freya-gui/DragCanvas"]
+height = 200
+min-width = 200
+padding-x = 0
+
+[widgets."backend:freya-gui/Popup"]
+height = 120
+min-width = 200
+padding-x = 0
+header = 34
+
+[widgets."backend:freya-gui/DragZone"]
+height = 60
+min-width = 120
+padding-x = 0
+
+[widgets."backend:freya-gui/DropZone"]
+height = 60
+min-width = 120
+padding-x = 0
+
+[widgets."backend:freya-gui/Lazy"]
+height = 60
+min-width = 120
+padding-x = 0
+
+[widgets."backend:freya-gui/Markdown"]
+height = 120
+min-width = 200
+padding-x = 0
+
+[widgets."backend:freya-gui/CodeEditor"]
+height = 200
+min-width = 240
+padding-x = 0
+
+[widgets."backend:freya-gui/Terminal"]
+height = 240
+min-width = 320
+padding-x = 0
+
+[widgets."backend:freya-gui/Chart"]
+height = 200
+min-width = 240
+padding-x = 0
+
+[widgets."backend:freya-gui/Canvas"]
+height = 160
+min-width = 240
+padding-x = 0
+
+[widgets."backend:freya-gui/Camera"]
+height = 240
+min-width = 320
+padding-x = 0
+
+[widgets."backend:freya-gui/Video"]
+height = 240
+min-width = 320
+padding-x = 0
+
+[widgets."backend:freya-gui/HtmlView"]
+height = 240
+min-width = 320
+padding-x = 0
+
+[widgets."backend:freya-gui/Icon"]
+height = 24
+min-width = 24
+padding-x = 0
+
+[widgets."backend:freya-gui/DockArea"]
+height = 240
+min-width = 240
+padding-x = 0
+header = 34

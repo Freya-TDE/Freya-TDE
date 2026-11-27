@@ -5,12 +5,15 @@
     handlers in <form>.rs; the view is built in the module `freya_ui` (freya's
     prelude stays there), one method `freya_view_<name>` per container. -#}
 {%- set p_ = "backend:freya-gui/" %}
-{%- set containers = ["core/Form", "core/Container", p_ ~ "Card", p_ ~ "Tabs"] %}
+{%- set containers = ["core/Form", "core/Container", p_ ~ "Card", p_ ~ "Tabs", p_ ~ "Accordion", p_ ~ "Skeleton", p_ ~ "Splitter", p_ ~ "DragCanvas", p_ ~ "Popup", p_ ~ "DragZone", p_ ~ "DropZone", p_ ~ "Lazy", p_ ~ "DockArea"] %}
 {#- Widgets that keep their natural width even with align Fill. -#}
 {%- set natural = ["core/Label", "core/CheckBox", p_ ~ "RadioButton", p_ ~ "Switch", p_ ~ "Link"] %}
 {#- Wie die Theme-Tabelle des Designers (designer/themes/linux.toml): Rand 12, Abstand 8. -#}
 {%- set default_layout = {"kind": "vertical", "spacing": 8, "padding": {"left": 12, "top": 12, "right": 12, "bottom": 12}} %}
 {%- set menus = components | selectattr("type", "eq", p_ ~ "MainMenu") | selectattr("field") | list %}
+{#- tree-sitter grammar and highlight query per CodeEditor language. -#}
+{%- set languages = {"Rust": "tree_sitter_rust::LANGUAGE, tree_sitter_rust::HIGHLIGHTS_QUERY", "Python": "tree_sitter_python::LANGUAGE, tree_sitter_python::HIGHLIGHTS_QUERY", "JavaScript": "tree_sitter_javascript::LANGUAGE, tree_sitter_javascript::HIGHLIGHT_QUERY", "TypeScript": "tree_sitter_typescript::LANGUAGE_TYPESCRIPT, tree_sitter_typescript::HIGHLIGHTS_QUERY", "Json": "tree_sitter_json::LANGUAGE, tree_sitter_json::HIGHLIGHTS_QUERY", "Toml": "tree_sitter_toml_ng::LANGUAGE, tree_sitter_toml_ng::HIGHLIGHTS_QUERY", "Html": "tree_sitter_html::LANGUAGE, tree_sitter_html::HIGHLIGHTS_QUERY", "Css": "tree_sitter_css::LANGUAGE, tree_sitter_css::HIGHLIGHTS_QUERY", "Bash": "tree_sitter_bash::LANGUAGE, tree_sitter_bash::HIGHLIGHT_QUERY", "C": "tree_sitter_c::LANGUAGE, tree_sitter_c::HIGHLIGHT_QUERY", "Yaml": "tree_sitter_yaml::LANGUAGE, tree_sitter_yaml::HIGHLIGHTS_QUERY"} %}
+{%- set cmenus = components | selectattr("type", "eq", p_ ~ "ContextMenu") | selectattr("field") | list %}
 
 {#- A colour property as freya `Color`. -#}
 {%- macro color(v) -%}
@@ -48,6 +51,16 @@ label().text(self.{{ c.name }}.value.clone()){{ text_style(c) }}{% if fill %}.wi
 {%- elif t == "core/Button" -%}
 Button::new()
     .enabled(self.{{ c.name }}.enabled)
+    {%- if c.props.variant == "Filled" %}
+    .filled()
+    {%- elif c.props.variant == "Outline" %}
+    .outline()
+    {%- elif c.props.variant == "Flat" %}
+    .flat()
+    {%- endif %}
+    {%- if c.props.compact %}
+    .compact()
+    {%- endif %}
     {%- if fill %}
     .width(Size::fill())
     {%- endif %}
@@ -63,6 +76,11 @@ Button::new()
 {%- elif t == "core/Edit" -%}
 Input::new(WritableSetter::new(self.{{ c.name }}.value.clone(), s.to(Message::{{ c.name }}_input)))
     .placeholder({{ c.rust.placeholder }})
+    {%- if c.props.variant == "Filled" %}
+    .filled()
+    {%- elif c.props.variant == "Flat" %}
+    .flat()
+    {%- endif %}
     .enabled(self.{{ c.name }}.enabled{% if c.props.read_only %} && false{% endif %})
     {%- if c.props.password %}
     .mode(InputMode::new_password())
@@ -260,13 +278,199 @@ rect()
         .height(Size::px(160.0))
         .child(Table::new().width(Size::fill()).child(header).children(rows))
 }
+{%- elif t == p_ ~ "Chip" -%}
+Chip::new()
+    .selected(self.{{ c.name }}.value)
+    .enabled(self.{{ c.name }}.enabled)
+    .on_press(s.on::<Event<PressEventData>>(Message::{{ c.name }}_toggle(!self.{{ c.name }}.value)))
+    .child(label().text(self.{{ c.name }}.caption.clone()){{ text_style(c) }})
+{%- elif t == p_ ~ "Calendar" -%}
+{
+    let date = &self.{{ c.name }}.value;
+    let (previous, next) = (date.previous(), date.next());
+    let enabled = self.{{ c.name }}.enabled;
+    let cell_sender = s.clone();
+    rect()
+        .spacing(4.0)
+        .child(
+            rect()
+                .horizontal()
+                .width(Size::px(7.0 * 36.0))
+                .content(Content::flex())
+                .cross_align(Alignment::Center)
+                .child(Button::new().flat().compact().on_press(s.on::<Event<PressEventData>>(Message::{{ c.name }}_month(previous.0, previous.1))).child("‹"))
+                .child(label().text(format!("{:04}-{:02}", date.view.0, date.view.1)).width(Size::flex(1.0)).text_align(TextAlign::Center))
+                .child(Button::new().flat().compact().on_press(s.on::<Event<PressEventData>>(Message::{{ c.name }}_month(next.0, next.1))).child("›")),
+        )
+        .maybe_child(date.month().map(|month| {
+            rect()
+                .spacing(2.0)
+                .child(
+                    rect()
+                        .horizontal()
+                        .children(month.weekdays.iter().map(|day| {
+                            label().text(format!("{day}")).width(Size::px(36.0)).text_align(TextAlign::Center).opacity(0.7).into_element()
+                        })),
+                )
+                .child(CalendarGrid::new(month, move |day: CalendarDay| {
+                    let (y, m, d) = (day.date.year, day.date.month, day.date.day);
+                    rect()
+                        .width(Size::px(36.0))
+                        .height(Size::px(30.0))
+                        .center()
+                        .corner_radius(6.0)
+                        .maybe(day.selected, |el| el.background(crate::app::color(0x3b, 0x82, 0xf6, 160)))
+                        .maybe(!day.in_month, |el| el.opacity(0.4))
+                        .maybe(enabled, |el| el.on_press(cell_sender.on::<Event<PressEventData>>(Message::{{ c.name }}_select(y, m, d))))
+                        .child(d.to_string())
+                        .into_element()
+                }))
+        }))
+}
+{%- elif t == p_ ~ "ColorPicker" -%}
+ColorPicker::new(s.to(Message::{{ c.name }}_change)).value(self.{{ c.name }}.value)
+{%- elif t == p_ ~ "Loader" -%}
+CircularLoader::new().size({{ c.props.size }} as f32)
+{%- elif t == p_ ~ "SegmentedButton" -%}
+SegmentedButton::new().children(self.{{ c.name }}.items.iter().enumerate().map(|(index, item)| {
+    ButtonSegment::new()
+        .selected(self.{{ c.name }}.value == index)
+        .enabled(self.{{ c.name }}.enabled)
+        .on_press(s.on::<Event<PressEventData>>(Message::{{ c.name }}_select(index)))
+        .child(item.clone())
+        .into_element()
+}))
+{%- elif t == p_ ~ "SelectableText" -%}
+SelectableText::new().span(self.{{ c.name }}.value.clone()){% if fill %}.width(Size::fill()){% endif %}
+{%- elif t == p_ ~ "Paragraph" -%}
+paragraph()
+    .span(self.{{ c.name }}.value.clone())
+    {%- if c.props.max_lines > 0 %}
+    .max_lines({{ c.props.max_lines }}usize)
+    {%- endif %}
+    .text_align(TextAlign::{{ c.props.text_align }}){{ text_style(c) }}
+    .width(Size::fill())
+{%- elif t == p_ ~ "Marquee" -%}
+OverflowedContent::new()
+    .width(Size::fill())
+    .duration(std::time::Duration::from_millis({{ c.props.duration_ms }}))
+    {%- if c.props.left_to_right %}
+    .left_to_right()
+    {%- endif %}
+    .child(label().text(self.{{ c.name }}.value.clone()){{ text_style(c) }})
+{%- elif t in [p_ ~ "Svg", p_ ~ "Gif"] -%}
+{%- set p = c.placement if c.placement and c.placement.kind == "layout" else none %}
+{%- if t == p_ ~ "Svg" %}SvgViewer{% else %}GifViewer{% endif %}::new(std::path::PathBuf::from(&self.{{ c.name }}.value))
+    .width({% if fill or (p and (p.width > 0 or p.width_percent > 0)) %}Size::fill(){% else %}Size::px(48.0){% endif %})
+    .height({% if p and (p.height > 0 or p.height_percent > 0) %}Size::fill(){% else %}Size::px(48.0){% endif %})
+    {%- if t == p_ ~ "Svg" and c.props.color.a > 0 %}
+    .fill({{ color(c.props.color) }})
+    {%- endif %}
+{%- elif t == p_ ~ "VirtualList" -%}
+VirtualScrollView::new_with_data(
+    (self.{{ c.name }}.items.clone(), self.{{ c.name }}.value, self.{{ c.name }}.enabled, s.clone()),
+    |item: VirtualItem, (items, value, enabled, s): &(Vec<String>, i32, bool, Sender)| {
+        rect()
+            .width(Size::fill())
+            .height(Size::px({{ c.props.item_height }} as f32))
+            .padding(Gaps::new(4.0, 6.0, 4.0, 6.0))
+            .maybe(*value == item.index as i32, |el| el.background(crate::app::color(0x3b, 0x82, 0xf6, 90)))
+            .maybe(*enabled, |el| el.on_press(s.on::<Event<PressEventData>>(Message::{{ c.name }}_select(item.index))))
+            .child(items.get(item.index).cloned().unwrap_or_default())
+            .into_element()
+    },
+)
+.length(self.{{ c.name }}.items.len())
+.item_size({{ c.props.item_height }} as f32)
+.width(Size::fill())
+.height(Size::px(160.0))
+{%- elif t == p_ ~ "SideBar" -%}
+rect().width(Size::fill()).spacing(2.0).children(self.{{ c.name }}.items.iter().enumerate().map(|(index, item)| {
+    rect()
+        .width(Size::fill())
+        .corner_radius(6.0)
+        .maybe(self.{{ c.name }}.value == index, |el| el.background(crate::app::color(0x3b, 0x82, 0xf6, 90)))
+        .child(
+            SideBarItem::new()
+                .on_press(s.on::<Event<PressEventData>>(Message::{{ c.name }}_select(index)))
+                .child(item.clone()),
+        )
+        .into_element()
+}))
+{%- elif t == p_ ~ "Markdown" -%}
+MarkdownViewer::new(self.{{ c.name }}.value.clone()).width(Size::fill())
+{%- elif t in [p_ ~ "CodeEditor", p_ ~ "Terminal", p_ ~ "Chart", p_ ~ "Canvas", p_ ~ "Camera", p_ ~ "Video", p_ ~ "HtmlView"] -%}
+{%- set p = c.placement if c.placement and c.placement.kind == "layout" else none %}
+{%- set default_h = {"CodeEditor": 200, "Terminal": 240, "Chart": 200, "Canvas": 160, "Camera": 240, "Video": 240, "HtmlView": 240}[c.type_name] %}
+rect()
+    .width({% if fill or (p and (p.width > 0 or p.width_percent > 0)) %}Size::fill(){% else %}Size::px(320.0){% endif %})
+    .height({% if p and (p.height > 0 or p.height_percent > 0) %}Size::fill(){% else %}Size::px({{ default_h }}.0){% endif %})
+{%- if t == p_ ~ "CodeEditor" %}
+    .child(crate::app::CodeView {
+        text: self.{{ c.name }}.value.clone(),
+        language: || {% if c.props.language == "Plain" %}None{% else %}Some(freya::code_editor::EditorLanguage::new({{ languages[c.props.language] }})){% endif %},
+        read_only: {{ "true" if c.props.read_only else "false" }} || !self.{{ c.name }}.enabled,
+        line_numbers: {{ "true" if c.props.line_numbers else "false" }},
+        font_family: {{ c.rust.font_family }},
+        font_size: {{ c.props.font_size if c.props.font_size > 0 else 14 }} as f32,
+        on_change: s.to(Message::{{ c.name }}_input).into(),
+    })
+{%- elif t == p_ ~ "Terminal" %}
+    .child(crate::app::TerminalView {
+        command: self.{{ c.name }}.value.clone(),
+        font_size: {{ c.props.font_size if c.props.font_size > 0 else 14 }} as f32,
+        font_family: {{ c.rust.font_family }},
+        on_exit: s.on::<()>(Message::{{ c.name }}_exit).into(),
+    })
+{%- elif t == p_ ~ "Chart" %}
+    .background(RenderCallback::new({
+        let values = self.{{ c.name }}.value.clone();
+        let title = self.{{ c.name }}.caption.clone();
+        move |context| crate::app::draw_chart(context, &values, &title, "{{ c.props.kind }}", ({{ c.props.color.r }}, {{ c.props.color.g }}, {{ c.props.color.b }}))
+    }))
+{%- elif t == p_ ~ "Canvas" and c.events.on_draw %}
+    .background(RenderCallback::new({
+        let form = s.form.clone();
+        move |context| {
+            let (width, height) = (context.size.width, context.size.height);
+            if let RenderTarget::Background { canvas, .. } = &mut context.target
+                && let Ok(mut form) = form.try_borrow_mut()
+            {
+                form.{{ c.events.on_draw }}(canvas, width, height);
+            }
+        }
+    }))
+{%- elif t == p_ ~ "Camera" %}
+    .child(crate::app::CameraView { device: self.{{ c.name }}.value })
+{%- elif t == p_ ~ "Video" %}
+    .child(crate::app::VideoView {
+        file: self.{{ c.name }}.value.file.clone(),
+        playing: self.{{ c.name }}.value.playing,
+        controls: {{ "true" if c.props.controls else "false" }},
+        on_playing: s.to(Message::{{ c.name }}_playing).into(),
+    })
+{%- elif t == p_ ~ "HtmlView" %}
+    .child(crate::app::HtmlView {
+        url: self.{{ c.name }}.value.url.clone(),
+        html: self.{{ c.name }}.value.html.clone(),
+    })
+{%- endif %}
+{%- elif t == p_ ~ "Icon" -%}
+SvgViewer::new(("{{ c.props.icon | replace("-", "_") | lower }}", freya::icons::lucide::{{ c.props.icon | replace("-", "_") | lower }}()))
+    .width(Size::px({{ c.props.size }} as f32))
+    .height(Size::px({{ c.props.size }} as f32))
+    {%- if c.props.color.a > 0 %}
+    .color({{ color(c.props.color) }})
+    {%- else %}
+    .theme_color()
+    {%- endif %}
 {%- else -%}
 label().text("{{ c.type_name }}")
 {%- endif -%}
 {%- endmacro %}
 
 {#- The child `c` as an Element (container: its own view method). -#}
-{%- macro child(c, fill) -%}
+{%- macro child_plain(c, fill) -%}
 {%- set coloured = c.type != "core/Button" and (c.props.background.a > 0 or c.props.foreground.a > 0) -%}
 {%- if c.type in containers -%}
 self.{{ c.name }}.show(self.freya_view_{{ c.name }}(s))
@@ -289,6 +493,35 @@ self.{{ c.name }}.show({{ widget(c, fill) }})
 {%- endif -%}
 {%- endmacro %}
 
+{#- Like child_plain; a right-click opens the ContextMenu whose `target` is `c`. -#}
+{%- macro child(c, fill) -%}
+{%- set ns = namespace(menu=none) -%}
+{%- for m in cmenus %}{% if m.props.target == c.name %}{% set ns.menu = m %}{% endif %}{% endfor -%}
+{%- if ns.menu -%}
+rect()
+    {%- if fill %}
+    .width(Size::fill())
+    {%- endif %}
+    .on_secondary_down({
+        let items = self.{{ ns.menu.name }}.items.clone();
+        let s = s.clone();
+        move |_| {
+            let s = s.clone();
+            let choose: std::rc::Rc<dyn Fn(String)> = std::rc::Rc::new(move |item: String| {
+                ContextMenu::close();
+                s.send(Message::{{ ns.menu.name }}_choose(item));
+            });
+            ContextMenu::open_from_down(
+                Menu::new().children(crate::app::menu_items(&crate::app::menu_entries_min(&items, 1), &[], choose)),
+            );
+        }
+    })
+    .child({{ child_plain(c, fill) }})
+{%- else -%}
+{{ child_plain(c, fill) }}
+{%- endif -%}
+{%- endmacro %}
+
 {%- if root %}
 
 /// Everything the user can do in form `{{ form.name }}`.
@@ -304,13 +537,28 @@ pub enum Message {
 {%- elif t == "core/Edit" %}
     {{ c.name }}_input(String),
     {{ c.name }}_submit,
-{%- elif t in ["core/CheckBox", p_ ~ "Switch"] %}
+{%- elif t in ["core/CheckBox", p_ ~ "Switch", p_ ~ "Chip"] %}
     {{ c.name }}_toggle(bool),
+{%- elif t == p_ ~ "Calendar" %}
+    {{ c.name }}_select(i32, u32, u32),
+    {{ c.name }}_month(i32, u32),
+{%- elif t == p_ ~ "ColorPicker" %}
+    {{ c.name }}_change(freya::prelude::Color),
+{%- elif t == p_ ~ "Popup" %}
+    {{ c.name }}_close,
+{%- elif t == p_ ~ "DropZone" %}
+    {{ c.name }}_drop(String),
+{%- elif t == p_ ~ "CodeEditor" %}
+    {{ c.name }}_input(String),
+{%- elif t == p_ ~ "Terminal" %}
+    {{ c.name }}_exit,
+{%- elif t == p_ ~ "Video" %}
+    {{ c.name }}_playing(bool),
 {%- elif t == p_ ~ "RadioButton" %}
     {{ c.name }}_select,
 {%- elif t == p_ ~ "Slider" %}
     {{ c.name }}_change(f64),
-{%- elif t in [p_ ~ "Select", p_ ~ "ListBox", p_ ~ "DataGrid"] %}
+{%- elif t in [p_ ~ "Select", p_ ~ "ListBox", p_ ~ "DataGrid", p_ ~ "SegmentedButton", p_ ~ "SideBar", p_ ~ "VirtualList"] %}
     {{ c.name }}_select(usize),
 {%- if t == p_ ~ "DataGrid" and c.props.editable and c.props.data_source %}
     {{ c.name }}_edit_start(usize, usize),
@@ -327,6 +575,10 @@ pub enum Message {
     /// The open menu of `{{ m.name }}` (index of the title, `None` = closed).
     {{ m.name }}_open(Option<usize>),
     /// An entry of `{{ m.name }}` was chosen (its path).
+    {{ m.name }}_choose(String),
+{%- endfor %}
+{%- for m in cmenus %}
+    /// An entry of the context menu `{{ m.name }}` was chosen (its path).
     {{ m.name }}_choose(String),
 {%- endfor %}
 {%- if data_bound %}
@@ -358,10 +610,89 @@ impl crate::app::FreyaUpdate for {{ form.struct }} {
             {%- endif %}
             }
         {%- endfor %}
+        {%- for m in cmenus %}
+            Message::{{ m.name }}_choose(item) => {
+            {%- if m.events.on_select %}
+                self.{{ m.events.on_select }}(&item);
+            {%- endif %}
+            }
+        {%- endfor %}
         {%- for c in widgets if c.field %}
         {%- set t = c.type %}
         {%- set e = c.events %}
-        {%- if t == "core/ImageBox" %}
+        {%- if t == p_ ~ "Calendar" %}
+            Message::{{ c.name }}_select(year, month, day) => {
+                if self.{{ c.name }}.enabled {
+                    self.{{ c.name }}.value.selected = Some((year, month, day));
+                    self.{{ c.name }}.value.view = (year, month);
+                {%- if e.on_select %}
+                    self.{{ e.on_select }}(year, month, day);
+                {%- endif %}
+                }
+            }
+            Message::{{ c.name }}_month(year, month) => {
+                self.{{ c.name }}.value.view = (year, month);
+            }
+        {%- elif t == p_ ~ "ColorPicker" %}
+            Message::{{ c.name }}_change(color) => {
+                if self.{{ c.name }}.enabled {
+                    self.{{ c.name }}.value = color;
+                {%- if e.on_change %}
+                    self.{{ e.on_change }}(color);
+                {%- endif %}
+                }
+            }
+        {%- elif t == p_ ~ "Popup" %}
+            Message::{{ c.name }}_close => {
+            {%- if e.on_close %}
+                if self.{{ e.on_close }}() {
+                    self.{{ c.name }}.value = false;
+                }
+            {%- else %}
+                self.{{ c.name }}.value = false;
+            {%- endif %}
+            }
+        {%- elif t == p_ ~ "CodeEditor" %}
+            Message::{{ c.name }}_input(text) => {
+                self.{{ c.name }}.value = text;
+            {%- if e.on_change %}
+                let text = self.{{ c.name }}.value.clone();
+                self.{{ e.on_change }}(&text);
+            {%- endif %}
+            }
+        {%- elif t == p_ ~ "Terminal" %}
+            Message::{{ c.name }}_exit => {
+            {%- if e.on_exit %}
+                self.{{ e.on_exit }}();
+            {%- endif %}
+            }
+        {%- elif t == p_ ~ "Video" %}
+            Message::{{ c.name }}_playing(playing) => {
+                self.{{ c.name }}.value.playing = playing;
+            }
+        {%- elif t == p_ ~ "DropZone" %}
+            Message::{{ c.name }}_drop(data) => {
+            {%- if e.on_drop %}
+                self.{{ e.on_drop }}(&data);
+            {%- endif %}
+            }
+        {%- elif t in [p_ ~ "SegmentedButton", p_ ~ "SideBar"] %}
+            Message::{{ c.name }}_select(index) => {
+                if self.{{ c.name }}.enabled {
+                    self.{{ c.name }}.value = index;
+                {%- if e.on_select %}
+                    self.{{ e.on_select }}(index as u32);
+                {%- endif %}
+                }
+            }
+        {%- elif t == p_ ~ "VirtualList" %}
+            Message::{{ c.name }}_select(index) => {
+                self.{{ c.name }}.value = index as i32;
+            {%- if e.on_select %}
+                self.{{ e.on_select }}(index as i32);
+            {%- endif %}
+            }
+        {%- elif t == "core/ImageBox" %}
             Message::{{ c.name }}_click => {
             {%- if e.on_click %}
                 self.{{ e.on_click }}();
@@ -400,7 +731,7 @@ impl crate::app::FreyaUpdate for {{ form.struct }} {
                 self.{{ e.on_submit }}();
             {%- endif %}
             }
-        {%- elif t in ["core/CheckBox", p_ ~ "Switch"] %}
+        {%- elif t in ["core/CheckBox", p_ ~ "Switch", p_ ~ "Chip"] %}
             Message::{{ c.name }}_toggle(checked) => {
                 if self.{{ c.name }}.enabled {
                     self.{{ c.name }}.value = checked;
@@ -637,6 +968,9 @@ mod freya_ui {
             {%- if rp.italic %}
                 .font_slant(FontSlant::Italic)
             {%- endif %}
+            {%- if cmenus %}
+                .child(ContextMenuViewer::new())
+            {%- endif %}
             {%- for m in menus %}
                 .on_global_key_down({
                     let items = self.{{ m.name }}.items.clone();
@@ -703,22 +1037,9 @@ mod freya_ui {
                             el.child(
                                 Menu::new()
                                     .on_close(s.on::<()>(Message::{{ m.name }}_open(None)))
-                                    .children(entries.iter().filter(|(parts, _)| parts[0] == title).map(|(parts, keys)| {
-                                        let name = parts[1..].join(" › ");
-                                        if parts.last().is_some_and(|p| p == "-") {
-                                            rect().height(Size::px(1.0)).width(Size::fill()).background(crate::app::color(0x80, 0x80, 0x80, 110)).into_element()
-                                        } else {
-                                            MenuButton::new()
-                                                .on_press(s.on::<Event<PressEventData>>(Message::{{ m.name }}_choose(parts.join("/"))))
-                                                .child(
-                                                    rect()
-                                                        .horizontal()
-                                                        .spacing(24.0)
-                                                        .child(label().text(name))
-                                                        .maybe(!keys.is_empty(), |el| el.child(label().text(keys.clone()).opacity(0.6))),
-                                                )
-                                                .into_element()
-                                        }
+                                    .children(crate::app::menu_items(&entries, &[title.clone()], {
+                                        let s = s.clone();
+                                        std::rc::Rc::new(move |item: String| s.send(Message::{{ m.name }}_choose(item)))
                                     })),
                             )
                         })
@@ -733,7 +1054,45 @@ mod freya_ui {
         /// The children of `{{ w.name }}`.
         #[allow(unused_variables)]
         fn freya_view_{{ w.name }}(&self, s: &Sender) -> Element {
-        {%- if w.type == p_ ~ "Tabs" %}
+        {%- set wp = w.placement if w.placement and w.placement.kind == "layout" else none %}
+        {%- if w.type == p_ ~ "Popup" %}
+            // Geschlossen: nichts zeigen.
+            if !self.{{ w.name }}.value {
+                return rect().into_element();
+            }
+        {%- endif %}
+        {%- if w.type == p_ ~ "Splitter" %}
+            // Ein Panel je Kind, mit Griffen zum Verschieben.
+            {%- set sizes = w.props.sizes or [] %}
+            ResizableContainer::new()
+                .direction(Direction::{{ "Vertical" if w.props.vertical else "Horizontal" }})
+                .width(Size::fill())
+                .height({% if wp and (wp.height > 0 or wp.height_percent > 0) %}Size::fill(){% else %}Size::px(200.0){% endif %})
+            {%- for c in kids %}
+                .panel(ResizablePanel::new(PanelSize::percent({{ sizes[loop.index0] if sizes | length > loop.index0 else (100 / (kids | length)) | round(2) }} as f32)).child({{ child(c, true) }}))
+            {%- endfor %}
+                .into_element()
+        {%- elif w.type == p_ ~ "DragCanvas" %}
+            // Die Kinder lassen sich mit der Maus verschieben (Start: Lage im Designer).
+            DraggableCanvas::new()
+                .width(Size::fill())
+                .height({% if wp and (wp.height > 0 or wp.height_percent > 0) %}Size::fill(){% else %}Size::px(200.0){% endif %})
+            {%- for c in kids %}
+            {%- set cp = c.placement %}
+                .child(Draggable::new().initial_position(({% if cp and cp.kind == "absolute" %}{{ cp.x }}{% else %}{{ 8 + loop.index0 * 16 }}{% endif %} as f64, {% if cp and cp.kind == "absolute" %}{{ cp.y }}{% else %}{{ 8 + loop.index0 * 32 }}{% endif %} as f64)).child({{ child(c, false) }}))
+            {%- endfor %}
+                .into_element()
+        {%- elif w.type == p_ ~ "DockArea" %}
+            // Reiter, die sich per Ziehen zu Panels aufteilen lassen (freya docking).
+            rect()
+                .width(Size::fill())
+                .height({% if wp and (wp.height > 0 or wp.height_percent > 0) %}Size::fill(){% else %}Size::px(240.0){% endif %})
+                .child(crate::app::DockView {
+                    titles: vec![{% for c in kids %}self.{{ w.name }}.items.get({{ loop.index0 }}).cloned().unwrap_or_else(|| "{{ c.name }}".to_owned()), {% endfor %}],
+                    contents: vec![{% for c in kids %}{{ child(c, true) }}.into_element(), {% endfor %}],
+                })
+                .into_element()
+        {%- elif w.type == p_ ~ "Tabs" %}
             // Reiterleiste, darunter nur die gewählte Seite.
             let titles = [{% for c in kids %}self.{{ w.name }}.items.get({{ loop.index0 }}).cloned().unwrap_or_else(|| "{{ c.name }}".to_owned()), {% endfor %}];
             let page: Element = match self.{{ w.name }}.value {
@@ -898,7 +1257,42 @@ mod freya_ui {
                 .padding({{ padding(l.padding) }})
                 .children(children);
         {%- endif %}
-        {%- if w.type == p_ ~ "Card" %}
+        {%- if w.type == p_ ~ "Accordion" %}
+            Accordion::new()
+                .header(label().text(self.{{ w.name }}.caption.clone()))
+                .child(inner)
+                .into_element()
+        {%- elif w.type == p_ ~ "Skeleton" %}
+            Skeleton::new(self.{{ w.name }}.value)
+                .width(Size::fill())
+            {%- if w.props.shimmer %}
+                .animation(SkeletonAnimation::Shimmer)
+            {%- endif %}
+                .child(inner)
+                .into_element()
+        {%- elif w.type == p_ ~ "Lazy" %}
+            Lazy::new()
+                .keep_rendered({{ "true" if w.props.keep_rendered else "false" }})
+                .width(Size::fill())
+                .child(inner)
+                .into_element()
+        {%- elif w.type == p_ ~ "DragZone" %}
+            DragZone::new(self.{{ w.name }}.value.clone())
+                .drag_element(label().text(self.{{ w.name }}.value.clone()))
+                .child(inner)
+                .into_element()
+        {%- elif w.type == p_ ~ "DropZone" %}
+            DropZone::new(s.to(Message::{{ w.name }}_drop))
+                .width(Size::fill())
+                .child(inner)
+                .into_element()
+        {%- elif w.type == p_ ~ "Popup" %}
+            Popup::new()
+                .on_close_request(s.on::<()>(Message::{{ w.name }}_close))
+                .child(PopupTitle::new(self.{{ w.name }}.caption.clone()))
+                .child(PopupContent::new().child(inner))
+                .into_element()
+        {%- elif w.type == p_ ~ "Card" %}
             Card::new()
                 .width(Size::fill())
                 .child(
