@@ -11,6 +11,7 @@ workaround. Some come from the toolkits themselves, some from the environment.
 |---|---|---|
 | Windows cannot be positioned on Wayland, the arrangement is lost | Wayland does not let programs place their own windows | on Linux Freya TDE starts through X11/XWayland (`GDK_BACKEND=x11`); the CT-Editor does not need that |
 | GTK 4 cannot position windows at all | by design (the window manager decides) | RUF sets the position natively: Windows `SetWindowPos`, macOS `setFrameOrigin`, Linux X11 |
+| On Windows 10/11 windows come up 39 px lower at every start, the main window is cut off | the content gets smaller than requested with `set_default_size` by the title bar | RUF learns the offset at the first allocation of every window and adds it to every size request (Windows and macOS only) |
 | `Gdk-CRITICAL: gdk_surface_thaw_updates: assertion …` (macOS) | a bug in GTK's macOS part when opening drop-downs (also in `gtk4-demo`) | harmless; RUF hides the message |
 | `Gtk-WARNING: GtkGizmo … (slider) reported min width -2` | a bug in KDE's Breeze theme (scroll bars) | harmless; RUF hides the message |
 | `MESA-EGL: … failed to create dri2 screen`, `Gdk-WARNING: Vulkan: … Failed to detect any valid GPUs` (NVIDIA) | after a driver update the new driver is not loaded yet | restart the computer |

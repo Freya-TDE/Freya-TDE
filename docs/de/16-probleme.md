@@ -11,6 +11,7 @@ und Lösung bzw. Umgehung. Einiges liegt an den Toolkits selbst, einiges an der 
 |---|---|---|
 | Fenster lassen sich unter Wayland nicht positionieren, die Anordnung geht verloren | Wayland verbietet Programmen, ihre Fenster selbst zu setzen | Freya TDE startet unter Linux über X11/XWayland (`GDK_BACKEND=x11`); der CT-Editor braucht das nicht |
 | GTK 4 kann Fenster überhaupt nicht positionieren | so entworfen (Fenstermanager entscheidet) | RUF setzt die Lage nativ: Windows `SetWindowPos`, macOS `setFrameOrigin`, Linux X11 |
+| Fenster kommen unter Windows 10/11 bei jedem Start um 39 px niedriger heraus, das Hauptfenster ist abgeschnitten | der Inhalt wird um die Titelleiste kleiner als per `set_default_size` angefordert | RUF lernt den Versatz bei der ersten Zuteilung jedes Fensters und fordert ihn bei jeder Größenänderung zusätzlich an (nur Windows und macOS) |
 | `Gdk-CRITICAL: gdk_surface_thaw_updates: assertion …` (macOS) | Fehler in GTKs macOS-Teil beim Öffnen von Auswahllisten (auch in `gtk4-demo`) | harmlos; RUF blendet die Meldung aus |
 | `Gtk-WARNING: GtkGizmo … (slider) reported min width -2` | Fehler im Breeze-Theme von KDE (Scrollbalken) | harmlos; RUF blendet die Meldung aus |
 | `MESA-EGL: … failed to create dri2 screen`, `Gdk-WARNING: Vulkan: … Failed to detect any valid GPUs` (NVIDIA) | nach einem Treiber-Update ist der neue Treiber noch nicht geladen | Rechner neu starten |
