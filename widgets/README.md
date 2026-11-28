@@ -11,7 +11,7 @@ Visuelle Widgets und Backend-Paletten, aufbauend auf `tdr-core` (der gemeinsame 
 | `slint` | fertig / done | Slint 1.18 (deklarativ, mit Lizenzhinweis); Kern-Widgets plus Palette „Slint“: RadioButton, Switch, SpinBox, Slider, ProgressIndicator, ComboBox, ListView, TextEdit, Separator, Image, AboutSlint, GroupBox, TabWidget, MainMenu |
 | `flutter` | fertig / done | Flutter (Material 3) mit flutter_rust_bridge 2.13, Logik in Rust; Kern-Widgets plus Palette „Flutter“: RadioButton, Switch, Slider, ProgressBar, ComboBox, ListBox, TextEdit, Separator, Card, Tabs, MainMenu, DataGrid |
 | `webview` | fertig / done | Natives Fenster mit System-WebView (wry 0.57 + tao 0.37), Formular als HTML/CSS, Logik in Rust; Stil Native oder Pico; Kern-Widgets plus Palette „WebView“: RadioButton, Switch, Slider, ProgressBar, ComboBox, ListBox, TextEdit, Separator, Frame, Tabs, MainMenu, DataGrid |
-| `freya-gui` | fertig / done | **freya** ([freyaui.dev](https://freyaui.dev), Marc Espín, MIT; eigenständiges Projekt, von Freya TDE nur unterstützt) 0.5.4, reaktiv, Skia; angezeigt als „freya“; Kern-Widgets plus Palette „freya“: RadioButton, Switch, Slider, ProgressBar, Select, ListBox, TextEdit, Separator, Card, Tabs, Link, MainMenu, DataGrid, Accordion, Calendar, Chip, ColorPicker, Loader, Skeleton, SegmentedButton, SelectableText, Paragraph, Marquee, Svg, Gif, VirtualList, SideBar, Splitter, DragCanvas, Popup, ContextMenu, DragZone, DropZone, Lazy, DockArea, Markdown, CodeEditor, Terminal, Chart, Canvas, Camera, Video, HtmlView, Icon |
+| `freya-gui` | fertig / done | **freya** ([freyaui.dev](https://freyaui.dev), Marc Espín, MIT; eigenständiges Projekt, von Freya TDE nur unterstützt) 0.5.4, reaktiv, Skia; angezeigt als „freya“; Kern-Widgets plus Palette „freya“: RadioButton, Switch, Slider, ProgressBar, Select, ListBox, TextEdit, Separator, Card, Tabs, Router, Link, MainMenu, Tray, I18n, DataGrid, Accordion, Calendar, Chip, ColorPicker, Loader, Skeleton, SegmentedButton, SelectableText, Paragraph, Marquee, Svg, Gif, VirtualList, SideBar, Splitter, DragCanvas, Popup, ContextMenu, DragZone, DropZone, Lazy, DockArea, Markdown, CodeEditor, Terminal, Chart, Canvas, Camera, Video, HtmlView, Icon |
 
 Der Neu-Assistent (Datei → Neues Projekt …) bietet alle installierten Backends an, `gtk4` vorgewählt.
 *The new-project wizard offers all installed backends, `gtk4` preselected.*
@@ -264,6 +264,22 @@ module `freya_ui` with freya's elements and components.*
   `zoom_shortcuts`, `devtools`, `metrics`, `hot_reload` (schalten nur das Cargo-Feature ein). Komponente
   **Tray**: Symbol im Infobereich mit Menü, `on_select(item)` (nur am Hauptformular).
 - Weitere Formulare öffnen sich als eigene Fenster: `crate::app::show_<formular>()`.
+- Router (Etappe D, freya-router): Container, jedes Kind eine Seite mit Route (`routes`, sonst `/` und
+  `/<kind>`), Reiterleiste aus freyas `FloatingTab`/`ActivableRoute`/`Link` (`tabs`), Übergang `transition`
+  (Fade, Slide, Grow). Navigieren: `crate::app::navigate("/settings")`, `go_back()`, `go_forward()` oder ein
+  `Link` mit `route`; `on_navigate(path)` meldet jeden Wechsel, `self.<router>.value` ist die aktuelle Route.
+  Mehrere Router: `navigate`/`go_back`/`go_forward` steuern den ersten, `crate::app::navigate_router(name,
+  path)` einen bestimmten. Erzeugt wird je Router ein `#[derive(Routable)]`-Enum mit einer Komponente je Seite
+  im Modul `freya_ui`; der Rahmen des Routers merkt sich dessen `RouterContext`, weil freya ihn nur innerhalb
+  des Routers findet (Handler laufen außerhalb).
+- Übersetzungen (freya-i18n, Fluent): Komponente **I18n** mit `languages` (die erste gilt beim Start),
+  `fallback`, `folder` (Vorgabe `i18n`, je Sprache `<sprache>.ftl`) und `embed` (Dateien einbauen oder beim
+  Start lesen). Jeder angezeigte Text, der mit `@` beginnt, ist ein Schlüssel: `@hello_world` wird zu dessen
+  Übersetzung (Beschriftungen, Texte, Einträge, Reiter, Fenstertitel, Menüs). Sprache wechseln:
+  `crate::app::set_language("de-DE")`; eigene Texte: `crate::app::tr("@key")`. Eine fehlende `.ftl`-Datei
+  lässt freya beim Start mit einer Meldung abbrechen.
+- Schalter `radio`, `query`, `sdk` am Formular schalten freya-radio, freya-query und freya-sdk (mit Tokio)
+  für eigenen Code ein; Zwischenablage: `crate::app::copy_text(…)`, `crate::app::paste_text()`.
 - Bilder aus dem Netz: eine ImageBox mit `file` = Adresse (`https://…`) schaltet freyas `remote-asset` ein.
 - Layouts: senkrecht/waagerecht als `rect` mit `Content::flex()` (Dehnen = `Size::flex`), Raster als Zeilen aus
   je `columns` gleich breiten Zellen, Stapel (erstes Kind), absolut mit `Position::new_absolute()`.
@@ -298,7 +314,7 @@ module `freya_ui` with freya's elements and components.*
   mit allen Widgets, baut, startet, klickt OK, drückt Strg+O (Menü) und prüft Datenbindung, DataGrid und Bilder.
 
 *Limits: no container background pictures, `Center` position not applied, no centred anchors, tray only on
-the main form; tested on Linux.*
+the main form, `animate_moves` only with a requested size in pixels; tested on Linux.*
 
 ## Aussehen und Fenster / appearance and window
 

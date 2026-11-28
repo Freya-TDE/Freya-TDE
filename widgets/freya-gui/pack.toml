@@ -51,6 +51,9 @@ cargo = [
   { crate = "freya", version = "0.5.4", features = ["hotreload"], when = { hot_reload = true } },
   { crate = "freya", version = "0.5.4", features = ["material-design"], when = { ripple = true } },
   { crate = "freya", version = "0.5.4", features = ["remote-asset"], uses = { file = "://" } },
+  { crate = "freya", version = "0.5.4", features = ["radio"], when = { radio = true } },
+  { crate = "freya", version = "0.5.4", features = ["query"], when = { query = true } },
+  { crate = "freya", version = "0.5.4", features = ["sdk-tokio"], when = { sdk = true } },
 ]
 app-file = "templates/app.rs.j2"
 form-file = "templates/form.rs.j2"
@@ -238,6 +241,18 @@ description = "Metrics overlay of freya in debug builds"
 type = "bool"
 category = "freya"
 description = "Hot reload through `dx` (dioxus-cli)"
+[extend.properties.radio]
+type = "bool"
+category = "freya"
+description = "freya-radio for global state in own code (`freya::radio`)"
+[extend.properties.query]
+type = "bool"
+category = "freya"
+description = "freya-query for cached async data in own code (`freya::query`)"
+[extend.properties.sdk]
+type = "bool"
+category = "freya"
+description = "freya-sdk with Tokio helpers in own code (`freya::sdk`)"
 [extend.codegen]
 type = "crate::app::Control<()>"
 init = "crate::app::Control::new(()).with_caption({{ rust.title }}).with_state({{ rust.enabled }}, true, {{ rust.tooltip }})"
@@ -576,6 +591,10 @@ category = "Behavior"
 type = "text"
 category = "Appearance"
 description = "Text (empty = the address)"
+[component.properties.route]
+type = "text"
+category = "Behavior"
+description = "Route of the Router to open instead of the address, e.g. `/settings`"
 [component.codegen]
 type = "crate::app::Control<String>"
 init = "crate::app::Control::new({{ rust.uri }}.to_string()).with_caption({{ rust.caption }}).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
@@ -1278,3 +1297,71 @@ description = "A menu entry was chosen"
 [component.codegen]
 type = "crate::app::Control<()>"
 init = "crate::app::Control::new(()).with_items::<&str>({{ rust.items }})"
+
+# --- Etappe D: Router und Übersetzungen / router and translations -----------------------------
+
+[[component]]
+name = "Router"
+kind = "container"
+look = "tabs"
+category = "freya"
+icon = "tabs"
+description = "Pages with routes (freya-router); one page per child; navigate with `crate::app::navigate(\"/path\")`"
+cargo = [{ crate = "freya", version = "0.5.4", features = ["router"] }]
+[component.properties.routes]
+type = "list"
+item = "text"
+category = "Behavior"
+description = "Route of each page, one per child (missing: `/` for the first, else `/<child name>`)"
+[component.properties.pages]
+type = "list"
+item = "text"
+category = "Appearance"
+description = "Tab titles, one per child (missing ones: the child's name)"
+[component.properties.tabs]
+type = "bool"
+default = true
+category = "Appearance"
+description = "Bar with a tab per page (freya FloatingTab)"
+[component.properties.transition]
+type = "enum"
+variants = ["None", "Fade", "Slide", "Grow"]
+default = "Fade"
+category = "Animation"
+description = "Animation when the page changes"
+[component.events.on_navigate]
+params = [{ name = "path", type = "&str" }]
+description = "The page changed; `path` is its route"
+[component.codegen]
+type = "crate::app::Control<String>"
+init = "crate::app::Control::new(String::from(\"/\")).with_items::<&str>({{ rust.pages }}).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+[[component]]
+name = "I18n"
+category = "freya"
+icon = "globe"
+description = "Translations with Fluent (freya-i18n): texts starting with `@` are keys, e.g. `@hello_world`"
+cargo = [{ crate = "freya", version = "0.5.4", features = ["i18n"] }]
+[component.properties.languages]
+type = "list"
+item = "text"
+category = "Translation"
+description = "Languages, e.g. `en-US`, `de-DE`; the first is used at the start"
+[component.properties.fallback]
+type = "text"
+default = "en-US"
+category = "Translation"
+description = "Language used for keys missing in the current one"
+[component.properties.folder]
+type = "text"
+default = "i18n"
+category = "Translation"
+description = "Folder with one `<language>.ftl` per language, relative to the project"
+[component.properties.embed]
+type = "bool"
+default = true
+category = "Translation"
+description = "Build the `.ftl` files into the program (else read at the start from the working directory)"
+[component.codegen]
+type = "crate::app::Control<()>"
+init = "crate::app::Control::new(()).with_items::<&str>({{ rust.languages }})"

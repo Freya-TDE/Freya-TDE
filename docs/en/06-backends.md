@@ -70,6 +70,11 @@ Each backend does what its toolkit can; where it cannot, it is listed in the "li
 - The AI knows freya through freya's own skill (MIT, embedded with its origin; shown in the AI window with the
   origin "freya (freyaui.dev)").
 - The first build downloads freya's Skia binaries (network needed once).
+- Everything freya offers is supported: all components in the palette "freya" (from Accordion to
+  VirtualList), Markdown, CodeEditor, Terminal, charts, Canvas, camera, video, HTML, Lucide icons, Router,
+  translations (Fluent, texts with `@key`), tray, borderless windows with freya's title bar; on top, every
+  widget has style (shadows, gradients, blur, transforms), animations and events such as hover and file
+  drop. Details and limits: [`widgets/README.md`](../../widgets/README.md#freya).
 
 ## Backends of your own
 

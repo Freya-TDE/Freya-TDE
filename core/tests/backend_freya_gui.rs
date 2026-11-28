@@ -593,6 +593,50 @@ fn form() -> Form {
                 .on("on_secondary_click", handler("fancy_right")),
         ),
     );
+    // Etappe D: Router mit zwei Seiten, Link auf eine Route, Übersetzungen.
+    extra(
+        &mut form,
+        "window",
+        Widget::from_component(
+            widget("pages_router", fg("Router"))
+                .with("pages", texts(&["@home_title", "Einstellungen"]))
+                .with("routes", texts(&["/", "/settings"]))
+                .with("transition", Value::Enum("Slide".into()))
+                .on("on_navigate", handler("navigated")),
+        ),
+    );
+    extra(
+        &mut form,
+        "pages_router",
+        Widget::new(name("home_page"), builtin::container()),
+    );
+    extra(
+        &mut form,
+        "home_page",
+        Widget::from_component(widget("home_text", builtin::label()).with("text", "@greeting")),
+    );
+    extra(
+        &mut form,
+        "home_page",
+        Widget::from_component(
+            widget("to_settings", fg("Link"))
+                .with("caption", "Zu den Einstellungen")
+                .with("route", "/settings"),
+        ),
+    );
+    extra(
+        &mut form,
+        "pages_router",
+        Widget::from_component(
+            widget("settings_text", builtin::label()).with("text", "Einstellungen"),
+        ),
+    );
+    form.add_component(
+        Component::new(name("texts"), fg("I18n"))
+            .with("languages", texts(&["de-DE", "en-US"]))
+            .with("fallback", "en-US"),
+    )
+    .unwrap();
     // Wunschgröße: freyas Portal (`animate_moves`) braucht eine feste Größe.
     form.widget_mut(&name("fancy")).unwrap().visual.placement = Placement::Layout {
         stretch: 0,
@@ -659,6 +703,8 @@ impl MainForm {
         self.grid.value.selected = Some(1);
         say(&format!("grid_rows={} grid_columns={}", self.grid_rows.len(), self.grid.value.headers.len()));
         say(&format!("grid={:?} grid_value={:?}", self.grid_selected_row().map(|r| r.name.clone()), self.grid_selected_value()));
+        // Router aus einem Handler außerhalb des Routers steuern.
+        crate::app::navigate("/settings");
         self.greeting.value = format!("Hallo {}", *self.name_edit);
         self.window.caption = "geklickt".into();
         say(&format!("label={}", self.greeting.value));
@@ -691,6 +737,13 @@ impl MainForm {
     }
     pub fn dropped(&mut self, _data: &str) {}
     pub fn fancy_hover(&mut self, _inside: bool) {}
+    pub fn navigated(&mut self, path: &str) {
+        say(&format!("route={path}"));
+        if path == "/settings" {
+            crate::app::set_language("en-US");
+            crate::app::copy_text("freya");
+        }
+    }
     pub fn files_dropped(&mut self, _paths: &[std::path::PathBuf]) {}
     pub fn fancy_visible(&mut self) {}
     pub fn fancy_right(&mut self) {
@@ -796,6 +849,17 @@ fn generated_project_builds_runs_and_reacts_to_clicks() {
             &(edit::handlers("say") + pictures::HANDLERS),
         );
     std::fs::write(dir.join("src/main_form.rs"), form_rs).unwrap();
+    std::fs::create_dir_all(dir.join("i18n")).unwrap();
+    std::fs::write(
+        dir.join("i18n/de-DE.ftl"),
+        "greeting = Hallo aus Fluent\nhome_title = Start\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("i18n/en-US.ftl"),
+        "greeting = Hello from Fluent\nhome_title = Home\n",
+    )
+    .unwrap();
     std::fs::write(
         dir.join("src/about_form.rs"),
         "include!(\"about_form.gen.rs\");\n",
@@ -871,6 +935,8 @@ fn generated_project_builds_runs_and_reacts_to_clicks() {
         .read_to_string(&mut stdout)
         .unwrap();
     assert!(stdout.contains("created"), "{stdout}");
+    assert!(stdout.contains("route=/"), "{stdout}");
+    assert!(stdout.contains("route=/settings"), "{stdout}");
     assert!(stdout.contains("label=Hallo Freya"), "{stdout}");
     assert!(stdout.contains("gallery=3 photo=true"), "{stdout}");
     assert!(stdout.contains("bound_items=3"), "{stdout}");

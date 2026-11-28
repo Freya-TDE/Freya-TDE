@@ -145,6 +145,8 @@ pub trait FreyaView: FreyaUpdate + Sized {
     const THEME: &'static str;
     /// Once at the start, with the sender (data binding: wake on new rows).
     fn freya_watch(_sender: &FreyaSender<Self>) {}
+    /// Hooks of the form, called on every render of its window (translations).
+    fn freya_hooks() {}
 }
 
 /// The root component of a form's window: renders the form again after
@@ -180,6 +182,12 @@ impl<F: FreyaView> App for FreyaRoot<F> {
         use_hook({
             let sender = sender.clone();
             move || F::freya_watch(&sender)
+        });
+        F::freya_hooks();
+        // Für Komponenten der Seiten (Router): Zugriff auf Formular und Sender.
+        use_provide_context({
+            let sender = sender.clone();
+            move || sender
         });
         // Titel nur setzen, wenn er sich geändert hat.
         let shown = use_hook(|| std::rc::Rc::new(std::cell::RefCell::new(String::new())));
@@ -274,6 +282,106 @@ impl Component for Appear {
     }
 }
 
+/// A text as shown: `@key` is translated with freya-i18n (component I18n),
+/// any other text stays as it is.
+#[allow(dead_code)]
+pub fn tr(text: &str) -> String {
+    {%- if "backend:freya-gui/I18n" in types %}
+    if let Some(key) = text.strip_prefix('@')
+        && let Some(i18n) = freya::i18n::I18n::try_get()
+        && let Ok(translated) = i18n.try_translate(key)
+    {
+        return translated;
+    }
+    {%- endif %}
+    text.to_owned()
+}
+{%- if "backend:freya-gui/I18n" in types %}
+
+/// Switches the language of the translations, e.g. `set_language("de-DE")`.
+#[allow(dead_code)]
+pub fn set_language(language: &str) {
+    if let (Some(mut i18n), Ok(id)) = (
+        freya::i18n::I18n::try_get(),
+        language.parse::<freya::i18n::LanguageIdentifier>(),
+    ) {
+        i18n.set_language(id);
+    }
+}
+{%- endif %}
+{%- if "backend:freya-gui/Router" in types %}
+
+thread_local! {
+    /// The context of each Router (by name), remembered by its frame: handlers
+    /// run outside the router's component tree, where `RouterContext::get()` fails.
+    static FREYA_ROUTERS: std::cell::RefCell<Vec<(&'static str, freya::router::RouterContext)>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Remembers the context of router `name` (called by its frame).
+pub fn freya_set_router(name: &'static str, router: freya::router::RouterContext) {
+    FREYA_ROUTERS.with(|routers| {
+        let mut routers = routers.borrow_mut();
+        match routers.iter_mut().find(|(n, _)| *n == name) {
+            Some(entry) => entry.1 = router,
+            None => routers.push((name, router)),
+        }
+    });
+}
+
+fn freya_router(name: Option<&str>) -> Option<freya::router::RouterContext> {
+    FREYA_ROUTERS.with(|routers| {
+        let routers = routers.borrow();
+        match name {
+            Some(name) => routers.iter().find(|(n, _)| *n == name).map(|(_, r)| r.clone()),
+            None => routers.first().map(|(_, r)| r.clone()),
+        }
+    })
+}
+
+/// Opens the page with route `path` of the (first) Router, e.g. `/settings`.
+#[allow(dead_code)]
+pub fn navigate(path: &str) {
+    if let Some(router) = freya_router(None) {
+        let _ = router.push(freya::router::NavigationTarget::Internal(path.to_owned()));
+    }
+}
+
+/// Opens route `path` of the Router named `router`.
+#[allow(dead_code)]
+pub fn navigate_router(router: &str, path: &str) {
+    if let Some(router) = freya_router(Some(router)) {
+        let _ = router.push(freya::router::NavigationTarget::Internal(path.to_owned()));
+    }
+}
+
+/// Back / forward in the history of the (first) Router.
+#[allow(dead_code)]
+pub fn go_back() {
+    if let Some(router) = freya_router(None) {
+        router.go_back();
+    }
+}
+#[allow(dead_code)]
+pub fn go_forward() {
+    if let Some(router) = freya_router(None) {
+        router.go_forward();
+    }
+}
+{%- endif %}
+
+/// Puts `text` on the clipboard.
+#[allow(dead_code)]
+pub fn copy_text(text: &str) {
+    let _ = freya::clipboard::Clipboard::set(text.to_owned());
+}
+
+/// The text on the clipboard (empty if there is none).
+#[allow(dead_code)]
+pub fn paste_text() -> String {
+    freya::clipboard::Clipboard::get().unwrap_or_default()
+}
+
 /// A colour from the designer (`a` = 255 opaque).
 #[allow(dead_code)]
 pub fn color(r: u8, g: u8, b: u8, a: u8) -> freya::prelude::Color {
@@ -346,7 +454,7 @@ pub fn menu_items(
                             rect()
                                 .horizontal()
                                 .spacing(24.0)
-                                .child(label().text(name))
+                                .child(label().text(tr(&name)))
                                 .maybe(!keys.is_empty(), |el| el.child(label().text(keys.clone()).opacity(0.6))),
                         )
                         .into_element(),
@@ -358,7 +466,7 @@ pub fn menu_items(
             sub.push(name.clone());
             out.push(
                 SubMenu::new()
-                    .label(label().text(name))
+                    .label(label().text(tr(&name)))
                     .children(menu_items(entries, &sub, choose.clone()))
                     .into_element(),
             );

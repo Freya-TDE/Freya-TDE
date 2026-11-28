@@ -69,6 +69,11 @@ Jedes Backend setzt um, was sein Toolkit kann; wo es nicht geht, steht es in der
 - Die KI kennt freya über dessen eigenen Skill (MIT, mit Herkunft eingebettet; im KI-Fenster mit der
   Herkunft „freya (freyaui.dev)“).
 - Der erste Build lädt die Skia-Binärdateien von freya herunter (einmal Netz nötig).
+- Unterstützt wird alles, was freya anbietet: alle Komponenten in der Palette „freya“ (von Accordion bis
+  VirtualList), Markdown, CodeEditor, Terminal, Diagramme, Canvas, Kamera, Video, HTML, Lucide-Symbole,
+  Router, Übersetzungen (Fluent, Texte mit `@schlüssel`), Tray, rahmenlose Fenster mit freyas Titelleiste;
+  jedes Widget hat dazu Stil (Schatten, Verläufe, Unschärfe, Transformationen), Animationen und Ereignisse
+  wie Hover und Datei-Drop. Einzelheiten und Grenzen: [`widgets/README.md`](../../widgets/README.md#freya).
 
 ## Eigene Backends
 

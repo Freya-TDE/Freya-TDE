@@ -5,7 +5,7 @@
     handlers in <form>.rs; the view is built in the module `freya_ui` (freya's
     prelude stays there), one method `freya_view_<name>` per container. -#}
 {%- set p_ = "backend:freya-gui/" %}
-{%- set containers = ["core/Form", "core/Container", p_ ~ "Card", p_ ~ "Tabs", p_ ~ "Accordion", p_ ~ "Skeleton", p_ ~ "Splitter", p_ ~ "DragCanvas", p_ ~ "Popup", p_ ~ "DragZone", p_ ~ "DropZone", p_ ~ "Lazy", p_ ~ "DockArea"] %}
+{%- set containers = ["core/Form", "core/Container", p_ ~ "Card", p_ ~ "Tabs", p_ ~ "Accordion", p_ ~ "Skeleton", p_ ~ "Splitter", p_ ~ "DragCanvas", p_ ~ "Popup", p_ ~ "DragZone", p_ ~ "DropZone", p_ ~ "Lazy", p_ ~ "DockArea", p_ ~ "Router"] %}
 {#- Widgets that keep their natural width even with align Fill. -#}
 {%- set natural = ["core/Label", "core/CheckBox", p_ ~ "RadioButton", p_ ~ "Switch", p_ ~ "Link"] %}
 {#- Wie die Theme-Tabelle des Designers (designer/themes/linux.toml): Rand 12, Abstand 8. -#}
@@ -15,6 +15,8 @@
 {%- set languages = {"Rust": "tree_sitter_rust::LANGUAGE, tree_sitter_rust::HIGHLIGHTS_QUERY", "Python": "tree_sitter_python::LANGUAGE, tree_sitter_python::HIGHLIGHTS_QUERY", "JavaScript": "tree_sitter_javascript::LANGUAGE, tree_sitter_javascript::HIGHLIGHT_QUERY", "TypeScript": "tree_sitter_typescript::LANGUAGE_TYPESCRIPT, tree_sitter_typescript::HIGHLIGHTS_QUERY", "Json": "tree_sitter_json::LANGUAGE, tree_sitter_json::HIGHLIGHTS_QUERY", "Toml": "tree_sitter_toml_ng::LANGUAGE, tree_sitter_toml_ng::HIGHLIGHTS_QUERY", "Html": "tree_sitter_html::LANGUAGE, tree_sitter_html::HIGHLIGHTS_QUERY", "Css": "tree_sitter_css::LANGUAGE, tree_sitter_css::HIGHLIGHTS_QUERY", "Bash": "tree_sitter_bash::LANGUAGE, tree_sitter_bash::HIGHLIGHT_QUERY", "C": "tree_sitter_c::LANGUAGE, tree_sitter_c::HIGHLIGHT_QUERY", "Yaml": "tree_sitter_yaml::LANGUAGE, tree_sitter_yaml::HIGHLIGHTS_QUERY"} %}
 {%- set cmenus = components | selectattr("type", "eq", p_ ~ "ContextMenu") | selectattr("field") | list %}
 {%- set trays = components | selectattr("type", "eq", p_ ~ "Tray") | selectattr("field") | list %}
+{%- set i18ns = components | selectattr("type", "eq", p_ ~ "I18n") | selectattr("field") | list %}
+{%- set routers = widgets | selectattr("type", "eq", p_ ~ "Router") | selectattr("field") | list %}
 
 {#- A colour property as freya `Color`. -#}
 {%- macro color(v) -%}
@@ -41,14 +43,14 @@ rect()
     .maybe(self.{{ c.name }}.enabled, |el| el.on_press(s.on::<Event<PressEventData>>({{ message }})))
     .maybe(!self.{{ c.name }}.enabled, |el| el.opacity(0.5))
     .child({{ inner }})
-    .child(label().text(self.{{ c.name }}.caption.clone()){{ text_style(c) }})
+    .child(label().text(crate::app::tr(&self.{{ c.name }}.caption)){{ text_style(c) }})
 {%- endmacro %}
 
 {#- The widget `c` as an expression that converts into an Element. -#}
 {%- macro widget(c, fill) -%}
 {%- set t = c.type -%}
 {%- if t == "core/Label" -%}
-label().text(self.{{ c.name }}.value.clone()){{ text_style(c) }}{% if fill %}.width(Size::fill()){% endif %}
+label().text(crate::app::tr(&self.{{ c.name }}.value)){{ text_style(c) }}{% if fill %}.width(Size::fill()){% endif %}
 {%- elif t == "core/Button" -%}
 Button::new()
     .enabled(self.{{ c.name }}.enabled)
@@ -73,10 +75,10 @@ Button::new()
     .color({{ color(c.props.foreground) }})
     {%- endif %}
     .on_press(s.on::<Event<PressEventData>>(Message::{{ c.name }}_click))
-    .child(label().text(self.{{ c.name }}.caption.clone()){{ text_style(c) }})
+    .child(label().text(crate::app::tr(&self.{{ c.name }}.caption)){{ text_style(c) }})
 {%- elif t == "core/Edit" -%}
 Input::new(WritableSetter::new(self.{{ c.name }}.value.clone(), s.to(Message::{{ c.name }}_input)))
-    .placeholder({{ c.rust.placeholder }})
+    .placeholder(crate::app::tr({{ c.rust.placeholder }}))
     {%- if c.props.variant == "Filled" %}
     .filled()
     {%- elif c.props.variant == "Flat" %}
@@ -100,7 +102,7 @@ rect()
     .spacing(6.0)
     .cross_align(Alignment::Center)
     .child(Switch::new(WritableSetter::new(self.{{ c.name }}.value, s.to(Message::{{ c.name }}_toggle))).enabled(self.{{ c.name }}.enabled))
-    .maybe(!self.{{ c.name }}.caption.is_empty(), |el| el.child(label().text(self.{{ c.name }}.caption.clone()){{ text_style(c) }}))
+    .maybe(!self.{{ c.name }}.caption.is_empty(), |el| el.child(label().text(crate::app::tr(&self.{{ c.name }}.caption)){{ text_style(c) }}))
 {%- elif t == p_ ~ "Slider" -%}
 {%- set span = "(" ~ c.rust.maximum ~ " - " ~ c.rust.minimum ~ ")" %}
 rect()
@@ -122,11 +124,11 @@ rect()
 rect()
     .width(Size::fill())
     .spacing(2.0)
-    .maybe(!self.{{ c.name }}.caption.is_empty(), |el| el.child(label().text(self.{{ c.name }}.caption.clone()).font_size(12.0)))
+    .maybe(!self.{{ c.name }}.caption.is_empty(), |el| el.child(label().text(crate::app::tr(&self.{{ c.name }}.caption)).font_size(12.0)))
     .child(ProgressBar::new(self.{{ c.name }}.value * 100.0).width(Size::fill()).show_progress(false))
 {%- elif t == p_ ~ "Select" -%}
 Select::new()
-    .selected_item(self.{{ c.name }}.items.get(self.{{ c.name }}.value).cloned().unwrap_or_default())
+    .selected_item(self.{{ c.name }}.items.get(self.{{ c.name }}.value).map(|item| crate::app::tr(item)).unwrap_or_default())
     .children(
         self.{{ c.name }}
             .items
@@ -137,7 +139,7 @@ Select::new()
                 MenuItem::new()
                     .selected(self.{{ c.name }}.value == index)
                     .on_press(s.on::<Event<PressEventData>>(Message::{{ c.name }}_select(index)))
-                    .child(item.clone())
+                    .child(crate::app::tr(item))
                     .into_element()
             }),
     )
@@ -154,7 +156,7 @@ rect()
             .padding(Gaps::new(4.0, 6.0, 4.0, 6.0))
             .maybe(self.{{ c.name }}.value == index as i32, |el| el.background(crate::app::color(0x3b, 0x82, 0xf6, 90)))
             .maybe(self.{{ c.name }}.enabled, |el| el.on_press(s.on::<Event<PressEventData>>(Message::{{ c.name }}_select(index))))
-            .child(item.clone())
+            .child(crate::app::tr(item))
             .into_element()
     })))
 {%- elif t == p_ ~ "TextEdit" -%}
@@ -171,12 +173,16 @@ rect().height(Size::px(1.0)).width(Size::fill()).background(crate::app::color(0x
 {%- endif -%}
 {%- elif t == p_ ~ "Link" -%}
 label()
-    .text(if self.{{ c.name }}.caption.is_empty() { self.{{ c.name }}.value.clone() } else { self.{{ c.name }}.caption.clone() })
+    .text(if self.{{ c.name }}.caption.is_empty() { self.{{ c.name }}.value.clone() } else { crate::app::tr(&self.{{ c.name }}.caption) })
     .color(crate::app::color(0x3b, 0x82, 0xf6, 255)){{ text_style(c) }}
+    {%- if c.props.route %}
+    .maybe(self.{{ c.name }}.enabled, |el| el.on_press(|_| crate::app::navigate({{ c.rust.route }})))
+    {%- else %}
     .maybe(self.{{ c.name }}.enabled, |el| {
         let url = self.{{ c.name }}.value.clone();
         el.on_press(move |_| Platform::get().open_url(url.clone()))
     })
+    {%- endif %}
 {%- elif t == "core/ImageBox" -%}
 {%- set p = c.placement if c.placement and c.placement.kind == "layout" else none %}
 rect()
@@ -294,7 +300,7 @@ Chip::new()
     .selected(self.{{ c.name }}.value)
     .enabled(self.{{ c.name }}.enabled)
     .on_press(s.on::<Event<PressEventData>>(Message::{{ c.name }}_toggle(!self.{{ c.name }}.value)))
-    .child(label().text(self.{{ c.name }}.caption.clone()){{ text_style(c) }})
+    .child(label().text(crate::app::tr(&self.{{ c.name }}.caption)){{ text_style(c) }})
 {%- elif t == p_ ~ "Calendar" -%}
 {
     let date = &self.{{ c.name }}.value;
@@ -348,14 +354,14 @@ SegmentedButton::new().children(self.{{ c.name }}.items.iter().enumerate().map(|
         .selected(self.{{ c.name }}.value == index)
         .enabled(self.{{ c.name }}.enabled)
         .on_press(s.on::<Event<PressEventData>>(Message::{{ c.name }}_select(index)))
-        .child(item.clone())
+        .child(crate::app::tr(item))
         .into_element()
 }))
 {%- elif t == p_ ~ "SelectableText" -%}
-SelectableText::new().span(self.{{ c.name }}.value.clone()){% if fill %}.width(Size::fill()){% endif %}
+SelectableText::new().span(crate::app::tr(&self.{{ c.name }}.value)){% if fill %}.width(Size::fill()){% endif %}
 {%- elif t == p_ ~ "Paragraph" -%}
 paragraph()
-    .span(self.{{ c.name }}.value.clone())
+    .span(crate::app::tr(&self.{{ c.name }}.value))
     {%- if c.props.max_lines > 0 %}
     .max_lines({{ c.props.max_lines }}usize)
     {%- endif %}
@@ -368,7 +374,7 @@ OverflowedContent::new()
     {%- if c.props.left_to_right %}
     .left_to_right()
     {%- endif %}
-    .child(label().text(self.{{ c.name }}.value.clone()){{ text_style(c) }})
+    .child(label().text(crate::app::tr(&self.{{ c.name }}.value)){{ text_style(c) }})
 {%- elif t in [p_ ~ "Svg", p_ ~ "Gif"] -%}
 {%- set p = c.placement if c.placement and c.placement.kind == "layout" else none %}
 {%- if t == p_ ~ "Svg" %}SvgViewer{% else %}GifViewer{% endif %}::new(std::path::PathBuf::from(&self.{{ c.name }}.value))
@@ -387,7 +393,7 @@ VirtualScrollView::new_with_data(
             .padding(Gaps::new(4.0, 6.0, 4.0, 6.0))
             .maybe(*value == item.index as i32, |el| el.background(crate::app::color(0x3b, 0x82, 0xf6, 90)))
             .maybe(*enabled, |el| el.on_press(s.on::<Event<PressEventData>>(Message::{{ c.name }}_select(item.index))))
-            .child(items.get(item.index).cloned().unwrap_or_default())
+            .child(items.get(item.index).map(|text| crate::app::tr(text)).unwrap_or_default())
             .into_element()
     },
 )
@@ -404,7 +410,7 @@ rect().width(Size::fill()).spacing(2.0).children(self.{{ c.name }}.items.iter().
         .child(
             SideBarItem::new()
                 .on_press(s.on::<Event<PressEventData>>(Message::{{ c.name }}_select(index)))
-                .child(item.clone()),
+                .child(crate::app::tr(item)),
         )
         .into_element()
 }))
@@ -436,7 +442,7 @@ rect()
 {%- elif t == p_ ~ "Chart" %}
     .background(RenderCallback::new({
         let values = self.{{ c.name }}.value.clone();
-        let title = self.{{ c.name }}.caption.clone();
+        let title = crate::app::tr(&self.{{ c.name }}.caption);
         move |context| crate::app::draw_chart(context, &values, &title, "{{ c.props.kind }}", ({{ c.props.color.r }}, {{ c.props.color.g }}, {{ c.props.color.b }}))
     }))
 {%- elif t == p_ ~ "Canvas" and c.events.on_draw %}
@@ -668,6 +674,10 @@ pub enum Message {
     {{ c.name }}_secondary,
 {%- endif %}
 {%- endfor %}
+{%- for r in routers %}
+    /// The page of router `{{ r.name }}` changed (its route).
+    {{ r.name }}_route(String),
+{%- endfor %}
 {%- for t in trays %}
     /// An entry of the tray menu `{{ t.name }}` was chosen.
     {{ t.name }}_choose(String),
@@ -718,6 +728,15 @@ impl crate::app::FreyaUpdate for {{ form.struct }} {
         {%- if c.events.on_secondary_click %}
             Message::{{ c.name }}_secondary => self.{{ c.events.on_secondary_click }}(),
         {%- endif %}
+        {%- endfor %}
+        {%- for r in routers %}
+            Message::{{ r.name }}_route(path) => {
+                self.{{ r.name }}.value = path;
+            {%- if r.events.on_navigate %}
+                let path = self.{{ r.name }}.value.clone();
+                self.{{ r.events.on_navigate }}(&path);
+            {%- endif %}
+            }
         {%- endfor %}
         {%- for t in trays %}
             Message::{{ t.name }}_choose(item) => {
@@ -1092,6 +1111,9 @@ impl {{ form.struct }} {
 #[allow(unused_imports, clippy::all)]
 mod freya_ui {
     use freya::prelude::*;
+    {%- if routers %}
+    use freya::router::{Outlet, Routable, use_route};
+    {%- endif %}
     use super::{{ "{" }}{{ form.struct }}, Message{{ "}" }};
 
     type Sender = crate::app::FreyaSender<{{ form.struct }}>;
@@ -1099,8 +1121,29 @@ mod freya_ui {
     impl crate::app::FreyaView for {{ form.struct }} {
         const THEME: &'static str = "{{ root.props.theme }}";
 
+        {%- for i in i18ns[:1] %}
+        {%- set langs = i.props.languages or ["en-US"] %}
+
+        /// Translations (freya-i18n) from `{{ i.props.folder }}/<language>.ftl`.
+        fn freya_hooks() {
+            freya::i18n::use_init_i18n(|| {
+                freya::i18n::I18nConfig::new(freya::i18n::langid!("{{ langs[0] }}"))
+                {%- if i.props.fallback %}
+                    .with_fallback(freya::i18n::langid!("{{ i.props.fallback }}"))
+                {%- endif %}
+                {%- for l in langs %}
+                {%- if i.props.embed %}
+                    .with_locale((freya::i18n::langid!("{{ l }}"), include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/{{ i.props.folder }}/{{ l }}.ftl"))))
+                {%- else %}
+                    .with_locale((freya::i18n::langid!("{{ l }}"), std::path::PathBuf::from("{{ i.props.folder }}/{{ l }}.ftl")))
+                {%- endif %}
+                {%- endfor %}
+            });
+        }
+        {%- endfor %}
+
         fn freya_title(&self) -> String {
-            self.{{ root.name }}.caption.clone()
+            crate::app::tr(&self.{{ root.name }}.caption)
         }
         {%- if data_bound %}
 
@@ -1221,7 +1264,95 @@ mod freya_ui {
         }
     }
 
+    {%- for r in routers %}
+    {%- set R = (r.name ~ "_route") | pascal %}
+    {%- set pages = r.children | selectattr("field") | list %}
+
+    /// The routes of router `{{ r.name }}`.
+    #[derive(Routable, Clone, PartialEq)]
+    #[rustfmt::skip]
+    pub enum {{ R }} {
+        #[layout({{ R }}Layout)]
+        {%- for c in pages %}
+        #[route("{{ r.props.routes[loop.index0] if r.props.routes | length > loop.index0 else ('/' if loop.first else '/' ~ c.name) }}")]
+        {{ (r.name ~ "_" ~ c.name) | pascal }} {},
+        {%- endfor %}
+    }
+
+    /// Frame of router `{{ r.name }}`: tab bar, then the current page.
+    #[derive(PartialEq)]
+    pub struct {{ R }}Layout {}
+
+    impl Component for {{ R }}Layout {
+        fn render(&self) -> impl IntoElement {
+            let s = use_consume::<Sender>();
+            // Für `crate::app::navigate` aus Handlern außerhalb des Routers.
+            crate::app::freya_set_router("{{ r.name }}", freya::router::RouterContext::get());
+            // Seitenwechsel ans Formular melden (nach dem Zeichnen).
+            let path = use_route::<{{ R }}>().to_string();
+            let known = use_hook(|| std::rc::Rc::new(std::cell::RefCell::new(String::new())));
+            if *known.borrow() != path {
+                *known.borrow_mut() = path.clone();
+                let s = s.clone();
+                spawn(async move { s.send(Message::{{ r.name }}_route(path)) });
+            }
+            {%- if r.props.tabs %}
+            let titles: Vec<String> = {
+                let form = s.form.borrow();
+                vec![{% for c in pages %}form.{{ r.name }}.items.get({{ loop.index0 }}).map(|t| crate::app::tr(t)).unwrap_or_else(|| "{{ c.name }}".to_owned()), {% endfor %}]
+            };
+            {%- endif %}
+            rect()
+                .width(Size::fill())
+                .height(Size::fill())
+                .spacing(6.0)
+            {%- if r.props.tabs %}
+                .child(
+                    rect()
+                        .horizontal()
+                        .spacing(4.0)
+                    {%- for c in pages %}
+                        .child(ActivableRoute::new(
+                            {{ R }}::{{ (r.name ~ "_" ~ c.name) | pascal }} {},
+                            Link::new({{ R }}::{{ (r.name ~ "_" ~ c.name) | pascal }} {}).child(FloatingTab::new().child(titles[{{ loop.index0 }}].clone())),
+                        ))
+                    {%- endfor %},
+                )
+            {%- endif %}
+                .child(Outlet::<{{ R }}>::new())
+        }
+    }
+    {%- for c in pages %}
+
+    /// Page `{{ c.name }}` of router `{{ r.name }}`.
+    #[derive(PartialEq)]
+    pub struct {{ (r.name ~ "_" ~ c.name) | pascal }} {}
+
+    impl Component for {{ (r.name ~ "_" ~ c.name) | pascal }} {
+        fn render(&self) -> impl IntoElement {
+            let s = use_consume::<Sender>();
+            let page = s.form.borrow().freya_page_{{ r.name }}_{{ loop.index0 }}(&s);
+            {%- if r.props.transition != "None" %}
+            crate::app::Appear { kind: "{{ r.props.transition }}", ms: 300, child: page }
+            {%- else %}
+            page
+            {%- endif %}
+        }
+    }
+    {%- endfor %}
+    {%- endfor %}
+
     impl {{ form.struct }} {
+    {%- for r in routers %}
+    {%- for c in r.children | selectattr("field") %}
+
+        /// Page {{ loop.index0 }} of router `{{ r.name }}`.
+        #[allow(unused_variables)]
+        fn freya_page_{{ r.name }}_{{ loop.index0 }}(&self, s: &Sender) -> Element {
+            {{ child(c, true) }}.into_element()
+        }
+    {%- endfor %}
+    {%- endfor %}
     {%- for m in menus %}
 
         /// The menu bar `{{ m.name }}`: titles, the open menu below its title.
@@ -1242,7 +1373,7 @@ mod freya_ui {
                                 .flat()
                                 .compact()
                                 .on_press(s.on::<Event<PressEventData>>(Message::{{ m.name }}_open(toggle)))
-                                .child(title.clone()),
+                                .child(crate::app::tr(&title)),
                         )
                         .maybe(open == Some(index), |el| {
                             el.child(
@@ -1293,19 +1424,26 @@ mod freya_ui {
                 .child(Draggable::new().initial_position(({% if cp and cp.kind == "absolute" %}{{ cp.x }}{% else %}{{ 8 + loop.index0 * 16 }}{% endif %} as f64, {% if cp and cp.kind == "absolute" %}{{ cp.y }}{% else %}{{ 8 + loop.index0 * 32 }}{% endif %} as f64)).child({{ child(c, false) }}))
             {%- endfor %}
                 .into_element()
+        {%- elif w.type == p_ ~ "Router" %}
+            // Seiten mit Routen (freya-router); die Seiten zeichnen `freya_page_{{ w.name }}_<n>`.
+            rect()
+                .width(Size::fill())
+                .height({% if wp and (wp.height > 0 or wp.height_percent > 0) %}Size::fill(){% else %}Size::px(240.0){% endif %})
+                .child(freya::router::Router::<{{ (w.name ~ "_route") | pascal }}>::new(freya::router::RouterConfig::default))
+                .into_element()
         {%- elif w.type == p_ ~ "DockArea" %}
             // Reiter, die sich per Ziehen zu Panels aufteilen lassen (freya docking).
             rect()
                 .width(Size::fill())
                 .height({% if wp and (wp.height > 0 or wp.height_percent > 0) %}Size::fill(){% else %}Size::px(240.0){% endif %})
                 .child(crate::app::DockView {
-                    titles: vec![{% for c in kids %}self.{{ w.name }}.items.get({{ loop.index0 }}).cloned().unwrap_or_else(|| "{{ c.name }}".to_owned()), {% endfor %}],
+                    titles: vec![{% for c in kids %}self.{{ w.name }}.items.get({{ loop.index0 }}).map(|title| crate::app::tr(title)).unwrap_or_else(|| "{{ c.name }}".to_owned()), {% endfor %}],
                     contents: vec![{% for c in kids %}{{ child(c, true) }}.into_element(), {% endfor %}],
                 })
                 .into_element()
         {%- elif w.type == p_ ~ "Tabs" %}
             // Reiterleiste, darunter nur die gewählte Seite.
-            let titles = [{% for c in kids %}self.{{ w.name }}.items.get({{ loop.index0 }}).cloned().unwrap_or_else(|| "{{ c.name }}".to_owned()), {% endfor %}];
+            let titles = [{% for c in kids %}self.{{ w.name }}.items.get({{ loop.index0 }}).map(|title| crate::app::tr(title)).unwrap_or_else(|| "{{ c.name }}".to_owned()), {% endfor %}];
             let page: Element = match self.{{ w.name }}.value {
             {%- for c in kids %}
                 {{ loop.index0 }} => {{ child(c, true) }},
@@ -1470,7 +1608,7 @@ mod freya_ui {
         {%- endif %}
         {%- if w.type == p_ ~ "Accordion" %}
             Accordion::new()
-                .header(label().text(self.{{ w.name }}.caption.clone()))
+                .header(label().text(crate::app::tr(&self.{{ w.name }}.caption)))
                 .child(inner)
                 .into_element()
         {%- elif w.type == p_ ~ "Skeleton" %}
@@ -1500,7 +1638,7 @@ mod freya_ui {
         {%- elif w.type == p_ ~ "Popup" %}
             Popup::new()
                 .on_close_request(s.on::<()>(Message::{{ w.name }}_close))
-                .child(PopupTitle::new(self.{{ w.name }}.caption.clone()))
+                .child(PopupTitle::new(crate::app::tr(&self.{{ w.name }}.caption)))
                 .child(PopupContent::new().child(inner))
                 .into_element()
         {%- elif w.type == p_ ~ "Card" %}
@@ -1510,7 +1648,7 @@ mod freya_ui {
                     rect()
                         .width(Size::fill())
                         .spacing(4.0)
-                        .child(label().text(self.{{ w.name }}.caption.clone()).font_weight(FontWeight::BOLD))
+                        .child(label().text(crate::app::tr(&self.{{ w.name }}.caption)).font_weight(FontWeight::BOLD))
                         .child(inner),
                 )
                 .into_element()

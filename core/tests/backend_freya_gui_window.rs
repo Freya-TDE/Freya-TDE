@@ -44,7 +44,10 @@ fn form() -> Form {
                 .with("icon", "icon.png")
                 .with("scale_factor", Value::Float(1.25))
                 .with("app_id", "dev.freya-tde.demo")
-                .with("zoom_shortcuts", true),
+                .with("zoom_shortcuts", true)
+                .with("radio", true)
+                .with("query", true)
+                .with("sdk", true),
         ),
     );
     form.add_widget(
@@ -134,6 +137,9 @@ fn window_switches_turn_on_freya_features_and_build() {
         "zoom-shortcuts",
         "tray",
         "remote-asset",
+        "radio",
+        "query",
+        "sdk-tokio",
     ] {
         assert!(
             manifest.contains(&format!("\"{feature}\"")),

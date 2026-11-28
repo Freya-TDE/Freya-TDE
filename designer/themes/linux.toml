@@ -667,3 +667,9 @@ height = 240
 min-width = 240
 padding-x = 0
 header = 34
+
+[widgets."backend:freya-gui/Router"]
+height = 240
+min-width = 240
+padding-x = 0
+header = 40
