@@ -251,6 +251,20 @@ gäbe es sonst Namenskonflikte (freyas `Table`).
 *Reactive: state in `Rc<RefCell<…>>`, `Control<T>` fields, one `Message` per input; the view lives in the
 module `freya_ui` with freya's elements and components.*
 
+- Stil, Animation und Ereignisse an **jedem** Widget (Etappe C; Objektinspektor, Gruppen „Style“ und
+  „Animation“): `corner_radius`, `border_width`/`border_color`, Schatten (`shadow_blur`, `shadow_x`/`_y`,
+  `shadow_color`), Verlauf (`gradient` Linear/Radial/Conic mit `gradient_from`/`_to`/`_angle`), `blur`,
+  `backdrop_blur` (Milchglas), `alpha`, `rotate`, `scale`, `cursor`; Animationen `hover_background` (Farbe
+  beim Darüberfahren, eingeblendet), `appear` (Fade, Slide, Grow), `animate_moves` (freyas Portal: gleitet bei
+  Layoutänderungen; nur mit Wunschgröße in Pixeln, freyas Portal braucht eine feste Größe), `ripple` (Material Design), Dauer `animation_ms`. Ereignisse `on_hover(inside)`,
+  `on_file_drop(paths)`, `on_visible()`, `on_secondary_click()`.
+- Fenster-Schalter am Formular: `decorations` (aus = rahmenlos, mit freyas Borderless-Plugin; Ecken über
+  `corner_radius` des Formulars), `custom_titlebar` (freyas Titelleiste mit Minimieren, Maximieren,
+  Schließen), `transparent`, `icon` (PNG, wird einkompiliert), `scale_factor`, `app_id`; Schalter für freyas
+  `zoom_shortcuts`, `devtools`, `metrics`, `hot_reload` (schalten nur das Cargo-Feature ein). Komponente
+  **Tray**: Symbol im Infobereich mit Menü, `on_select(item)` (nur am Hauptformular).
+- Weitere Formulare öffnen sich als eigene Fenster: `crate::app::show_<formular>()`.
+- Bilder aus dem Netz: eine ImageBox mit `file` = Adresse (`https://…`) schaltet freyas `remote-asset` ein.
 - Layouts: senkrecht/waagerecht als `rect` mit `Content::flex()` (Dehnen = `Size::flex`), Raster als Zeilen aus
   je `columns` gleich breiten Zellen, Stapel (erstes Kind), absolut mit `Position::new_absolute()`.
 - `MainMenu`: Menüleiste aus Knöpfen, darunter freyas `Menu` (Pfade, `-`, tiefere Ebenen als „Export › PDF“);
@@ -274,7 +288,7 @@ module `freya_ui` with freya's elements and components.*
   (`CameraView`, `VideoView` …), weil freya es über Hooks anlegt; die Handler steuern über den Zustand.
 - Daten aus dem Hintergrund (Datenbindung, WebSocket, HTTP) wecken das Fenster über `futures-channel` und
   freyas `spawn`.
-- Gezeigt wird das erste Formular; `on_close` entscheidet über das Schließen (`CloseDecision`).
+- Das erste Formular ist das Hauptfenster; `on_close` entscheidet über das Schließen (`CloseDecision`).
 - Der erste Build lädt die Skia-Binärdateien von freya herunter (einmal Netz nötig). Unter Linux braucht es
   keine weiteren Systempakete.
 - Nicht unterstützt: Hintergrundbilder von Containern (nur das Formular), `position = Center` (das System
@@ -283,8 +297,8 @@ module `freya_ui` with freya's elements and components.*
 - Test: `xvfb-run -a cargo test -p tdr-core --test backend_freya_gui` (braucht `xdotool`) erzeugt ein Projekt
   mit allen Widgets, baut, startet, klickt OK, drückt Strg+O (Menü) und prüft Datenbindung, DataGrid und Bilder.
 
-*Limits: first form only, no container background pictures, `Center` position not applied, no centred
-anchors; tested on Linux.*
+*Limits: no container background pictures, `Center` position not applied, no centred anchors, tray only on
+the main form; tested on Linux.*
 
 ## Aussehen und Fenster / appearance and window
 
@@ -432,6 +446,23 @@ Lizenzhinweis: `license-notice = """…"""` im Abschnitt `[pack]` (z. B. Lizenzb
 der das erzeugte Projekt abhängt). Die IDE zeigt ihn vor dem Anlegen eines Projekts mit dem Backend und lässt
 den Entwickler entscheiden; per API: `Ide::backend_notice`, `BackendDescriptor::license_notice`.
 *`license-notice` is shown before a project uses the backend; the developer decides.*
+
+Eigenschaften und Ereignisse für alle Widgets eines Backends: `[backend.widget-properties.<name>]` und
+`[backend.widget-events.<name>]` (Aufbau wie bei `[component.properties.*]`/`[component.events.*]`). Jedes
+Widget – Kern-Widgets, eigene und die anderer Packs – hat sie, solange sein Formular dieses Backend nutzt;
+eigene Eigenschaften gleichen Namens gehen vor. Im Template wie alle anderen über `props`/`events`. Per API:
+`TypeRegistry::property_defs`/`event_defs` (das freya-Backend gibt so jedem Widget Schatten, Verlauf,
+Animationen, Hover- und Datei-Drop-Ereignisse).
+*Backend-wide widget properties and events: every widget of a form using the backend has them.*
+
+Bedingte Abhängigkeiten im `[backend] cargo`: Einträge mit `when`/`uses` gelten, sobald irgendein Element eines
+Formulars mit diesem Backend die Bedingung erfüllt (z. B. `{ crate = "freya", features = ["devtools"], when = {
+devtools = true } }` am Formular-Schalter, `uses = { file = "://" }` an einem Bild aus dem Netz); Einträge
+ohne Bedingung gelten wie bisher immer.
+*Conditional backend dependencies apply as soon as one element of the backend's forms meets the condition.*
+
+Den Templates `app` und `run` gibt der Kern zusätzlich `types` mit: alle im Projekt verwendeten Typen als Text
+(`backend:freya-gui/Calendar` …), damit Hilfen nur bei Bedarf entstehen.
 
 Anzeigename: `title = "…"` im Abschnitt `[pack]`, wenn der Name für den Entwickler anders lauten soll als die ID
 (`freya-gui` erscheint als „freya“); ohne `title` gilt `name`. Per API: `PackInfo::title`,

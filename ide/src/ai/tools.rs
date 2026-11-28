@@ -484,7 +484,12 @@ pub fn read(ws: &dyn Workspace, name: &str, input: &Value) -> Result<String, Str
                         .iter()
                         .map(|p| json!({ "name": p.name, "type": p.ty }))
                         .collect();
-                    let events: Vec<&str> = t.events.iter().map(|e| e.name.as_str()).collect();
+                    let events: Vec<&str> = doc
+                        .registry()
+                        .event_defs(&t.type_ref, backend)
+                        .iter()
+                        .map(|e| e.name.as_str())
+                        .collect();
                     json!({
                         "type": t.type_ref.to_string(),
                         "kind": t.kind,

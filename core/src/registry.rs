@@ -169,7 +169,49 @@ impl TypeRegistry {
             .get(&(backend.to_owned(), type_ref.clone()))
             .into_iter()
             .flatten();
-        own.chain(extra).collect()
+        let mut defs: Vec<&PropertyDef> = own.chain(extra).collect();
+        // Eigenschaften, die das Backend jedem Widget gibt (eigene gehen vor).
+        if self.types.get(type_ref).is_some_and(|t| t.kind.is_widget())
+            && let Some(b) = self.backends.get(backend)
+        {
+            for def in &b.widget_properties {
+                if !defs.iter().any(|d| d.name == def.name) {
+                    defs.push(def);
+                }
+            }
+        }
+        defs
+    }
+
+    /// All events an instance of `type_ref` has under `backend`: the type's
+    /// own plus those the backend gives every widget.
+    pub fn event_defs(&self, type_ref: &TypeRef, backend: &str) -> Vec<&crate::EventDef> {
+        let Some(ty) = self.types.get(type_ref) else {
+            return Vec::new();
+        };
+        let mut defs: Vec<&crate::EventDef> = ty.events.iter().collect();
+        if ty.kind.is_widget()
+            && let Some(b) = self.backends.get(backend)
+        {
+            for def in &b.widget_events {
+                if !defs.iter().any(|d| d.name == def.name) {
+                    defs.push(def);
+                }
+            }
+        }
+        defs
+    }
+
+    /// Looks up one event of `type_ref` under `backend`.
+    pub fn event_def(
+        &self,
+        type_ref: &TypeRef,
+        backend: &str,
+        name: &str,
+    ) -> Option<&crate::EventDef> {
+        self.event_defs(type_ref, backend)
+            .into_iter()
+            .find(|e| e.name == name)
     }
 
     /// Looks up one property of `type_ref` under `backend`.

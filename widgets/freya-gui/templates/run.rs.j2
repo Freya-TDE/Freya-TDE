@@ -17,8 +17,15 @@ if let Err(error) = freya::video::ensure_ffmpeg() {
 {%- endif %}
 let form = std::rc::Rc::new(std::cell::RefCell::new({{ app }}.{{ main.name }}));
 form.borrow_mut().freya_created();
-freya::prelude::launch(
-    freya::prelude::LaunchConfig::new().with_window({{ main.name }}::{{ main.struct }}::freya_window(form)),
+{%- for f in ui[1:] %}
+// Weiteres Formular: öffnet sich mit `crate::app::show_{{ f.name }}()` in einem eigenen Fenster.
+let {{ f.name }} = std::rc::Rc::new(std::cell::RefCell::new({{ app }}.{{ f.name }}));
+{{ f.name }}.borrow_mut().freya_created();
+crate::app::freya_register_window(
+    "{{ f.name }}",
+    Box::new(move || {{ f.name }}::{{ f.struct }}::freya_window({{ f.name }}.clone())),
 );
+{%- endfor %}
+freya::prelude::launch({{ main.name }}::{{ main.struct }}::freya_launch(form, freya::prelude::LaunchConfig::new()));
 {%- endif %}
 Ok(())

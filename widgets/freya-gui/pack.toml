@@ -42,10 +42,148 @@ cargo = [
   { crate = "freya", version = "0.5.4" },
   { crate = "futures-channel", version = "0.3" },
   { crate = "futures-util", version = "0.3" },
+  # Schalter am Formular bzw. an Widgets schalten Features von freya ein.
+  { crate = "freya", version = "0.5.4", features = ["borderless"], when = { decorations = false } },
+  { crate = "freya", version = "0.5.4", features = ["titlebar"], when = { custom_titlebar = true } },
+  { crate = "freya", version = "0.5.4", features = ["zoom-shortcuts"], when = { zoom_shortcuts = true } },
+  { crate = "freya", version = "0.5.4", features = ["devtools"], when = { devtools = true } },
+  { crate = "freya", version = "0.5.4", features = ["metrics"], when = { metrics = true } },
+  { crate = "freya", version = "0.5.4", features = ["hotreload"], when = { hot_reload = true } },
+  { crate = "freya", version = "0.5.4", features = ["material-design"], when = { ripple = true } },
+  { crate = "freya", version = "0.5.4", features = ["remote-asset"], uses = { file = "://" } },
 ]
 app-file = "templates/app.rs.j2"
 form-file = "templates/form.rs.j2"
 run-file = "templates/run.rs.j2"
+
+# Stil, Animation und Ereignisse, die jedes Widget unter freya bekommt.
+# Style, animation and events every widget gets under freya.
+[backend.widget-properties.corner_radius]
+type = "int"
+min = 0
+max = 500
+category = "Style"
+description = "Rounded corners in pixels"
+[backend.widget-properties.border_width]
+type = "int"
+min = 0
+max = 100
+category = "Style"
+[backend.widget-properties.border_color]
+type = "color"
+default = "#00000000"
+category = "Style"
+[backend.widget-properties.shadow_blur]
+type = "int"
+min = 0
+max = 200
+category = "Style"
+description = "Shadow blur in pixels (0 = no shadow)"
+[backend.widget-properties.shadow_x]
+type = "int"
+category = "Style"
+[backend.widget-properties.shadow_y]
+type = "int"
+default = 2
+category = "Style"
+[backend.widget-properties.shadow_color]
+type = "color"
+default = "#00000055"
+category = "Style"
+[backend.widget-properties.gradient]
+type = "enum"
+variants = ["None", "Linear", "Radial", "Conic"]
+default = "None"
+category = "Style"
+description = "Background gradient instead of a plain background"
+[backend.widget-properties.gradient_from]
+type = "color"
+default = "#3b82f6"
+category = "Style"
+[backend.widget-properties.gradient_to]
+type = "color"
+default = "#9333ea"
+category = "Style"
+[backend.widget-properties.gradient_angle]
+type = "int"
+min = 0
+max = 360
+default = 90
+category = "Style"
+[backend.widget-properties.blur]
+type = "int"
+min = 0
+max = 100
+category = "Style"
+description = "Blurs the widget itself"
+[backend.widget-properties.backdrop_blur]
+type = "int"
+min = 0
+max = 100
+category = "Style"
+description = "Blurs what lies behind the widget (frosted glass)"
+[backend.widget-properties.alpha]
+type = "float"
+min = 0.0
+max = 1.0
+default = 1.0
+category = "Style"
+description = "Opacity of the whole widget (1 = opaque)"
+[backend.widget-properties.rotate]
+type = "int"
+min = -360
+max = 360
+category = "Style"
+description = "Rotation in degrees"
+[backend.widget-properties.scale]
+type = "float"
+min = 0.05
+max = 20.0
+default = 1.0
+category = "Style"
+[backend.widget-properties.cursor]
+type = "enum"
+variants = ["Default", "Pointer", "Text", "Move", "Grab", "NotAllowed", "Crosshair", "Wait", "Help", "Progress"]
+default = "Default"
+category = "Style"
+description = "Mouse cursor over the widget"
+[backend.widget-properties.hover_background]
+type = "color"
+default = "#00000000"
+category = "Animation"
+description = "Background while the mouse is over it, faded in and out (alpha 0 = none)"
+[backend.widget-properties.appear]
+type = "enum"
+variants = ["None", "Fade", "Slide", "Grow"]
+default = "None"
+category = "Animation"
+description = "Animation when the widget appears"
+[backend.widget-properties.animation_ms]
+type = "int"
+min = 0
+max = 10000
+default = 300
+category = "Animation"
+description = "Duration of hover, appear and move animations"
+[backend.widget-properties.animate_moves]
+type = "bool"
+category = "Animation"
+description = "Glide to a new place when the layout changes (freya Portal; needs a requested size in pixels)"
+[backend.widget-properties.ripple]
+type = "bool"
+category = "Animation"
+description = "Material Design ripple on click"
+
+[backend.widget-events.on_hover]
+params = [{ name = "inside", type = "bool" }]
+description = "The mouse entered (true) or left (false) the widget"
+[backend.widget-events.on_file_drop]
+params = [{ name = "paths", type = "&[std::path::PathBuf]" }]
+description = "Files were dropped on the widget"
+[backend.widget-events.on_visible]
+description = "The widget became visible (e.g. scrolled into view)"
+[backend.widget-events.on_secondary_click]
+description = "Right click on the widget"
 
 [[backend.files]]
 path = "FREYA.md"
@@ -56,6 +194,50 @@ template-file = "templates/FREYA.md.j2"
 
 [[extend]]
 type = "core/Form"
+[extend.properties.decorations]
+type = "bool"
+default = true
+category = "Window"
+description = "Title bar and frame of the system (off = borderless window)"
+[extend.properties.custom_titlebar]
+type = "bool"
+category = "Window"
+description = "freya title bar with minimize, maximize and close (for borderless windows)"
+[extend.properties.transparent]
+type = "bool"
+category = "Window"
+description = "Transparent window (only the background colour of the form shows)"
+[extend.properties.icon]
+type = "text"
+category = "Window"
+description = "PNG file of the window icon, relative to the project folder (built in)"
+[extend.properties.scale_factor]
+type = "float"
+min = 0.0
+max = 10.0
+default = 1.0
+category = "Window"
+description = "Extra zoom of the whole window (1 = as the system)"
+[extend.properties.app_id]
+type = "text"
+category = "Window"
+description = "Application id for the window manager (Linux)"
+[extend.properties.zoom_shortcuts]
+type = "bool"
+category = "freya"
+description = "Ctrl/Cmd + plus, minus, 0 zoom the window"
+[extend.properties.devtools]
+type = "bool"
+category = "freya"
+description = "Enables freya's devtools (run the freya devtools app alongside)"
+[extend.properties.metrics]
+type = "bool"
+category = "freya"
+description = "Metrics overlay of freya in debug builds"
+[extend.properties.hot_reload]
+type = "bool"
+category = "freya"
+description = "Hot reload through `dx` (dioxus-cli)"
 [extend.codegen]
 type = "crate::app::Control<()>"
 init = "crate::app::Control::new(()).with_caption({{ rust.title }}).with_state({{ rust.enabled }}, true, {{ rust.tooltip }})"
@@ -1068,3 +1250,31 @@ description = "Colour (alpha 0 = text colour)"
 [component.codegen]
 type = "crate::app::Control<()>"
 init = "crate::app::Control::new(()).with_state({{ rust.enabled }}, {{ rust.visible }}, {{ rust.tooltip }})"
+
+# --- Etappe C: Fenster und App / window and app ----------------------------------------------
+
+[[component]]
+name = "Tray"
+look = "menubar"
+category = "freya"
+icon = "menu"
+description = "Icon in the system tray with a menu (main form)"
+cargo = [{ crate = "freya", version = "0.5.4", features = ["tray"] }]
+[component.properties.icon]
+type = "text"
+category = "Tray"
+description = "PNG file of the tray icon, relative to the project folder (built in)"
+[component.properties.tooltip]
+type = "text"
+category = "Tray"
+[component.properties.items]
+type = "list"
+item = "text"
+category = "Tray"
+description = "Menu entries, one per line (`-` = separator)"
+[component.events.on_select]
+params = [{ name = "item", type = "&str" }]
+description = "A menu entry was chosen"
+[component.codegen]
+type = "crate::app::Control<()>"
+init = "crate::app::Control::new(()).with_items::<&str>({{ rust.items }})"

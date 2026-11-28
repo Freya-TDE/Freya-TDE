@@ -89,6 +89,11 @@ impl CargoDependency {
         self
     }
 
+    /// Has `when` or `uses` conditions?
+    pub fn is_conditional(&self) -> bool {
+        !self.when.is_empty() || !self.uses.is_empty()
+    }
+
     /// Is the dependency needed for a component with these property values?
     /// `value_of` returns a property's value (set or default).
     pub fn applies(&self, value_of: impl Fn(&str) -> Option<crate::Value>) -> bool {

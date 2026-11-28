@@ -18,6 +18,8 @@ use tdr_core::*;
 
 #[path = "support/data.rs"]
 mod data;
+#[path = "support/dirs.rs"]
+mod dirs;
 #[path = "support/edit.rs"]
 mod edit;
 #[path = "support/pictures.rs"]
@@ -560,6 +562,48 @@ fn form() -> Form {
         "window",
         Widget::from_component(widget("star", fg("Icon")).with("icon", "circle-check")),
     );
+    // Etappe C: Stil, Animation und Ereignisse an jedem Widget.
+    extra(
+        &mut form,
+        "window",
+        Widget::from_component(
+            widget("fancy", builtin::label())
+                .with("text", "Stil")
+                .with("corner_radius", 8i64)
+                .with("border_width", 2i64)
+                .with("border_color", Value::Color(Color::rgb(0x3b, 0x82, 0xf6)))
+                .with("shadow_blur", 6i64)
+                .with("gradient", Value::Enum("Linear".into()))
+                .with("blur", 0i64)
+                .with("backdrop_blur", 4i64)
+                .with("alpha", Value::Float(0.9))
+                .with("rotate", 3i64)
+                .with("scale", Value::Float(1.1))
+                .with("cursor", Value::Enum("Pointer".into()))
+                .with(
+                    "hover_background",
+                    Value::Color(Color::rgb(0x30, 0x30, 0x30)),
+                )
+                .with("appear", Value::Enum("Slide".into()))
+                .with("animate_moves", true)
+                .with("ripple", true)
+                .on("on_hover", handler("fancy_hover"))
+                .on("on_file_drop", handler("files_dropped"))
+                .on("on_visible", handler("fancy_visible"))
+                .on("on_secondary_click", handler("fancy_right")),
+        ),
+    );
+    // Wunschgröße: freyas Portal (`animate_moves`) braucht eine feste Größe.
+    form.widget_mut(&name("fancy")).unwrap().visual.placement = Placement::Layout {
+        stretch: 0,
+        align: Align::Start,
+        cell: None,
+        size: Size {
+            width: 120,
+            height: 36,
+        },
+        percent: Size::default(),
+    };
     form.add_component(
         Component::new(name("popup_menu"), fg("ContextMenu"))
             .with("target", "greeting")
@@ -646,6 +690,12 @@ impl MainForm {
         true
     }
     pub fn dropped(&mut self, _data: &str) {}
+    pub fn fancy_hover(&mut self, _inside: bool) {}
+    pub fn files_dropped(&mut self, _paths: &[std::path::PathBuf]) {}
+    pub fn fancy_visible(&mut self) {}
+    pub fn fancy_right(&mut self) {
+        crate::app::show_about_form();
+    }
     pub fn code_changed(&mut self, _text: &str) {}
     pub fn shell_exited(&mut self) {}
     pub fn paint_drawn(&mut self, canvas: &freya::engine::prelude::Canvas, width: f32, height: f32) {
@@ -701,13 +751,25 @@ fn generated_project_builds_runs_and_reacts_to_clicks() {
         "{issues:#?}"
     );
 
-    let dir = std::env::temp_dir().join(format!("freya-gui-demo-{}", std::process::id()));
-    let target = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("freya-gui-demo-target");
+    let dir = dirs::project("freya-gui-demo");
+    let target = dirs::target("freya-gui-demo-target");
     // SAFETY: einziger Test dieser Datei, gesetzt bevor Threads starten.
     unsafe { std::env::set_var("CARGO_TARGET_DIR", &target) };
     let _ = std::fs::remove_dir_all(&dir);
     let project = ProjectFile::new("freya_gui_demo", "1.95", "freya-gui").unwrap();
-    let forms = [data::services("freya-gui"), form.clone()];
+    // Ein weiteres Formular öffnet sich als eigenes Fenster (`show_about_form`).
+    let mut about = Form::new(
+        name("about_form"),
+        "freya-gui",
+        Widget::from_component(widget("window", builtin::form()).with("title", "Über")),
+    );
+    about
+        .add_widget(
+            &name("window"),
+            Widget::from_component(widget("about_label", builtin::label()).with("text", "freya")),
+        )
+        .unwrap();
+    let forms = [data::services("freya-gui"), form.clone(), about];
     let generation = generate(&project, &forms, &registry, &dir);
     assert!(!generation.has_errors(), "{:#?}", generation.diagnostics);
     write(&dir, &generation).unwrap();
@@ -734,6 +796,11 @@ fn generated_project_builds_runs_and_reacts_to_clicks() {
             &(edit::handlers("say") + pictures::HANDLERS),
         );
     std::fs::write(dir.join("src/main_form.rs"), form_rs).unwrap();
+    std::fs::write(
+        dir.join("src/about_form.rs"),
+        "include!(\"about_form.gen.rs\");\n",
+    )
+    .unwrap();
 
     if !gui_available() {
         eprintln!("Bildschirm oder xdotool fehlt – Bauen und Starten übersprungen");

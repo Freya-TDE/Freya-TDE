@@ -78,7 +78,7 @@ pub struct BackendFile {
 }
 
 /// The description of a UI backend.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BackendDescriptor {
     /// Backend id, the pack name (e.g. `"egui"`).
     pub name: String,
@@ -127,6 +127,13 @@ pub struct BackendDescriptor {
     /// library loaded by the host); added to `Cargo.toml`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub crate_types: Vec<String>,
+    /// Properties every widget gets under this backend (e.g. shadows,
+    /// animations), in addition to its type's own.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub widget_properties: Vec<crate::PropertyDef>,
+    /// Events every widget gets under this backend (e.g. hover, file drop).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub widget_events: Vec<crate::EventDef>,
 }
 
 impl BackendDescriptor {
@@ -155,6 +162,8 @@ impl BackendDescriptor {
             license_notice: None,
             files: Vec::new(),
             crate_types: Vec::new(),
+            widget_properties: Vec::new(),
+            widget_events: Vec::new(),
         }
     }
 }

@@ -193,6 +193,87 @@ impl<F: FreyaView> App for FreyaRoot<F> {
     }
 }
 
+{%- set ui = forms | rejectattr("data_module") | list %}
+
+thread_local! {
+    /// Further forms that open in their own window (name, window factory).
+    static FREYA_WINDOWS: std::cell::RefCell<Vec<(&'static str, Box<dyn Fn() -> WindowConfig>)>> =
+        std::cell::RefCell::new(Vec::new());
+}
+
+/// Registers form `name` for `show_<name>()` (called by `run()`).
+pub fn freya_register_window(name: &'static str, window: Box<dyn Fn() -> WindowConfig>) {
+    FREYA_WINDOWS.with(|w| w.borrow_mut().push((name, window)));
+}
+
+/// Opens form `name` in a window of its own.
+#[allow(dead_code)]
+pub fn freya_show(name: &str) {
+    let config = FREYA_WINDOWS.with(|w| w.borrow().iter().find(|(n, _)| *n == name).map(|(_, f)| f()));
+    if let Some(config) = config {
+        spawn(async move {
+            Platform::get().launch_window(config).await;
+        });
+    }
+}
+{%- for f in ui[1:] %}
+
+/// Opens form `{{ f.name }}` in a window of its own.
+#[allow(dead_code)]
+pub fn show_{{ f.name }}() {
+    freya_show("{{ f.name }}");
+}
+{%- endfor %}
+
+/// Fades the background to `color` while the mouse is over `child`.
+#[derive(PartialEq)]
+pub struct Hover {
+    pub color: Color,
+    pub ms: u64,
+    pub child: Element,
+}
+
+impl Component for Hover {
+    fn render(&self) -> impl IntoElement {
+        use freya::animation::*;
+        let mut target = use_state(|| Color::TRANSPARENT);
+        let ms = self.ms;
+        let animation = use_animation_transition(target, move |from: Color, to| AnimColor::new(from, to).time(ms));
+        let color = self.color;
+        rect()
+            .background(&*animation.read())
+            .on_pointer_enter(move |_| target.set(color))
+            .on_pointer_leave(move |_| target.set(Color::TRANSPARENT))
+            .child(self.child.clone())
+    }
+}
+
+/// Animates `child` when it appears: `Fade`, `Slide` or `Grow`.
+#[derive(PartialEq)]
+pub struct Appear {
+    pub kind: &'static str,
+    pub ms: u64,
+    pub child: Element,
+}
+
+impl Component for Appear {
+    fn render(&self) -> impl IntoElement {
+        use freya::animation::*;
+        let ms = self.ms;
+        let animation = use_animation(move |conf| {
+            conf.on_creation(OnCreation::Run);
+            AnimNum::new(0.0, 1.0).time(ms)
+        });
+        let t = animation.read().value();
+        let el = rect().child(self.child.clone());
+        match self.kind {
+            "Slide" => el.opacity(t).offset_y((1.0 - t) * 24.0),
+            "Grow" => el.opacity(t).scale(0.6 + 0.4 * t),
+            _ => el.opacity(t),
+        }
+    }
+}
+
 /// A colour from the designer (`a` = 255 opaque).
 #[allow(dead_code)]
 pub fn color(r: u8, g: u8, b: u8, a: u8) -> freya::prelude::Color {
@@ -995,7 +1076,8 @@ impl Picture {
 
     pub fn set_file(&mut self, file: &str) {
         self.file = file.to_owned();
-        self.source = (!file.is_empty())
+        // Adressen (`https://…`) lädt freya selbst (Feature `remote-asset`).
+        self.source = (!file.is_empty() && !file.contains("://"))
             .then(|| freya_png(file, self.gamma, self.opacity))
             .flatten()
             .map(|bytes| (format!("{file}|{}|{}", self.gamma, self.opacity), bytes));

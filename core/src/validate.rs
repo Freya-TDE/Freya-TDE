@@ -397,8 +397,14 @@ impl<'a> Checker<'a> {
 
     fn events(&mut self, element: &dyn Element, ty: &ComponentType) {
         let component = element.component();
+        let backend = self.form.backend.as_str();
         for event in component.events.keys() {
-            if ty.event(event).is_none() {
+            if self
+                .context
+                .registry
+                .event_def(&ty.type_ref, backend, event)
+                .is_none()
+            {
                 self.error(&component.name, Issue::UnknownEvent(event.clone()));
             }
         }

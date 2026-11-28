@@ -124,8 +124,9 @@ pub fn events(
     let component = el.component();
     let ty = registry.get(&component.type_ref)?;
     Some(
-        ty.events
-            .iter()
+        registry
+            .event_defs(&ty.type_ref, &form.backend)
+            .into_iter()
             .map(|e| EventRow {
                 name: e.name.clone(),
                 description: e.description.clone(),

@@ -624,6 +624,52 @@ generated-code-license = "MIT"
 }
 
 #[test]
+fn backend_gives_every_widget_properties_and_events() {
+    let text = r#"
+[pack]
+name = "shiny"
+version = "0.1.0"
+kind = "backend"
+license = "MIT"
+generated-code-license = "MIT"
+
+[backend]
+[backend.widget-properties.shadow]
+type = "int"
+min = 0
+category = "Style"
+[backend.widget-events.on_hover]
+params = [{ name = "inside", type = "bool" }]
+
+[[component]]
+name = "Gauge"
+kind = "widget"
+"#;
+    let pack = Pack::parse(text).unwrap();
+    let mut registry = TypeRegistry::with_builtins();
+    pack.register(&mut registry).unwrap();
+    // Kern- und Backend-Widgets bekommen beides, nur unter diesem Backend.
+    for ty in [builtin::button(), TypeRef::backend("shiny", "Gauge")] {
+        assert!(
+            registry.property_def(&ty, "shiny", "shadow").is_some(),
+            "{ty}"
+        );
+        let hover = registry.event_def(&ty, "shiny", "on_hover").unwrap();
+        assert_eq!(hover.params[0].name, "inside");
+        assert!(registry.property_def(&ty, "egui", "shadow").is_none());
+        assert!(registry.event_def(&ty, "egui", "on_hover").is_none());
+    }
+    // Nicht-visuelle Komponenten nicht.
+    let runtime = registry
+        .types()
+        .find(|t| !t.kind.is_widget())
+        .map(|t| t.type_ref.clone());
+    if let Some(runtime) = runtime {
+        assert!(registry.property_def(&runtime, "shiny", "shadow").is_none());
+    }
+}
+
+#[test]
 fn backend_files_copy_a_folder() {
     let dir = std::env::temp_dir().join(format!("tdr-pack-dir-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);

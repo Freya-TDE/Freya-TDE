@@ -14,6 +14,7 @@
 {#- tree-sitter grammar and highlight query per CodeEditor language. -#}
 {%- set languages = {"Rust": "tree_sitter_rust::LANGUAGE, tree_sitter_rust::HIGHLIGHTS_QUERY", "Python": "tree_sitter_python::LANGUAGE, tree_sitter_python::HIGHLIGHTS_QUERY", "JavaScript": "tree_sitter_javascript::LANGUAGE, tree_sitter_javascript::HIGHLIGHT_QUERY", "TypeScript": "tree_sitter_typescript::LANGUAGE_TYPESCRIPT, tree_sitter_typescript::HIGHLIGHTS_QUERY", "Json": "tree_sitter_json::LANGUAGE, tree_sitter_json::HIGHLIGHTS_QUERY", "Toml": "tree_sitter_toml_ng::LANGUAGE, tree_sitter_toml_ng::HIGHLIGHTS_QUERY", "Html": "tree_sitter_html::LANGUAGE, tree_sitter_html::HIGHLIGHTS_QUERY", "Css": "tree_sitter_css::LANGUAGE, tree_sitter_css::HIGHLIGHTS_QUERY", "Bash": "tree_sitter_bash::LANGUAGE, tree_sitter_bash::HIGHLIGHT_QUERY", "C": "tree_sitter_c::LANGUAGE, tree_sitter_c::HIGHLIGHT_QUERY", "Yaml": "tree_sitter_yaml::LANGUAGE, tree_sitter_yaml::HIGHLIGHTS_QUERY"} %}
 {%- set cmenus = components | selectattr("type", "eq", p_ ~ "ContextMenu") | selectattr("field") | list %}
+{%- set trays = components | selectattr("type", "eq", p_ ~ "Tray") | selectattr("field") | list %}
 
 {#- A colour property as freya `Color`. -#}
 {%- macro color(v) -%}
@@ -182,7 +183,17 @@ rect()
     .width({% if fill or (p and (p.width > 0 or p.width_percent > 0)) %}Size::fill(){% else %}Size::px(96.0){% endif %})
     .height({% if p and (p.height > 0 or p.height_percent > 0) %}Size::fill(){% else %}Size::px(96.0){% endif %})
     .maybe(self.{{ c.name }}.enabled, |el| el.on_press(s.on::<Event<PressEventData>>(Message::{{ c.name }}_click)))
+    {%- if "://" in c.props.file %}
+    // Bild aus dem Netz: freya lädt es selbst.
+    .child(
+        ImageViewer::new(Url::parse(&self.{{ c.name }}.value.file).expect("address of the picture"))
+            .width(Size::fill())
+            .height(Size::fill())
+            .aspect_ratio(crate::app::aspect_ratio(&self.{{ c.name }}.value.fit)),
+    )
+    {%- else %}
     .child(crate::app::picture_view(self.{{ c.name }}.value.source.as_ref(), &self.{{ c.name }}.value.fit))
+    {%- endif %}
 {%- elif t == "core/ImageScrollBox" -%}
 {%- set p = c.placement if c.placement and c.placement.kind == "layout" else none %}
 {
@@ -469,13 +480,79 @@ label().text("{{ c.type_name }}")
 {%- endif -%}
 {%- endmacro %}
 
+{#- `inner` with the style, animation and events every widget has under freya
+    (backend widget-properties/-events); unchanged when none is set. -#}
+{%- macro decorate(c, inner, fill) -%}
+{%- set p = c.props %}
+{%- set e = c.events %}
+{%- set styled = p.corner_radius > 0 or p.border_width > 0 or p.shadow_blur > 0 or p.gradient != "None" or p.blur > 0 or p.backdrop_blur > 0 or p.alpha < 1 or p.rotate != 0 or p.scale != 1 or p.cursor != "Default" or e.on_hover or e.on_file_drop or e.on_visible or e.on_secondary_click %}
+{%- set ns = namespace(out=inner) %}
+{%- if styled %}
+{%- set g = p.gradient %}
+{%- set gradient -%}
+{%- if g == "Linear" %}LinearGradient::new().angle({{ p.gradient_angle }} as f32){% elif g == "Radial" %}RadialGradient::new(){% elif g == "Conic" %}ConicGradient::new().angle({{ p.gradient_angle }} as f32){% endif %}.stop(({{ color(p.gradient_from) }}, 0.0)).stop(({{ color(p.gradient_to) }}, 100.0))
+{%- endset %}
+{%- set ns.out -%}
+rect()
+    {%- if fill %}.width(Size::fill()){% endif %}
+    {%- if p.corner_radius > 0 %}.corner_radius({{ p.corner_radius }} as f32).overflow(Overflow::Clip){% endif %}
+    {%- if p.border_width > 0 %}.border(Border::new().fill({{ color(p.border_color) }}).width({{ p.border_width }} as f32)){% endif %}
+    {%- if p.shadow_blur > 0 %}.shadow(Shadow::new().x({{ p.shadow_x }} as f32).y({{ p.shadow_y }} as f32).blur({{ p.shadow_blur }} as f32).color({{ color(p.shadow_color) }})){% endif %}
+    {%- if g != "None" %}.background({{ gradient }}){% endif %}
+    {%- if p.blur > 0 %}.blur({{ p.blur }} as f32){% endif %}
+    {%- if p.backdrop_blur > 0 %}.backdrop_blur({{ p.backdrop_blur }} as f32){% endif %}
+    {%- if p.alpha < 1 %}.opacity({{ p.alpha }} as f32){% endif %}
+    {%- if p.rotate != 0 %}.rotate({{ p.rotate }} as f32){% endif %}
+    {%- if p.scale != 1 %}.scale({{ p.scale }} as f32){% endif %}
+    {%- if p.cursor != "Default" %}.cursor(CursorIcon::{{ p.cursor }}){% endif %}
+    {%- if e.on_hover %}
+    .on_pointer_enter(s.on::<Event<PointerEventData>>(Message::{{ c.name }}_hover(true)))
+    .on_pointer_leave(s.on::<Event<PointerEventData>>(Message::{{ c.name }}_hover(false)))
+    {%- endif %}
+    {%- if e.on_file_drop %}
+    .on_file_drop(s.to(|event: Event<FileEventData>| Message::{{ c.name }}_file_drop(event.file_paths.clone())))
+    {%- endif %}
+    {%- if e.on_visible %}
+    .on_visible(s.on::<Event<VisibleEventData>>(Message::{{ c.name }}_visible))
+    {%- endif %}
+    {%- if e.on_secondary_click %}
+    .on_secondary_down(s.on::<Event<PressEventData>>(Message::{{ c.name }}_secondary))
+    {%- endif %}
+    .child({{ inner }})
+{%- endset %}
+{%- endif %}
+{%- if p.hover_background.a > 0 %}
+{%- set ns.out -%}
+crate::app::Hover { color: {{ color(p.hover_background) }}, ms: {{ p.animation_ms }}, child: ({{ ns.out }}).into_element() }
+{%- endset %}
+{%- endif %}
+{%- if p.ripple %}
+{%- set ns.out -%}
+freya::material_design::Ripple::new().child({{ ns.out }})
+{%- endset %}
+{%- endif %}
+{%- if p.appear != "None" %}
+{%- set ns.out -%}
+crate::app::Appear { kind: "{{ p.appear }}", ms: {{ p.animation_ms }}, child: ({{ ns.out }}).into_element() }
+{%- endset %}
+{%- endif %}
+{#- freyas Portal braucht eine feste Größe: nur mit Wunschgröße in Pixeln. #}
+{%- set pl = c.placement %}
+{%- if p.animate_moves and pl and pl.kind == "layout" and pl.width > 0 and pl.height > 0 %}
+{%- set ns.out -%}
+Portal::new("{{ form.name }}.{{ c.name }}").width(Size::px({{ pl.width }} as f32)).height(Size::px({{ pl.height }} as f32)).duration(std::time::Duration::from_millis({{ p.animation_ms }})).child({{ ns.out }})
+{%- endset %}
+{%- endif %}
+{{ ns.out }}
+{%- endmacro %}
+
 {#- The child `c` as an Element (container: its own view method). -#}
 {%- macro child_plain(c, fill) -%}
 {%- set coloured = c.type != "core/Button" and (c.props.background.a > 0 or c.props.foreground.a > 0) -%}
 {%- if c.type in containers -%}
-self.{{ c.name }}.show(self.freya_view_{{ c.name }}(s))
+self.{{ c.name }}.show({{ decorate(c, "self.freya_view_" ~ c.name ~ "(s)", fill) }})
 {%- elif coloured -%}
-self.{{ c.name }}.show(
+self.{{ c.name }}.show({%- set coloured_inner -%}
     rect()
         {%- if fill %}
         .width(Size::fill())
@@ -486,10 +563,10 @@ self.{{ c.name }}.show(
         {%- if c.props.foreground.a > 0 %}
         .color({{ color(c.props.foreground) }})
         {%- endif %}
-        .child({{ widget(c, fill) }}),
-)
+        .child({{ widget(c, fill) }})
+{%- endset %}{{ decorate(c, coloured_inner, fill) }})
 {%- else -%}
-self.{{ c.name }}.show({{ widget(c, fill) }})
+self.{{ c.name }}.show({{ decorate(c, widget(c, fill), fill) }})
 {%- endif -%}
 {%- endmacro %}
 
@@ -577,6 +654,24 @@ pub enum Message {
     /// An entry of `{{ m.name }}` was chosen (its path).
     {{ m.name }}_choose(String),
 {%- endfor %}
+{%- for c in widgets if c.field %}
+{%- if c.events.on_hover %}
+    {{ c.name }}_hover(bool),
+{%- endif %}
+{%- if c.events.on_file_drop %}
+    {{ c.name }}_file_drop(Vec<std::path::PathBuf>),
+{%- endif %}
+{%- if c.events.on_visible %}
+    {{ c.name }}_visible,
+{%- endif %}
+{%- if c.events.on_secondary_click %}
+    {{ c.name }}_secondary,
+{%- endif %}
+{%- endfor %}
+{%- for t in trays %}
+    /// An entry of the tray menu `{{ t.name }}` was chosen.
+    {{ t.name }}_choose(String),
+{%- endfor %}
 {%- for m in cmenus %}
     /// An entry of the context menu `{{ m.name }}` was chosen (its path).
     {{ m.name }}_choose(String),
@@ -607,6 +702,27 @@ impl crate::app::FreyaUpdate for {{ form.struct }} {
                 self.{{ m.name }}.value = None;
             {%- if m.events.on_select %}
                 self.{{ m.events.on_select }}(&item);
+            {%- endif %}
+            }
+        {%- endfor %}
+        {%- for c in widgets if c.field %}
+        {%- if c.events.on_hover %}
+            Message::{{ c.name }}_hover(inside) => self.{{ c.events.on_hover }}(inside),
+        {%- endif %}
+        {%- if c.events.on_file_drop %}
+            Message::{{ c.name }}_file_drop(paths) => self.{{ c.events.on_file_drop }}(&paths),
+        {%- endif %}
+        {%- if c.events.on_visible %}
+            Message::{{ c.name }}_visible => self.{{ c.events.on_visible }}(),
+        {%- endif %}
+        {%- if c.events.on_secondary_click %}
+            Message::{{ c.name }}_secondary => self.{{ c.events.on_secondary_click }}(),
+        {%- endif %}
+        {%- endfor %}
+        {%- for t in trays %}
+            Message::{{ t.name }}_choose(item) => {
+            {%- if t.events.on_select %}
+                self.{{ t.events.on_select }}(&item);
             {%- endif %}
             }
         {%- endfor %}
@@ -858,6 +974,55 @@ impl crate::app::FreyaUpdate for {{ form.struct }} {
 }
 
 impl {{ form.struct }} {
+    /// The launch configuration with this form's window (main form): plus
+    /// the borderless plugin and the tray icon, if the form has them.
+    #[allow(unused_mut, dead_code)]
+    pub fn freya_launch(
+        form: std::rc::Rc<std::cell::RefCell<Self>>,
+        mut config: freya::prelude::LaunchConfig,
+    ) -> freya::prelude::LaunchConfig {
+    {%- set rp = root.props %}
+    {%- if not rp.decorations %}
+        // Rahmenloses Fenster: Ecken und Größenänderung über freyas Plugin.
+        config = config.with_plugin(freya::borderless::BorderlessPlugin::new(){% if rp.corner_radius > 0 %}.with_corner_radius({{ rp.corner_radius }} as f32){% endif %});
+    {%- endif %}
+    {%- for t in trays %}
+        // Symbol im Infobereich mit Menü `{{ t.name }}`.
+        let items = form.borrow().{{ t.name }}.items.clone();
+        let chooser = form.clone();
+        config = config.with_tray(
+            move || {
+                use freya::tray::menu::{Menu, MenuItem, PredefinedMenuItem};
+                let menu = Menu::new();
+                for item in &items {
+                    if item.trim() == "-" {
+                        let _ = menu.append(&PredefinedMenuItem::separator());
+                    } else {
+                        let _ = menu.append(&MenuItem::with_id(item.as_str(), item, true, None));
+                    }
+                }
+                freya::tray::TrayIconBuilder::new()
+                    .with_menu(Box::new(menu))
+                {%- if t.props.tooltip %}
+                    .with_tooltip({{ t.rust.tooltip }})
+                {%- endif %}
+                {%- if t.props.icon %}
+                    .with_icon(freya::prelude::LaunchConfig::tray_icon(include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/", {{ t.rust.icon }}))))
+                {%- endif %}
+                    .build()
+                    .expect("tray icon")
+            },
+            move |event, _context| {
+                if let freya::tray::TrayEvent::Menu(menu) = event {
+                    let item = menu.id.as_ref().to_owned();
+                    crate::app::FreyaUpdate::update(&mut *chooser.borrow_mut(), Message::{{ t.name }}_choose(item));
+                }
+            },
+        );
+    {%- endfor %}
+        config.with_window(Self::freya_window(form))
+    }
+
     /// Called once before the window opens.
     pub fn freya_created(&mut self) {
         // Daten der Listen laden (im Hintergrund).
@@ -877,6 +1042,22 @@ impl {{ form.struct }} {
         freya::prelude::WindowConfig::new_app(crate::app::FreyaRoot(form))
             .with_size({{ rp.size.width }} as f64, {{ rp.size.height }} as f64)
             .with_resizable({{ root.rust.resizable }})
+        {%- if not rp.decorations %}
+            .with_decorations(false)
+        {%- endif %}
+        {%- if rp.transparent or not rp.decorations %}
+            .with_transparency(true)
+            .with_background(freya::prelude::Color::TRANSPARENT)
+        {%- endif %}
+        {%- if rp.icon %}
+            .with_icon(freya::prelude::LaunchConfig::window_icon(include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/", {{ root.rust.icon }}))))
+        {%- endif %}
+        {%- if rp.scale_factor > 0 and rp.scale_factor != 1 %}
+            .with_custom_scale_factor({{ rp.scale_factor }} as f64)
+        {%- endif %}
+        {%- if rp.app_id %}
+            .with_app_id({{ root.rust.app_id }})
+        {%- endif %}
         {%- if rp.min_size.width > 0 or rp.min_size.height > 0 %}
             .with_min_size({{ rp.min_size.width }} as f64, {{ rp.min_size.height }} as f64)
         {%- endif %}
@@ -948,8 +1129,12 @@ mod freya_ui {
                 .height(Size::fill())
             {%- if rp.background.a > 0 %}
                 .background({{ color(rp.background) }})
-            {%- else %}
+            {%- elif not rp.transparent %}
                 .theme_background()
+            {%- endif %}
+            {%- if not rp.decorations and rp.corner_radius > 0 %}
+                .corner_radius({{ rp.corner_radius }} as f32)
+                .overflow(Overflow::Clip)
             {%- endif %}
             {%- if rp.foreground.a > 0 %}
                 .color({{ color(rp.foreground) }})
@@ -970,6 +1155,32 @@ mod freya_ui {
             {%- endif %}
             {%- if cmenus %}
                 .child(ContextMenuViewer::new())
+            {%- endif %}
+            {%- if rp.custom_titlebar %}
+                // Eigene Titelleiste: Titel, Fläche zum Verschieben, Knöpfe.
+                .child(
+                    rect()
+                        .horizontal()
+                        .width(Size::fill())
+                        .height(Size::px(32.0))
+                        .content(Content::flex())
+                        .cross_align(Alignment::Center)
+                        .padding(Gaps::new(0.0, 0.0, 0.0, 8.0))
+                        .child(label().text(self.{{ root.name }}.caption.clone()))
+                        .child(rect().window_drag().width(Size::flex(1.0)).height(Size::fill()))
+                        .child(TitlebarButton::new(TitlebarAction::Minimize).on_press(|_| {
+                            Platform::get().with_window(Platform::window_id(), |window| window.set_minimized(true));
+                        }))
+                        .child(TitlebarButton::new(TitlebarAction::Maximize).on_press(|_| {
+                            Platform::get().with_window(Platform::window_id(), |window| {
+                                let maximized = window.is_maximized();
+                                window.set_maximized(!maximized);
+                            });
+                        }))
+                        .child(TitlebarButton::new(TitlebarAction::Close).on_press(|_| {
+                            Platform::get().close_window(Platform::window_id());
+                        })),
+                )
             {%- endif %}
             {%- for m in menus %}
                 .on_global_key_down({

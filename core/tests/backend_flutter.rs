@@ -20,6 +20,8 @@ use tdr_core::*;
 
 #[path = "support/data.rs"]
 mod data;
+#[path = "support/dirs.rs"]
+mod dirs;
 #[path = "support/edit.rs"]
 mod edit;
 #[path = "support/pictures.rs"]
@@ -481,8 +483,8 @@ fn generated_project_builds_runs_and_reacts_to_clicks() {
         return;
     }
 
-    let dir = std::env::temp_dir().join(format!("freya-flutter-demo-{}", std::process::id()));
-    let target = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("flutter-demo-target");
+    let dir = dirs::project("freya-flutter-demo");
+    let target = dirs::target("flutter-demo-target");
     // SAFETY: gesetzt bevor Threads starten; der andere Test liest es nicht.
     unsafe { std::env::set_var("CARGO_TARGET_DIR", &target) };
     let _ = std::fs::remove_dir_all(&dir);

@@ -416,7 +416,15 @@ impl Document {
                 handler,
             } => {
                 let (path, ty) = self.element_type(&form, &element)?;
-                if ty.event(&event).is_none() {
+                let backend = self
+                    .form(&form)
+                    .map(|f| f.backend.clone())
+                    .unwrap_or_default();
+                if self
+                    .registry
+                    .event_def(&ty.type_ref, &backend, &event)
+                    .is_none()
+                {
                     return Err(CommandError::UnknownEvent {
                         element: path,
                         event,

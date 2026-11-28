@@ -577,7 +577,8 @@ pub fn analyze(forms: &[Form], registry: &TypeRegistry) -> Analysis {
     }
 
     // Cargo dependencies of all used components; a dependency with `when`
-    // only if the component's properties match.
+    // only if the component's properties match. Conditional dependencies of
+    // the backend count for every element of its forms.
     let mut cargo: BTreeMap<String, CargoDependency> = BTreeMap::new();
     let mut versions: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     for node in graph.nodes() {
@@ -593,7 +594,19 @@ pub fn analyze(forms: &[Form], registry: &TypeRegistry) -> Analysis {
             })?;
             Some(value)
         };
-        for dep in ty.cargo.iter().filter(|d| d.applies(value_of)) {
+        // Bedingte Abhängigkeiten des Backends (`when`/`uses`) gelten, sobald ein
+        // Element eines Formulars mit diesem Backend sie erfüllt.
+        let backend_deps = registry
+            .backend(&node.form.backend)
+            .into_iter()
+            .flat_map(|b| &b.cargo)
+            .filter(|d| d.is_conditional());
+        for dep in ty
+            .cargo
+            .iter()
+            .chain(backend_deps)
+            .filter(|d| d.applies(value_of))
+        {
             versions
                 .entry(dep.crate_name.clone())
                 .or_default()

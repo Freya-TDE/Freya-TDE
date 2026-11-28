@@ -953,9 +953,9 @@ fn element_data(
             property_expr(&value, resolve).map_or(JValue::from(()), JValue::from),
         );
     }
-    let events: BTreeMap<String, JValue> = ty
-        .events
-        .iter()
+    let events: BTreeMap<String, JValue> = registry
+        .event_defs(&ty.type_ref, &form.backend)
+        .into_iter()
         .map(|e| {
             let handler = component.events.get(&e.name);
             (
@@ -1392,7 +1392,14 @@ pub fn generate(
     let states = form_states(forms, &generated, &mut out);
     let mut cargo = analysis.cargo.clone();
     if let Some(backend) = backend {
-        merge_cargo(&mut cargo, &backend.cargo);
+        // Bedingte Abhängigkeiten des Backends hat die Analyse schon geprüft.
+        let unconditional: Vec<CargoDependency> = backend
+            .cargo
+            .iter()
+            .filter(|d| !d.is_conditional())
+            .cloned()
+            .collect();
+        merge_cargo(&mut cargo, &unconditional);
     }
     // Ein Host-Programm (z. B. Flutter) ruft die Rust-Seite als Bibliothek auf.
     let host = backend.is_some_and(|b| b.event_loop == EventLoop::Host);
@@ -2606,7 +2613,9 @@ fn handlers(
         };
         let component = element.component();
         for (event, handler) in &component.events {
-            let Some(def) = ty.event(event) else { continue };
+            let Some(def) = registry.event_def(&ty.type_ref, &form.backend, event) else {
+                continue;
+            };
             let params = event_params(forms, form, element, registry, def);
             let use_ = format!("{}.{event}", component.name);
             match list.iter_mut().find(|h| &h.name == handler) {

@@ -26,6 +26,10 @@
 //! generated-code-license = "MIT"        # license of the code it generates (mandatory)
 //! license-notice = """…"""              # optional: shown before the pack is used (e.g. license terms of a dependency)
 //!
+//! # backend packs: properties and events every widget gets under the backend
+//! [backend.widget-properties.shadow]    # like [component.properties.*]
+//! [backend.widget-events.on_hover]      # like [component.events.*]
+//!
 //! [[component]]
 //! name = "Pool"                         # PascalCase
 //! kind = "non-visual"                   # "non-visual" (default), "widget", "container"; widgets also get enabled, visible, tooltip
@@ -197,6 +201,12 @@ struct RawBackend {
     files: Vec<RawBackendFile>,
     #[serde(default)]
     crate_type: Vec<String>,
+    /// Properties every widget gets under this backend (styles, animations …).
+    #[serde(default)]
+    widget_properties: IndexMap<String, RawProperty>,
+    /// Events every widget gets under this backend (hover, file drop …).
+    #[serde(default)]
+    widget_events: IndexMap<String, RawEvent>,
 }
 
 #[derive(Deserialize)]
@@ -808,6 +818,30 @@ impl Checker<'_> {
         })
     }
 
+    fn event(&mut self, loc: &str, name: &str, event: &RawEvent) -> EventDef {
+        if !is_rust_identifier(name) || name.chars().any(|c| c.is_ascii_uppercase()) {
+            self.problem(
+                loc,
+                "event names must be snake_case Rust identifiers, e.g. `on_click`",
+            );
+        }
+        let mut def = EventDef::new(name.to_owned()).with_description(event.description.clone());
+        for param in &event.params {
+            if !is_rust_identifier(&param.name) {
+                self.problem(
+                    loc,
+                    format!("parameter name {:?} is not a Rust identifier", param.name),
+                );
+            }
+            if param.rust_type.trim().is_empty() {
+                self.problem(loc, format!("parameter {:?} needs a type", param.name));
+            }
+            def = def.with_param(param.name.clone(), param.rust_type.clone());
+        }
+        def.returns = event.returns.clone();
+        def
+    }
+
     fn component(&mut self, info: &PackInfo, raw: &RawComponent) -> Option<ComponentType> {
         let location = format!("component {}", raw.name);
         let valid_name = raw.name.starts_with(|c: char| c.is_ascii_uppercase())
@@ -857,27 +891,7 @@ impl Checker<'_> {
 
         for (name, event) in &raw.events {
             let loc = format!("{location}, event {name}");
-            if !is_rust_identifier(name) || name.chars().any(|c| c.is_ascii_uppercase()) {
-                self.problem(
-                    &loc,
-                    "event names must be snake_case Rust identifiers, e.g. `on_click`",
-                );
-            }
-            let mut def = EventDef::new(name.clone()).with_description(event.description.clone());
-            for param in &event.params {
-                if !is_rust_identifier(&param.name) {
-                    self.problem(
-                        &loc,
-                        format!("parameter name {:?} is not a Rust identifier", param.name),
-                    );
-                }
-                if param.rust_type.trim().is_empty() {
-                    self.problem(&loc, format!("parameter {:?} needs a type", param.name));
-                }
-                def = def.with_param(param.name.clone(), param.rust_type.clone());
-            }
-            def.returns = event.returns.clone();
-            ty.events.push(def);
+            ty.events.push(self.event(&loc, name, event));
         }
 
         let mut provided = BTreeSet::new();
@@ -1173,6 +1187,17 @@ impl Checker<'_> {
         let mut backend = BackendDescriptor::new(info.name.clone());
         backend.license_notice = info.license_notice.clone();
         backend.title = info.title.clone();
+        for (name, property) in &raw.widget_properties {
+            let loc = format!("{location}, widget property {name}");
+            if let Some(def) = self.property(&loc, name, property) {
+                backend.widget_properties.push(def);
+            }
+        }
+        for (name, event) in &raw.widget_events {
+            let loc = format!("{location}, widget event {name}");
+            let def = self.event(&loc, name, event);
+            backend.widget_events.push(def);
+        }
         backend.event_loop = raw.event_loop;
         backend.absolute_positioning = raw.absolute_positioning;
         for p in &raw.platforms {
