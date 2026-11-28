@@ -11,7 +11,7 @@
 | Einstellung | Wirkung |
 |---|---|
 | Arbeitsverzeichnis | Startordner der Dateidialoge und des Neu-Assistenten, z. B. `~/DevArea/RUST` (leer = Home-Ordner) |
-| Sprache | System, Deutsch, English – vorerst nur für den CT-Editor; die Oberfläche von Freya TDE ist noch deutsch |
+| Sprache | System, Deutsch, English – für Freya TDE und den CT-Editor, gilt ab dem nächsten Start; „System“ heißt Deutsch bei deutscher Systemsprache, sonst Englisch |
 | Darstellung | System (Standard), Hell, Dunkel – für Freya TDE und den CT-Editor |
 | Neue Methoden | wohin die Code-Vervollständigung neue Methoden setzt: hinter die aufrufende, alphabetisch, ans Ende |
 

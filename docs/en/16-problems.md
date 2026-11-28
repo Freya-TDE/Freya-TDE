@@ -33,8 +33,8 @@ workaround. Some come from the toolkits themselves, some from the environment.
 
 | Problem | Cause | Solution / workaround |
 |---|---|---|
-| `GTK konnte nicht initialisiert werden` (GTK could not be initialised) | no graphical session | `xvfb-run -a …`; in a Wayland session also `env -u WAYLAND_DISPLAY` |
-| A UI test checks a size and fails ("Hinweis wächst mit dem Fenster") | without options `xvfb-run` has a screen of only 640 × 480; bigger windows are clamped | `xvfb-run -a -s "-screen 0 1920x1080x24" …` |
+| `GTK could not be initialised` | no graphical session | `xvfb-run -a …`; in a Wayland session also `env -u WAYLAND_DISPLAY` |
+| A UI test checks a size and fails (the notice should grow with the window) | without options `xvfb-run` has a screen of only 640 × 480; bigger windows are clamped | `xvfb-run -a -s "-screen 0 1920x1080x24" …` |
 | A test hangs without CPU load | a modal dialog (e.g. "unsaved changes") waits invisibly | in tests `ruf::dialog::set_automatic(Some(true))`: dialogs are answered at once, the question goes to stderr |
 | `MESA-EGL: warning: DRI3 error` when starting under Xvfb | Xvfb has no graphics acceleration | harmless; the tests draw in software (`GSK_RENDERER=cairo`) |
 | The window of an egui program appears late under Xvfb | software OpenGL takes longer after a long build | the test waits up to 40 s and shows the program's output |

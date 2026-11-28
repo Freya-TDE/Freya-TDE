@@ -32,5 +32,5 @@ repository take part in the main project's Git actions; one with its own reposit
 active. Shared details (remote, main branch) are in the `.ptdr`, personal ones (author, e-mail, signing key)
 in the local `.git/config`.
 
-**New repository:** "Repository anlegen" (create repository) writes a `.gitignore` with `/target`, like
+**New repository:** "Create Repository" writes a `.gitignore` with `/target`, like
 `cargo init`.

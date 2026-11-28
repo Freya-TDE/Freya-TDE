@@ -2,7 +2,7 @@
 
 [Contents](README.md) · back: [11 Git](11-git.md) · next: [13 Automation and AI](13-automation.md)
 
-**Datei → Einstellungen …** (File → settings, Ctrl+,) applies to Freya TDE as a whole. Only "OK" takes the
+**File → Settings …** (Ctrl+,) applies to Freya TDE as a whole. Only "OK" takes the
 changes over.
 
 ## General
@@ -12,7 +12,7 @@ changes over.
 | Setting | Effect |
 |---|---|
 | Working directory | start folder of the file dialogs and the new-project wizard, e.g. `~/DevArea/RUST` (empty = home folder) |
-| Language | System, Deutsch, English – for now only for the CT-Editor; Freya TDE's own UI is still German |
+| Language | System, Deutsch, English – for Freya TDE and the CT-Editor, applies from the next start; "System" means German with a German system language, otherwise English |
 | Appearance | System (default), Light, Dark – for Freya TDE and the CT-Editor |
 | New methods | where code completion puts new methods: after the calling one, alphabetically, at the end |
 
@@ -23,7 +23,7 @@ OpenRouter, Ollama, LM Studio or an own OpenAI-compatible server – local or in
 AI Y"). **Abrufen** next to the model asks the provider for its models – with address and key as they are in
 the window, so already before "OK" – and fills the drop-down with them; the model can still be typed freely.
 If the API key would go over `http://` to another machine, a warning shows under the key.
-**Rechte der KI** (AI permission) applies to the current project: "read only", "with preview" (default) or
+**AI permissions** applies to the current project: "read only", "with preview" (default) or
 "autonomous" (the same as in the AI window, see [chapter 13](13-automation.md)).
 Plus "show the AI window for a new project" and "always show".
 

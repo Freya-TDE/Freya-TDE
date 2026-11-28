@@ -3,7 +3,7 @@
 [Contents](README.md) · back: [3 First steps](03-first-steps.md) · next: [5 Forms and components](05-components.md)
 
 Like Delphi 7 and Lazarus, Freya TDE consists of free-floating windows – each can go on any screen. The
-arrangement is saved (`<config>/freya-tde/desktop.toml`) and restored on start; **Fenster → Standardanordnung**
+arrangement is saved (`<config>/freya-tde/desktop.toml`) and restored on start; **Window → Default Layout**
 (Window → default arrangement) resets it. The detailed operation of every window is described in
 [`ide/README.md`](../../ide/README.md) (German).
 
@@ -31,7 +31,7 @@ arrangement is saved (`<config>/freya-tde/desktop.toml`) and restored on start; 
 
 ## Combining structure, object inspector and AI
 
-The three windows have a grip at the top ("⠿ Struktur", "⠿ Objektinspektor", "⠿ KI"). Drag one window's grip onto the
+The three windows have a grip at the top ("⠿ Structure", "⠿ Object Inspector", "⠿ AI"). Drag one window's grip onto the
 other window and both become **one window with tabs**. Drag the grip out into the open (next to every
 window) and the tab becomes a window of its own again. This is kept in the window arrangement as well.
 
@@ -55,13 +55,13 @@ use line, code):
   the cursor in the code. A non-empty use line is appended to the file's use block.
 - **Right-click the drop-down:** edit, delete, put on the tab, new snippet.
 - **Snippets put on the tab** are buttons: a click inserts, a right-click unpins or edits.
-- **In the code editor:** select code → right-click → "Als Snippet speichern" (save as snippet).
+- **In the code editor:** select code → right-click → "Save as Snippet …".
 
 ## Keyboard shortcuts
 
 ![Help → Keyboard shortcuts](../images/shortcuts-en.png)
 
-**Hilfe → Tastenkürzel** (Help → keyboard shortcuts) lists every shortcut per window with an explanation. The
+**Help → Keyboard Shortcuts** lists every shortcut per window with an explanation. The
 most important ones (like Delphi/Lazarus):
 
 | Shortcut | Does |

@@ -33,7 +33,7 @@ und Lösung bzw. Umgehung. Einiges liegt an den Toolkits selbst, einiges an der 
 
 | Problem | Ursache | Lösung / Umgehung |
 |---|---|---|
-| `GTK konnte nicht initialisiert werden` | keine grafische Sitzung | `xvfb-run -a …`; in einer Wayland-Sitzung zusätzlich `env -u WAYLAND_DISPLAY` |
+| `GTK could not be initialised` | keine grafische Sitzung | `xvfb-run -a …`; in einer Wayland-Sitzung zusätzlich `env -u WAYLAND_DISPLAY` |
 | Oberflächentest prüft eine Größe und scheitert („Hinweis wächst mit dem Fenster“) | `xvfb-run` hat ohne Angabe nur einen Bildschirm von 640 × 480; größere Fenster werden begrenzt | `xvfb-run -a -s "-screen 0 1920x1080x24" …` |
 | Ein Test hängt ohne CPU-Last | ein modaler Dialog (z. B. „Ungespeicherte Änderungen“) wartet unsichtbar | in Tests `ruf::dialog::set_automatic(Some(true))`: Dialoge werden sofort beantwortet, die Frage steht in stderr |
 | `MESA-EGL: warning: DRI3 error` beim Start unter Xvfb | Xvfb hat keine Grafikbeschleunigung | harmlos; die Tests zeichnen mit Software (`GSK_RENDERER=cairo`) |

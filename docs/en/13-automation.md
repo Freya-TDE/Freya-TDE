@@ -43,10 +43,10 @@ overview is in [`ide/README.md`](../../ide/README.md).
 
 ![Window "AI"](../images/ai-en.png)
 
-The core is a library without UI (`freya_tde::ai`); the window **KI** (Window → KI, Ctrl+Shift+K) builds on
+The core is a library without UI (`freya_tde::ai`); the window **AI** (Window → AI, Ctrl+Shift+K) builds on
 it. At the top you choose the AI of the conversation from all profiles (drop-down); the switch applies from the
 next request, the conversation goes on with the new AI, and the choice is remembered for the project (like
-"Für dieses Projekt" in the settings). Next to it is what the AI may do. Requests run in the background, so
+"For this project" in the settings). Next to it is what the AI may do. Requests run in the background, so
 does `cargo`; the AI's changes go through the same commands as the designer (undoable) and show up in open
 code tabs at once.
 
@@ -63,7 +63,7 @@ code tabs at once.
   `edit_file`, `designer`, `generate_code`) and running (`cargo` check/clippy/test) follow the project's
   permission. The AI changes forms only through designer commands and never touches generated files.
 - **Permission per project:** "read only", "with preview" (default: every change is first a proposal with a
-  diff and only "Übernehmen" applies it) and "autonomous". It lives in the personal settings, not in the
+  diff and only "Accept" applies it) and "autonomous". It lives in the personal settings, not in the
   `.ptdr` – a cloned repository cannot grant the AI rights.
 - **Conversation:** `Conversation` is a state machine without network or UI (`say`, `request`, `receive`,
   `decide`); `ai::run` handles one message in a loop (tests, scripts).
@@ -77,7 +77,7 @@ code tabs at once.
   `min_freya`, the SHA-256 of every `<name>/SKILL.md`), `pack.json.sig` (Ed25519 signature over `pack.json`,
   hex) and the skill folders. Freya TDE checks the signature against the built-in key, the minimum version and
   every file; unlisted files are not allowed. Any error refuses the whole pack, the message appears under
-  "Probleme" (source KI, codes `skill_pack_no_key`, `skill_pack_signature`, `skill_pack_hash`,
+  "Problems" (source AI, codes `skill_pack_no_key`, `skill_pack_signature`, `skill_pack_hash`,
   `skill_pack_version`, `skill_pack_invalid`). A pack skill replaces the built-in one of the same name and is
   trusted like it.
 

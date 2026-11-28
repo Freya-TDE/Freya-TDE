@@ -4,7 +4,7 @@
 
 ## Building
 
-**Projekt → Bauen** (Project → build, Ctrl+F9) generates the code and runs `cargo build` in the background.
+**Project → Build** (Ctrl+F9) generates the code and runs `cargo build` in the background.
 Cargo's messages appear under **Messages → Problems** and as marks in the code; messages in generated
 `.gen.rs` files are attributed to the component in the designer that caused them.
 
