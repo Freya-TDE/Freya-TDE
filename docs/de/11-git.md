@@ -7,6 +7,8 @@ SSH-Schlüsseln, Hooks und Einstellungen.
 
 ## Das Fenster „Quellcodeverwaltung“ (Strg+Umschalt+G)
 
+![Quellcodeverwaltung mit Änderungen und Graph](../images/git-de.png)
+
 - **Repository-Zeile:** Zweig (`main+` bei gestagten Änderungen; Klick = Zweig oder Tag auschecken), Sync
   (↓/↑ zum Upstream) und „…“ mit Pull, Push, Klonen, Fetch, Zweig-, Remote-, Stash- und Tag-Befehlen.
 - **Commit-Nachricht** (Strg+Enter) mit Commit, Commit (Amend), Commit & Push, Commit & Sync und

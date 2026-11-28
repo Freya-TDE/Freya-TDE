@@ -7,6 +7,8 @@ changes over.
 
 ## General
 
+![Settings, tab General](../images/settings-en.png)
+
 | Setting | Effect |
 |---|---|
 | Working directory | start folder of the file dialogs and the new-project wizard, e.g. `~/DevArea/RUST` (empty = home folder) |

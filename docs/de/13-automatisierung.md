@@ -42,6 +42,8 @@ viele mehr – eine Übersicht steht in [`ide/README.md`](../../ide/README.md).
 
 ## Die KI-Anbindung
 
+![Fenster „KI“](../images/ai-de.png)
+
 Der Kern ist eine Bibliothek ohne Oberfläche (`freya_tde::ai`); das Fenster **KI** (Fenster → KI,
 Strg+Umschalt+K) baut darauf auf. Oben wählt man die KI des Gesprächs aus allen Profilen (Drop-down); der
 Wechsel gilt ab der nächsten Anfrage, das Gespräch läuft mit der neuen KI weiter, und die Wahl wird für das

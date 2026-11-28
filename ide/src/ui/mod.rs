@@ -604,6 +604,14 @@ impl Ide {
         Ok(count)
     }
 
+    /// The window `name` (`desktop::window::*`) – for automation and screenshots.
+    pub fn window_widget(&self, name: &str) -> Option<Widget> {
+        self.windows()
+            .into_iter()
+            .find(|(n, _)| *n == name)
+            .map(|(_, w)| w.widget().clone())
+    }
+
     /// Saves a screenshot of every visible window as `<dir>/<name>.png`.
     pub fn screenshots(&self, dir: &Path) -> Vec<PathBuf> {
         let _ = std::fs::create_dir_all(dir);

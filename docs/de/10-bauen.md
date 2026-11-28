@@ -10,6 +10,8 @@ Cargo landen unter **Meldungen → Probleme** und als Marken im Code; Meldungen 
 
 ## Starten und Debuggen
 
+![Fenster „Debugger“](../images/debugger-de.png)
+
 Das Menü **Start** hat die Kürzel von Delphi und Lazarus:
 
 | Kürzel | Tut |
@@ -37,6 +39,8 @@ Flutter-Projekte starten immer ohne Debugger.
 Check, Clippy, Format, Test, Update, Doku und SQLx – siehe [Kapitel 4](04-fenster.md#die-werkzeugleiste).
 
 ## Terminal
+
+![Meldungen, Reiter Terminal](../images/terminal-de.png)
 
 **Meldungen → Terminal** (Strg+Umschalt+T) ist ein echtes Terminal mit der Shell des Nutzers im
 Projektordner: Farben, Vollbildprogramme (`less`, `htop`, `vim`), tote Tasten und Eingabemethoden,

@@ -5,7 +5,9 @@
 Source control follows VS Code and works through the `git` command line – with your credentials, SSH keys,
 hooks and settings.
 
-## The window "Quellcodeverwaltung" (source control, Ctrl+Shift+G)
+## The window "Source Control" (Ctrl+Shift+G)
+
+![Source control with changes and graph](../images/git-en.png)
 
 - **Repository line:** branch (`main+` with staged changes; click = check out a branch or tag), sync (↓/↑ to
   the upstream) and "…" with pull, push, clone, fetch, branch, remote, stash and tag commands.

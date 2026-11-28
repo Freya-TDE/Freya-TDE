@@ -6,6 +6,8 @@
 
 ## Allgemein
 
+![Einstellungen, Reiter Allgemein](../images/settings-de.png)
+
 | Einstellung | Wirkung |
 |---|---|
 | Arbeitsverzeichnis | Startordner der Dateidialoge und des Neu-Assistenten, z. B. `~/DevArea/RUST` (leer = Home-Ordner) |

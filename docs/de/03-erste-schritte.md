@@ -6,6 +6,8 @@ Dieses Kapitel führt einmal durch: neues Projekt, Formular gestalten, Ereignis 
 
 ## Ein neues Projekt
 
+![Neu-Assistent, Seite „Oberfläche“](../images/wizard-de.png)
+
 **Datei → Neues Projekt …** (Strg+N) öffnet den Neu-Assistenten. Seite für Seite:
 
 1. **Art:** Programm (mit Oberfläche, `main.rs`) oder Bibliothek (nur Datenmodule, `lib.rs`).
@@ -24,6 +26,8 @@ Dieses Kapitel führt einmal durch: neues Projekt, Formular gestalten, Ereignis 
 
 ## Das Formular gestalten
 
+![Designer mit einem Anmeldeformular](../images/designer-de.png)
+
 Das neue Projekt hat das Formular `main_form`.
 
 - In der **Palette** (Hauptfenster) einen Typ anklicken und dann in den **Designer** klicken – oder den
@@ -36,6 +40,8 @@ Das neue Projekt hat das Formular `main_form`.
   Designer.
 
 ## Ein Ereignis schreiben
+
+![Code-Editor mit dem Handler des Knopfs](../images/code-de.png)
 
 Doppelklick auf den Knopf: Freya TDE legt den Handler an, erzeugt den Code und springt im Code-Fenster an die
 Stelle – wie bei Delphi:

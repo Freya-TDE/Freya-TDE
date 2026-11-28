@@ -49,6 +49,8 @@ How each backend presents editing is listed in [chapter 16](16-problems.md#limit
 
 ## The schema browser
 
+![Window "Database" with an SQLite database](../images/database-en.png)
+
 **Fenster → Datenbank** (Window → database, Ctrl+Shift+B) shows, per SQLx pool, the tables, views, columns
 (with SQL and Rust type, primary key), functions and procedures, and per Redis client the keys. The object
 inspector offers "Verbindung testen" (test connection, for pool and query) and "columns aus Datenbank

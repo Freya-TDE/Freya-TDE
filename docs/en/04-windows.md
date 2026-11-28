@@ -21,6 +21,14 @@ arrangement is saved (`<config>/freya-tde/desktop.toml`) and restored on start; 
 | **Database** | schema browser for SQLx pools and Redis |
 | **KI** (AI) | conversation with the AI: at the top the choice of AI (drop-down with all profiles, switchable at any time, remembered per project) and what it may do; history, proposals with preview (accept, reject, accept all), skills, input (Ctrl+Enter) – see [chapter 13](13-automation.md) |
 
+### What the windows look like
+
+![Main window with tool bar and palette](../images/main-en.png)
+
+![Structure](../images/structure-en.png) ![Object inspector](../images/inspector-en.png) ![Project window with the files](../images/project-en.png) ![Project manager](../images/project_manager-en.png)
+
+![Messages, tab Problems](../images/messages-en.png)
+
 ## Combining structure, object inspector and AI
 
 The three windows have a grip at the top ("⠿ Struktur", "⠿ Objektinspektor", "⠿ KI"). Drag one window's grip onto the
@@ -50,6 +58,8 @@ use line, code):
 - **In the code editor:** select code → right-click → "Als Snippet speichern" (save as snippet).
 
 ## Keyboard shortcuts
+
+![Help → Keyboard shortcuts](../images/shortcuts-en.png)
 
 **Hilfe → Tastenkürzel** (Help → keyboard shortcuts) lists every shortcut per window with an explanation. The
 most important ones (like Delphi/Lazarus):

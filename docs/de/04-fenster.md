@@ -21,6 +21,14 @@ Fensters steht in [`ide/README.md`](../../ide/README.md).
 | **Datenbank** | Schema-Browser für SQLx-Pools und Redis |
 | **KI** | Gespräch mit der KI: oben die Auswahl der KI (Drop-down mit allen Profilen, jederzeit umschaltbar, je Projekt gemerkt) und was sie darf; Verlauf, Vorschläge mit Vorschau (Übernehmen, Ablehnen, Alle übernehmen), Skills, Eingabe (Strg+Enter) – siehe [Kapitel 13](13-automatisierung.md) |
 
+### So sehen die Fenster aus
+
+![Hauptfenster mit Werkzeugleiste und Palette](../images/main-de.png)
+
+![Struktur](../images/structure-de.png) ![Objektinspektor](../images/inspector-de.png) ![Projektfenster mit den Dateien](../images/project-de.png) ![Projekt-Manager](../images/project_manager-de.png)
+
+![Meldungen, Reiter Probleme](../images/messages-de.png)
+
 ## Struktur, Objektinspektor und KI zusammenlegen
 
 Die drei Fenster haben oben einen Griff („⠿ Struktur“, „⠿ Objektinspektor“, „⠿ KI“). Zieht man den Griff des einen auf
@@ -50,6 +58,8 @@ use-Zeile, Code):
 - **Im Code-Editor:** Code markieren → Rechtsklick → „Als Snippet speichern“.
 
 ## Tastenkürzel
+
+![Hilfe → Tastenkürzel](../images/shortcuts-de.png)
 
 **Hilfe → Tastenkürzel** listet alle Kürzel je Fenster samt Erklärung. Die wichtigsten (wie Delphi/Lazarus):
 

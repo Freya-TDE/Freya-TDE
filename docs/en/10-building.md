@@ -10,6 +10,8 @@ Cargo's messages appear under **Messages → Problems** and as marks in the code
 
 ## Running and debugging
 
+![Window "Debugger"](../images/debugger-en.png)
+
 The **Start** menu has the shortcuts of Delphi and Lazarus:
 
 | Shortcut | Does |
@@ -37,6 +39,8 @@ Flutter projects always start without debugger.
 Check, Clippy, Format, Test, Update, Doc and SQLx – see [chapter 4](04-windows.md#the-tool-bar).
 
 ## Terminal
+
+![Messages, tab Terminal](../images/terminal-en.png)
 
 **Messages → Terminal** (Ctrl+Shift+T) is a real terminal with the user's shell in the project folder:
 colours, full-screen programs (`less`, `htop`, `vim`), dead keys and input methods, mouse selection, several

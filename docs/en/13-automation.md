@@ -41,6 +41,8 @@ overview is in [`ide/README.md`](../../ide/README.md).
 
 ## The AI integration
 
+![Window "AI"](../images/ai-en.png)
+
 The core is a library without UI (`freya_tde::ai`); the window **KI** (Window → KI, Ctrl+Shift+K) builds on
 it. At the top you choose the AI of the conversation from all profiles (drop-down); the switch applies from the
 next request, the conversation goes on with the new AI, and the choice is remembered for the project (like

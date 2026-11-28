@@ -6,6 +6,8 @@ This chapter walks through once: new project, design a form, write an event, run
 
 ## A new project
 
+![New-project wizard, page "User interface"](../images/wizard-en.png)
+
 **Datei → Neues Projekt …** (File → New project, Ctrl+N) opens the new-project wizard. Page by page:
 
 1. **Kind:** program (with UI, `main.rs`) or library (data modules only, `lib.rs`).
@@ -27,6 +29,8 @@ This chapter walks through once: new project, design a form, write an event, run
 
 ## Designing the form
 
+![Designer with a sign-in form](../images/designer-en.png)
+
 The new project has the form `main_form`.
 
 - In the **palette** (main window), click a type and then click into the **designer** – or drag the palette
@@ -38,6 +42,8 @@ The new project has the form `main_form`.
   designer.
 
 ## Writing an event
+
+![Code editor with the button handler](../images/code-en.png)
 
 Double-click the button: Freya TDE creates the handler, generates the code and jumps to it in the code
 window – like Delphi:

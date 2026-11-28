@@ -49,6 +49,8 @@ Wie jedes Backend die Bearbeitung darstellt, steht in [Kapitel 16](16-probleme.m
 
 ## Der Schema-Browser
 
+![Fenster „Datenbank“ mit einer SQLite-Datenbank](../images/database-de.png)
+
 **Fenster → Datenbank** (Strg+Umschalt+B) zeigt je SQLx-Pool die Tabellen, Sichten, Spalten (mit SQL- und
 Rust-Typ, Primärschlüssel), Funktionen und Prozeduren, je Redis-Client die Schlüssel. Im Objektinspektor gibt
 es „Verbindung testen“ (Pool, Query) und „columns aus Datenbank übernehmen“.
